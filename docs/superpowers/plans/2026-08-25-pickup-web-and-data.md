@@ -195,6 +195,7 @@ function loadWeb(files, stubs) {
     location: { hash: '' }
   };
   Object.assign(sandbox, stubs || {});
+  sandbox.__ls = () => sandbox.localStorage;   /* ให้เทสต์ยัดของเสียเข้าแคชได้ */
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
@@ -1898,7 +1899,7 @@ git commit -m "feat: doGet ส่งข้อมูลให้หน้าเ�
 - [ ] **Step 1: เขียนเทสต์ที่ต้องตก (เติมท้าย `_tests/web.test.js`)**
 
 ```javascript
-const a = loadWeb(['web/js/mock.js', 'web/js/api.js']);
+const a = loadWeb(['web/js/fmt.js', 'web/js/mock.js', 'web/js/api.js']);
 
 test('ไม่มีอะไรเลย = ใช้ข้อมูลตัวอย่าง หน้าไม่ขาว', () => {
   const r = a.pickData(null, null);
@@ -1928,7 +1929,7 @@ test('แคชเสีย อ่านแล้วห้ามพังทั�
 });
 
 test('เขียนแคชตอนที่เครื่องไม่ให้เขียน ก็ห้ามพัง', () => {
-  const b = loadWeb(['web/js/mock.js', 'web/js/api.js'], {
+  const b = loadWeb(['web/js/fmt.js', 'web/js/mock.js', 'web/js/api.js'], {
     localStorage: { getItem() { throw new Error('เต็ม'); }, setItem() { throw new Error('เต็ม'); } }
   });
   b.saveCache({ ok: true });

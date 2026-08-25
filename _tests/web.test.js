@@ -215,3 +215,51 @@ test('renderLedger เรียงบิลใหม่สุดขึ้นก�
   const iOld = html.indexOf('อินเตอร์');        // เตะ 25 ส.ค.
   ok(iNew < iOld, 'บิลที่เตะทีหลังต้องอยู่บนกว่า');
 });
+
+const a = loadWeb(['web/js/fmt.js', 'web/js/mock.js', 'web/js/api.js']);
+
+test('ไม่มีอะไรเลย = ใช้ข้อมูลตัวอย่าง หน้าไม่ขาว', () => {
+  const r = a.pickData(null, null);
+  eq(r.source, 'ตัวอย่าง');
+  ok(r.data.bets.length > 0);
+});
+
+test('มีแคช เน็ตล่ม = ใช้แคช', () => {
+  const r = a.pickData(null, { ok: true, at: '2026-08-25T10:00:00+07:00', picks: [], bets: [], ledger: {} });
+  eq(r.source, 'แคช');
+});
+
+test('ได้ของสด = ใช้ของสด ทับแคช', () => {
+  const fresh = { ok: true, at: '2026-08-25T18:00:00+07:00', picks: [], bets: [], ledger: {} };
+  eq(a.pickData(fresh, { ok: true, bets: [1] }).source, 'สด');
+});
+
+test('เซิร์ฟเวอร์ตอบ ok:false ห้ามนับเป็นของสด', () => {
+  const bad = { ok: false, error: 'พัง' };
+  eq(a.pickData(bad, { ok: true, at: 'x', picks: [], bets: [], ledger: {} }).source, 'แคช');
+  eq(a.pickData(bad, null).source, 'ตัวอย่าง');
+});
+
+test('แคชเสีย อ่านแล้วห้ามพังทั้งหน้า', () => {
+  a.__ls().setItem('pickup.data.v1', '{ไม่ใช่ json');
+  eq(a.loadCache(), null);
+});
+
+test('เขียนแคชตอนที่เครื่องไม่ให้เขียน ก็ห้ามพัง', () => {
+  const b = loadWeb(['web/js/fmt.js', 'web/js/mock.js', 'web/js/api.js'], {
+    localStorage: { getItem() { throw new Error('เต็ม'); }, setItem() { throw new Error('เต็ม'); } }
+  });
+  b.saveCache({ ok: true });
+  eq(b.loadCache(), null);
+});
+
+test('แคชเขียนแล้วอ่านกลับได้เหมือนเดิม', () => {
+  a.saveCache({ ok: true, at: 'now', picks: [], bets: [], ledger: {} });
+  eq(a.loadCache().at, 'now');
+});
+
+test('staleNote บอกที่มาของข้อมูลเป็นภาษาคน', () => {
+  ok(a.staleNote('สด', Date.now()).indexOf('ล่าสุด') >= 0);
+  ok(a.staleNote('แคช', Date.now()).indexOf('ออฟไลน์') >= 0);
+  ok(a.staleNote('ตัวอย่าง', Date.now()).indexOf('ตัวอย่าง') >= 0);
+});

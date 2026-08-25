@@ -27,6 +27,7 @@ function loadWeb(files, stubs) {
     location: { hash: '' }
   };
   Object.assign(sandbox, stubs || {});
+  sandbox.__ls = () => sandbox.localStorage;   /* ให้เทสต์ยัดของเสียเข้าแคชได้ */
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
