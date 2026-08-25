@@ -1,5 +1,11 @@
 # Pickup Football Tips — แผนที่ 1: หน้าเว็บ + ชีต + ท่อ JSON (เฟส 1-3)
 
+> ✅ **แผนนี้จบแล้ว 25 ส.ค. 69** — งาน 1-9 ขึ้นจริงครบ · เทสต์ `ผ่าน 108/108` · หลังบ้าน GAS **LIVE v4** · หน้าเว็บ **LIVE** `https://yeddekm2-ui.github.io/pickup-football-tips/` · คอมมิตสุดท้าย `5156443`
+>
+> ช่องติ๊กข้างล่างปล่อยว่างไว้ตามเดิม — ไม่ติ๊กย้อนหลัง เพราะบางข้อเจ้าของเช็กเองบนไอโฟน ผมยืนยันแทนไม่ได้ · สถานะจริงดูที่ `CLAUDE.md`
+>
+> งานต่อไปอยู่ที่แผน 2 (เฟส 4-7 ของสเปก: บอท + OCR) — ติดที่เจ้าของต้องทำเอง: BotFather + rotate คีย์ Vision
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** ได้เว็บ 3 หน้า (FOREBET / MY BET / LEDGER) เปิดจากไอโฟน Safari แล้วอ่านข้อมูลจริงจากชีตผ่าน Google Apps Script ได้ — ยังไม่มีบอท ยังไม่มี OCR
