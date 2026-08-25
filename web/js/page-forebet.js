@@ -1,1 +1,50 @@
+/* page-forebet.js — หน้า 1: คู่ที่ Forebet คัดมา
+   ทุกฟังก์ชันคืนเป็น string ไม่แตะ DOM เพื่อให้เทสต์ใน Node ได้ */
 'use strict';
+
+var MAX_CARDS = 4;
+
+/** แปลไม่เจอ = โชว์ชื่ออังกฤษเดิม (สเปกข้อ 11 — ห้ามทับศัพท์เอง) */
+function teamTh(en, th) {
+  var t = (th === null || th === undefined) ? '' : String(th).trim();
+  return t !== '' ? t : String(en === null || en === undefined ? '' : en);
+}
+
+function esc_(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function pickCard(p, nowMs) {
+  var home = esc_(teamTh(p['เหย้า'], p['เหย้าไทย']));
+  var away = esc_(teamTh(p['เยือน'], p['เยือนไทย']));
+  var pct = Number(p['เปอร์เซ็นต์']);
+  var cd = countdownText(p['เวลาเตะ'], 'รอเตะ', nowMs);
+  return '' +
+    '<div class="card pick">' +
+      '<div class="row"><span class="muted">' + esc_(p['ลีก']) + '</span>' +
+        '<span class="muted">' + esc_(thDate(p['เวลาเตะ'])) + ' ' + esc_(thTime(p['เวลาเตะ'])) + '</span></div>' +
+      '<div class="big">' + home + ' <span class="muted">พบ</span> ' + away + '</div>' +
+      '<div class="row">' +
+        '<span class="pick-pct">' + (isNaN(pct) ? '' : pct + '%') + '</span>' +
+        '<span class="pick-odds">' + esc_(fmtOdds(p['ราคา'])) + '</span>' +
+      '</div>' +
+      '<div class="muted">' + esc_(cd) + '</div>' +
+    '</div>';
+}
+
+function renderForebet(data, nowMs) {
+  var picks = (data && data.picks ? data.picks : []).slice();
+  picks.sort(function (a, b) { return Number(b['เปอร์เซ็นต์']) - Number(a['เปอร์เซ็นต์']); });
+  picks = picks.slice(0, MAX_CARDS);
+
+  var head = '<div class="muted">ข้อมูลรอบ ' + esc_(thTime(data && data.at)) + '</div>';
+  var body = picks.length
+    ? picks.map(function (p) { return pickCard(p, nowMs); }).join('')
+    : '<div class="card"><div class="big">ยังไม่มีคู่ของรอบนี้</div>' +
+      '<div class="muted">รอบถัดไปอีกไม่นาน หรือกรอกเองได้เลย</div></div>';
+
+  return head + body + '<a class="btn" href="#mybet">กรอกเอง</a>';
+}

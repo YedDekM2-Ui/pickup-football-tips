@@ -745,7 +745,7 @@ test('renderForebet เรียงเปอร์เซ็นต์มากไ
   const html = f.renderForebet(many, Date.now());
   eq((html.match(/class="card pick"/g) || []).length, 4);
   ok(html.indexOf('80%') >= 0, 'ใบเปอร์เซ็นต์สูงสุดต้องติดมา');
-  ok(html.indexOf('0%') === -1, 'ใบเปอร์เซ็นต์ต่ำสุดต้องถูกตัด');
+  ok(html.indexOf('>0%<') === -1, 'ใบเปอร์เซ็นต์ต่ำสุดต้องถูกตัด');
   const iHi = html.indexOf('80%'), iLo = html.indexOf('50%');
   ok(iHi < iLo, 'ใบเปอร์เซ็นต์สูงต้องอยู่บนกว่า');
 });
