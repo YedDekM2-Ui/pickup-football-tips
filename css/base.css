@@ -70,6 +70,13 @@ body {
 .pick-pred { color: var(--ink); font-size: 13px; margin-bottom: 8px; }
 .pick-pct { color: var(--gold); font-weight: 700; font-size: 18px; }
 .pick-odds { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+/* ใบปักหมุด — ขอบทองบอกว่าเป็นของที่แช่ไว้ ไม่ใช่ของสด */
+.pin { border-color: var(--gold); }
+.pin-cap {
+  color: var(--gold); font-size: 11px; font-weight: 700; letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.pin-when { color: var(--ink-dim); font-size: 11px; margin-top: 6px; }
 
 /* ---- หัวหน้า 3 แบบแอปหุ้น ---- */
 .stk { padding: 16px 14px 12px; }

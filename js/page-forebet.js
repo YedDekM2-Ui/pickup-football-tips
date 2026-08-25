@@ -37,35 +37,65 @@ function predictLine_(p) {
   return '<div class="pick-pred">' + esc_(parts.join(' · ')) + '</div>';
 }
 
-function pickCard(p, nowMs) {
+/** ไส้ในของใบ — แยกออกมาเพราะใบปักหมุดใช้ไส้เดียวกัน ต่างแค่กรอบกับป้าย */
+function pickBody_(p, nowMs) {
   var home = esc_(teamTh(p['เหย้า'], p['เหย้าไทย']));
   var away = esc_(teamTh(p['เยือน'], p['เยือนไทย']));
   var pct = Number(p['เปอร์เซ็นต์']);
-  var cd = countdownText(p['เวลาเตะ'], 'รอเตะ', nowMs);
+  var when = String(p['เวลาเตะ'] || '').trim();
+  var cd = when ? countdownText(p['เวลาเตะ'], 'รอเตะ', nowMs) : '';
   return '' +
-    '<div class="card pick">' +
-      '<div class="row"><span class="muted">' + esc_(p['ลีก']) + '</span>' +
-        '<span class="muted">' + esc_(thDate(p['เวลาเตะ'])) + ' ' + esc_(thTime(p['เวลาเตะ'])) + '</span></div>' +
-      '<div class="big">' + home + ' <span class="muted">VS</span> ' + away + '</div>' +
-      predictLine_(p) +
-      '<div class="row">' +
-        '<span class="pick-pct">' + (isNaN(pct) ? '' : pct + '%') + '</span>' +
-        '<span class="pick-odds">' + esc_(fmtOdds(p['ราคา'])) + '</span>' +
-      '</div>' +
-      '<div class="muted">' + esc_(cd) + '</div>' +
+    '<div class="row"><span class="muted">' + esc_(p['ลีก']) + '</span>' +
+      '<span class="muted">' + (when ? esc_(thDate(when)) + ' ' + esc_(thTime(when)) : '') + '</span></div>' +
+    '<div class="big">' + home + ' <span class="muted">VS</span> ' + away + '</div>' +
+    predictLine_(p) +
+    '<div class="row">' +
+      '<span class="pick-pct">' + (isNaN(pct) ? '' : pct + '%') + '</span>' +
+      '<span class="pick-odds">' + esc_(fmtOdds(p['ราคา'])) + '</span>' +
+    '</div>' +
+    (cd ? '<div class="muted">' + esc_(cd) + '</div>' : '');
+}
+
+function pickCard(p, nowMs) {
+  return '<div class="card pick">' + pickBody_(p, nowMs) + '</div>';
+}
+
+/** ชื่อช่องบน Forebet — ไม่รู้จักช่องไหน ก็โชว์รหัสดิบไปตรงๆ ดีกว่าเงียบ */
+var PIN_LABEL = { FEATURED: 'FEATURED MATCH', POTD: 'PICK OF THE DAY' };
+
+/** ใบปักหมุด: ภาพนิ่งของตอนที่ไปดึงมา ไม่ใช่ของสด จึงต้องบอกเวลาที่ดึงเสมอ */
+function pinCard(p, nowMs) {
+  var kind = String(p['ช่อง'] || '').trim().toUpperCase();
+  var got = String(p['ดึงเมื่อ'] || '').trim();
+  return '' +
+    '<div class="card pick pin">' +
+      '<div class="pin-cap">' + esc_(PIN_LABEL[kind] || kind) + '</div>' +
+      pickBody_(p, nowMs) +
+      (got ? '<div class="pin-when">ดึงมาเมื่อ ' + esc_(thDate(got)) + ' ' + esc_(thTime(got)) + '</div>' : '') +
     '</div>';
 }
 
 function renderForebet(data, nowMs) {
-  var picks = (data && data.picks ? data.picks : []).slice();
+  var pinned = (data && data.pinned ? data.pinned : []).slice();
+
+  /* คู่ปักหมุดติดมาในลิสต์ picks ด้วย ต้องคัดออก ไม่งั้นเห็นซ้ำ 2 ใบ */
+  var seen = {}, i;
+  for (i = 0; i < pinned.length; i++) seen[String(pinned[i].id || '')] = 1;
+
+  var picks = [], all = (data && data.picks ? data.picks : []);
+  for (i = 0; i < all.length; i++) {
+    if (!seen[String(all[i].id || '')]) picks.push(all[i]);
+  }
   picks.sort(function (a, b) { return Number(b['เปอร์เซ็นต์']) - Number(a['เปอร์เซ็นต์']); });
   picks = picks.slice(0, MAX_CARDS);
 
   var head = '<div class="muted">ข้อมูลรอบ ' + esc_(thTime(data && data.at)) + '</div>';
-  var body = picks.length
-    ? picks.map(function (p) { return pickCard(p, nowMs); }).join('')
-    : '<div class="card"><div class="big">ยังไม่มีคู่ของรอบนี้</div>' +
+  var pin = pinned.map(function (p) { return pinCard(p, nowMs); }).join('');
+  var body = picks.map(function (p) { return pickCard(p, nowMs); }).join('');
+  if (!pin && !body) {
+    body = '<div class="card"><div class="big">ยังไม่มีคู่ของรอบนี้</div>' +
       '<div class="muted">รอบถัดไปอีกไม่นาน หรือกรอกเองได้เลย</div></div>';
+  }
 
-  return head + body + '<a class="btn" href="#mybet">กรอกเอง</a>';
+  return head + pin + body + '<a class="btn" href="#mybet">กรอกเอง</a>';
 }
