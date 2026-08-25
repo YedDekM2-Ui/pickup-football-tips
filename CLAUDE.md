@@ -15,6 +15,13 @@
 | 5 | ทางที่แค่อ่านชีต ใช้ `sheetIfExists_` (ไม่มีชีตคืน null) — `sheetEnsure_` ใช้เฉพาะทางเขียน | สร้างชีตเปล่าทิ้งไว้ (เคยพลาดใน PIKTAX) |
 | 6 | ราคา แฮนดิแคป สกอร์ เวลา ห้ามแปลง ห้ามปัด | ตัวเลขไม่ตรงสลิป |
 
+## สถานะขึ้นจริง (25 ส.ค. 69)
+
+- โค้ดครบงาน 1–8 · เทสต์ `ผ่าน 61/61`
+- GAS: สร้างโปรเจกต์ `Pickup Football Tips` (บัญชี t.seeedz) แล้ว · ดัน 5 ไฟล์ขึ้น HEAD แล้ว · scriptId อยู่ที่ `gas/.scriptId` (gitignore)
+- **ยังไม่ live** — ค้างที่ 4 อย่างที่ต้องทำเอง: รัน `setupSheets()` / กด Deploy ครั้งแรก / สร้าง repo GitHub + โทเคน / ตั้ง Pages
+- ได้ URL `/exec` มาแล้วให้ทำต่อที่ Step 5 ของ `docs/superpowers/plans/2026-08-25-pickup-web-and-data.md`
+
 ## แก้แล้วขึ้นยังไง
 
 1. `node _tests/run.js` ต้องเขียวหมดก่อน
