@@ -1,0 +1,37 @@
+/* dos.css — ธีมดอสเขียว ใช้เฉพาะหน้า MY BET เท่านั้น
+   หน้า 1 กับ 3 ยังเป็นดำ-พรีเมียมของ base.css */
+body.page-mybet { background: #000; }
+
+.dos-wrap {
+  position: relative; overflow: hidden;
+  background: #000; color: #33ff66;
+  border: 1px solid #1c7a3a; border-radius: 10px; padding: 14px;
+  font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace;
+  font-size: 14px; line-height: 1.6;
+  text-shadow: 0 0 6px rgba(51, 255, 102, .35);
+}
+.dos-mark {
+  position: absolute; top: 38%; left: 50%;
+  transform: translate(-50%, -50%) rotate(-18deg);
+  font-size: 68px; font-weight: 800; letter-spacing: .1em;
+  color: #33ff66; opacity: .07; pointer-events: none; white-space: nowrap;
+}
+.slip { position: relative; z-index: 1; border-bottom: 1px dashed #1c7a3a; padding: 10px 0; }
+.slip:last-child { border-bottom: 0; }
+.slip-top { opacity: .7; font-size: 12px; }
+.slip-teams { font-size: 16px; font-weight: 700; margin: 2px 0; }
+.slip-score { font-size: 22px; font-weight: 800; letter-spacing: .06em; }
+.slip-kick { opacity: .75; font-size: 12px; margin-bottom: 6px; }
+.main, .sub { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 30px; }
+.sub { opacity: .9; padding-left: 14px; }
+.sub::before { content: "└ "; opacity: .6; }
+.main-p, .sub-p { margin-left: auto; font-weight: 700; }
+.slip-sum { margin-top: 6px; padding-top: 6px; border-top: 1px dotted #1c7a3a; }
+
+.badge { border: 1px solid currentColor; border-radius: 4px; padding: 0 6px; font-size: 12px; }
+.r-winfull  { color: #33ff66; }
+.r-winhalf  { color: #9bff5a; }
+.r-push     { color: #cfcfcf; }
+.r-losshalf { color: #ffb14a; }
+.r-lossfull { color: #ff5a4a; }
+.r-pending  { color: #6fe3ff; }

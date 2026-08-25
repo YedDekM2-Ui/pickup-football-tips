@@ -80,3 +80,78 @@ test('renderForebet มีปุ่มกรอกเองเสมอ แล�
   ok(f.renderForebet(f.MOCK, Date.now()).indexOf('กรอกเอง') >= 0);
   ok(f.renderForebet({ picks: [], bets: [], ledger: {} }, Date.now()).indexOf('กรอกเอง') >= 0);
 });
+
+const wm = loadWeb(['web/js/fmt.js', 'web/js/mock.js',
+                    'web/js/page-forebet.js', 'web/js/page-mybet.js']);
+
+test('resultBadge ครบ 5 ผล + ยังไม่รู้ผล', () => {
+  ok(wm.resultBadge('WIN_FULL').indexOf('ชนะเต็ม') >= 0);
+  ok(wm.resultBadge('WIN_HALF').indexOf('ชนะครึ่ง') >= 0);
+  ok(wm.resultBadge('PUSH').indexOf('คืนทุน') >= 0);
+  ok(wm.resultBadge('LOSS_HALF').indexOf('แพ้ครึ่ง') >= 0);
+  ok(wm.resultBadge('LOSS_FULL').indexOf('แพ้เต็ม') >= 0);
+  ok(wm.resultBadge('').indexOf('รอผล') >= 0);
+  const classes = ['WIN_FULL','WIN_HALF','PUSH','LOSS_HALF','LOSS_FULL','']
+    .map(c => (wm.resultBadge(c).match(/r-[a-z]+/) || [''])[0]);
+  eq(new Set(classes).size, 6, 'ทั้ง 6 แบบต้องคนละสี');
+});
+
+test('marketLine เขียนแต่ละตลาดเป็นภาษาคน', () => {
+  eq(wm.marketLine({ 'ตลาด':'AH', 'ทีมที่เลือก':'Milan', 'ทีมที่เลือกไทย':'มิลาน', 'แฮนดิแคป':0.25 }),
+     'มิลาน +0.25');
+  eq(wm.marketLine({ 'ตลาด':'OVER_UNDER', 'เส้น':1.5 }), 'สูง 1.5');
+  eq(wm.marketLine({ 'ตลาด':'OVER_UNDER', 'เส้น':-2.5 }), 'ต่ำ 2.5');
+  eq(wm.marketLine({ 'ตลาด':'DRAW' }), 'เสมอ');
+  eq(wm.marketLine({ 'ตลาด':'CORRECT_SCORE', 'ทายสกอร์':'2-1' }), 'สกอร์ตรง 2-1');
+});
+
+test('betSlip โชว์เงิน ราคา ผล และบิลย่อยครบ', () => {
+  const html = wm.betSlip(wm.MOCK.bets[0], Date.now());
+  ok(html.indexOf('อองเซ กัลดาส') >= 0, 'ต้องมีทีมที่เลือก');
+  ok(html.indexOf('+0.5') >= 0, 'ต้องมีแฮนดิแคป');
+  ok(html.indexOf('1.95') >= 0, 'ต้องมีราคา');
+  ok(html.indexOf('300.00') >= 0, 'ต้องมีเงินที่ลง');
+  ok(html.indexOf('ชนะเต็ม') >= 0, 'ต้องมีผล');
+  ok(html.indexOf('สูง 1.5') >= 0, 'ต้องมีบิลย่อยใบที่ 1');
+  ok(html.indexOf('เสมอ') >= 0, 'ต้องมีบิลย่อยใบที่ 2');
+  ok(html.indexOf('6.161') >= 0, 'ราคาบิลย่อยห้ามปัด');
+  ok(html.indexOf('450.00') >= 0, 'ต้องมียอดรวมเงินทั้งคู่');
+  ok(html.indexOf('+615.05') >= 0, 'ต้องมียอดรวมกำไรทั้งคู่');
+});
+
+test('หน้า 2 ห้ามหลุดของต้องห้าม (กฎเหล็กสเปกข้อ 10)', () => {
+  const dirty = Object.assign({}, wm.MOCK.bets[0], {
+    'เปอร์เซ็นต์': 56,
+    'เดาสกอร์': '2-1',
+    'บทวิเคราะห์': 'Forebet บอกว่าเจ้าบ้านฟอร์มดี',
+    'Telegram_Message_ID': 9911,
+    'กุญแจกันซ้ำ': 'KEY-XYZ'
+  });
+  const html = wm.betSlip(dirty, Date.now());
+  eq(html.indexOf('BT-1'), -1, 'ห้ามโชว์ Bet ID');
+  eq(html.indexOf('56%'), -1, 'ห้ามโชว์เปอร์เซ็นต์');
+  eq(html.indexOf('2-1'), -1, 'ห้ามโชว์สกอร์ที่ Forebet เดา');
+  eq(html.indexOf('Forebet'), -1, 'ห้ามโชว์บทวิเคราะห์');
+  eq(html.indexOf('9911'), -1, 'ห้ามโชว์เลขข้อความเทเลแกรม');
+  eq(html.indexOf('KEY-XYZ'), -1, 'ห้ามโชว์กุญแจกันซ้ำ');
+});
+
+test('betSlip ห้ามโชว์แฮนดิแคปของฝั่งตรงข้าม', () => {
+  const b = Object.assign({}, wm.MOCK.bets[1]);
+  b['แฮนดิแคป'] = 0.5;
+  const html = wm.betSlip(b, Date.now());
+  ok(html.indexOf('+0.5') >= 0, 'ต้องมีแฮนดิแคปฝั่งที่เลือก');
+  eq(html.indexOf('-0.5'), -1, 'ห้ามโชว์แฮนดิแคปฝั่งตรงข้าม');
+});
+
+test('renderMyBet มีลายน้ำและกรอบธีมดอส', () => {
+  const html = wm.renderMyBet(wm.MOCK, Date.now());
+  ok(html.indexOf('dos-wrap') >= 0, 'ต้องมีกรอบธีมดอส');
+  ok(html.indexOf('dos-mark') >= 0, 'ต้องมีลายน้ำ');
+  ok(html.indexOf('Pickup') >= 0, 'ลายน้ำต้องเขียนว่า Pickup');
+});
+
+test('renderMyBet ไม่มีบิล = บอกตรงๆ', () => {
+  const html = wm.renderMyBet({ picks: [], bets: [], ledger: {} }, Date.now());
+  ok(html.indexOf('ยังไม่มีบิล') >= 0);
+});
