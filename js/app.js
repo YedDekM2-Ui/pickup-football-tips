@@ -32,7 +32,7 @@ function mount_() {
   if (typeof document === 'undefined') return;
   var route = routeOf(location.hash);
   document.body.className = 'page-' + route;
-  document.getElementById('note').textContent = staleNote(STATE.source, STATE.at);
+  document.getElementById('note').innerHTML = statusPill(STATE.source, STATE.at);
   document.getElementById('app').innerHTML = renderPage(route, STATE.data, Date.now());
   document.getElementById('nav').innerHTML = renderNav(route);
 }

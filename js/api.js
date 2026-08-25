@@ -56,6 +56,19 @@ function staleNote(source, atMs) {
   return 'ข้อมูลตัวอย่าง — ยังไม่ได้ต่อเซิร์ฟเวอร์';
 }
 
+/** ป้ายสถานะบนหัวจอ — LIVE กระพริบแดงสลับขาว "เฉพาะตอนต่อเซิร์ฟเวอร์ได้จริง"
+    ของเก่า/ของตัวอย่างต้องไม่ขึ้น LIVE เด็ดขาด ไม่งั้นราคาค้างจะดูเหมือนราคาสด */
+function statusPill(source, atMs) {
+  var live = (source === 'สด');
+  var cls = live ? 'pill live' : 'pill off';
+  var text = live ? 'LIVE' : (source === 'แคช' ? 'OFFLINE' :
+             (source === 'ต้องใส่กุญแจ' ? 'NO KEY' : 'DEMO'));
+  return '<span class="' + cls + '">' + text + '</span>' +
+         '<span class="pill-note">' + staleNote(source, atMs) + '</span>';
+  /* ข้อความทุกบรรทัดในนี้เขียนเองทั้งหมด ไม่มีของจากผู้ใช้ เลยไม่ต้อง esc_
+     (esc_ อยู่คนละไฟล์ ไฟล์นี้ต้องเทสต์เดี่ยวได้) */
+}
+
 function fetchAll_() {
   var k = loadKey_() || keyFromUrl_();
   if (!API_URL || !k) return Promise.resolve(null);

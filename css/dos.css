@@ -6,6 +6,7 @@ body.page-mybet { background: #000; }
   position: relative; overflow: hidden;
   background: #000; color: #33ff66;
   border: 1px solid #1c7a3a; border-radius: 10px; padding: 14px;
+  margin-bottom: 12px;
   font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace;
   font-size: 14px; line-height: 1.6;
   text-shadow: 0 0 6px rgba(51, 255, 102, .35);
@@ -16,10 +17,14 @@ body.page-mybet { background: #000; }
   font-size: 68px; font-weight: 800; letter-spacing: .1em;
   color: #33ff66; opacity: .07; pointer-events: none; white-space: nowrap;
 }
-.slip { position: relative; z-index: 1; border-bottom: 1px dashed #1c7a3a; padding: 10px 0; }
-.slip:last-child { border-bottom: 0; }
-.slip-top { opacity: .7; font-size: 12px; }
-.slip-teams { font-size: 16px; font-weight: 700; margin: 2px 0; }
+.slip { position: relative; z-index: 1; padding: 2px 0; }
+
+/* 3 บรรทัดหัวสลิป ต้องดูไม่เหมือนกันเลย — ขนาด/น้ำหนัก/ระยะตัวอักษรคนละอย่าง
+   จะได้ไม่มีทางอ่านสลับบรรทัดกันตอนดูเร็วๆ */
+.slip-when   { font-size: 15px; font-weight: 700; letter-spacing: .10em; opacity: .95; }
+.slip-league { font-size: 11px; font-weight: 400; letter-spacing: .22em;
+               text-transform: uppercase; opacity: .55; margin-top: 2px; }
+.slip-teams  { font-size: 18px; font-weight: 800; letter-spacing: 0; margin: 4px 0 2px; }
 .slip-score { font-size: 22px; font-weight: 800; letter-spacing: .06em; }
 .slip-kick { opacity: .75; font-size: 12px; margin-bottom: 6px; }
 .main, .sub { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 30px; }
