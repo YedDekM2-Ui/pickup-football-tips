@@ -22,16 +22,25 @@
 - **ด่านกุญแจ**: `doGet` ต้องมี `?k=` ตรงกับ Script Property `APP_KEY` — ยังไม่ตั้ง = ปฏิเสธทุกอย่าง (ห้าม default เป็นเปิดหมด) · เจ้าของตั้งค่าแล้ว 25 ส.ค. 69 ยิงผ่านจริง (ค่ากุญแจไม่มีใครรู้นอกจากเจ้าของ)
   - `?p=ping` เปิดโล่งได้ แต่ต้องไม่มีข้อมูลติดออกไป
   - หน้าเว็บรับกุญแจจาก `?k=` ครั้งเดียว เก็บ localStorage `pickup.key.v1` แล้วลบออกจากแถบที่อยู่ · **กุญแจห้ามอยู่ในไฟล์ repo**
-- หน้าเว็บ: repo `YedDekM2-Ui/pickup-football-tips` (public) ดันขึ้นแล้ว 25 ส.ค. 69 · โทเคนอยู่ที่ `D:\Projects\.gas-creds\github-pickup.token.txt`
-  - ⚠️ โทเคนมีสิทธิ์ Pages แค่ **อ่าน** (POST /pages โดน 403) — สั่งเปิด Pages ผ่าน API ไม่ได้ ต้องกดในหน้า Settings → Pages เอง
-- **ค้างที่เจ้าของ**: ตั้ง Pages ที่ branch `main` โฟลเดอร์ `/web` / BotFather / rotate คีย์ Vision
-- ทำต่อที่ Step 6 ของ `docs/superpowers/plans/2026-08-25-pickup-web-and-data.md`
+- หน้าเว็บ **LIVE** → `https://yeddekm2-ui.github.io/pickup-football-tips/` (ยิงครบ 10 ไฟล์ ได้ 200 ทั้งหมด 25 ส.ค. 69)
+  - repo `YedDekM2-Ui/pickup-football-tips` (public) · โทเคน `D:\Projects\.gas-creds\github-pickup.token.txt`
+  - ⚠️ **Pages เลือกโฟลเดอร์ได้แค่ `/ (root)` กับ `/docs`** — ไม่มี `/web` ให้เลือก จึงดันข้างใน `web/` ไปเป็นสาขา `gh-pages` แทน (GitHub เปิด Pages ให้เองอัตโนมัติ)
+  - ⚠️ โทเคนมีสิทธิ์ Pages แค่ **อ่าน** (POST /pages = 403) — สั่งเปิด/สลับสาขา Pages ผ่าน API ไม่ได้ ต้องกดในหน้า Settings
+- **ค้างที่เจ้าของ**: BotFather / rotate คีย์ Vision
+- ทำต่อที่ Step 7 (เทสต์บนไอโฟน) ของ `docs/superpowers/plans/2026-08-25-pickup-web-and-data.md`
 
 ## แก้แล้วขึ้นยังไง
 
 1. `node _tests/run.js` ต้องเขียวหมดก่อน
 2. หลังบ้าน: `node "C:\Users\jazza\.claude\skills\gas\scripts\push.js" "D:\Projects\t.seeedz\pickup-football-tips" "ข้อความ version"`
-3. หน้าเว็บ: คอมมิตแล้ว push ขึ้น GitHub — Pages ชี้ที่โฟลเดอร์ `web/`
+3. หน้าเว็บ: คอมมิต → push `main` → **แล้วต้องดัน `web/` ขึ้น `gh-pages` ด้วย (ไม่งั้นหน้าเว็บไม่เปลี่ยน)**
+   ```powershell
+   $t = (Get-Content "D:\Projects\.gas-creds\github-pickup.token.txt" -Raw).Trim()
+   $u = "https://x-access-token:$t@github.com/YedDekM2-Ui/pickup-football-tips.git"
+   git push $u main:main
+   git subtree push --prefix=web $u gh-pages
+   ```
+   (โทเคนห้ามเขียนลง `.git/config` — ใส่ใน URL ตอน push เท่านั้น)
 4. ยิงเน็ตต้องใช้ PowerShell `Invoke-WebRequest` (Bash tool บนเครื่องนี้ออกเน็ตไม่ได้)
 
 ## ไฟล์สำคัญ
