@@ -136,10 +136,21 @@ function payloadAll_() {
   };
 }
 
+/* ด่านกุญแจ — เว็บแอปเปิดให้ Anyone เข้าถึง (จำเป็น) กุญแจจึงเป็นด่านเดียวที่กันคนอื่น
+   ตั้งค่าที่ Project Settings > Script Properties ชื่อ APP_KEY เท่านั้น ห้ามเขียนลงไฟล์
+   ยังไม่ตั้ง = ปิดตาย ไม่ใช่เปิดหมด (บทเรียน ADMIN_KEY ของ PIKTAX) */
+function keyOk_(q) {
+  var want = prop_('APP_KEY');
+  if (!want) return false;
+  return String((q && q.k) || '') === want;
+}
+
 function doGet(e) {
   try {
-    var p = (e && e.parameter && e.parameter.p) ? String(e.parameter.p) : 'all';
+    var q = (e && e.parameter) ? e.parameter : {};
+    var p = q.p ? String(q.p) : 'all';
     if (p === 'ping') return jsonOut_({ ok: true, at: nowIso_() });
+    if (!keyOk_(q)) return jsonOut_({ ok: false, needKey: true, error: 'ต้องใส่กุญแจ' });
     return jsonOut_(payloadAll_());
   } catch (err) {
     return jsonOut_({ ok: false, error: String(err && err.message ? err.message : err) });

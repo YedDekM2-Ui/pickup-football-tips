@@ -24,7 +24,8 @@ function loadWeb(files, stubs) {
     },
     __store: store,
     fetch: () => Promise.reject(new Error('fetch ไม่ได้ถูก stub ในเทสต์นี้')),
-    location: { hash: '' }
+    location: { hash: '', search: '', pathname: '/' },
+    history: { replaceState: function () { /* ลบกุญแจออกจากแถบที่อยู่ */ } }
   };
   Object.assign(sandbox, stubs || {});
   sandbox.__ls = () => sandbox.localStorage;   /* ให้เทสต์ยัดของเสียเข้าแคชได้ */

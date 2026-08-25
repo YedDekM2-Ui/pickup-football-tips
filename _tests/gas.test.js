@@ -81,10 +81,11 @@ test('หัวตารางทั้ง 3 ชีตตรงตามที�
   eq(g.HEADERS.BETS[2], 'Bill_Type');
 });
 
-function apiEnv(book) {
+function apiEnv(book, props) {
+  const P = Object.assign({ SHEET_ID: 'S' }, props || {});
   return loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Api.gs'], {
     SpreadsheetApp: new FakeSpreadsheetApp(book),
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => k === 'SHEET_ID' ? 'S' : null }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in P ? P[k] : null) }) },
     Utilities: { formatDate: () => '2026-08-25T18:00:00' },
     ContentService: {
       MimeType: { JSON: 'json' },
@@ -187,12 +188,13 @@ test('doGet?p=ping ตอบได้ตั้งแต่ยังไม่ม�
 test('doGet พังต้องตอบเป็น JSON ok:false ไม่ใช่หน้า error ของกูเกิล', () => {
   const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Api.gs'], {
     SpreadsheetApp: new FakeSpreadsheetApp({}),
-    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+    // ผ่านด่านกุญแจมาแล้ว (มี APP_KEY) แต่ยังไม่ได้ตั้ง SHEET_ID
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k === 'APP_KEY' ? 'kk' : null) }) },
     Utilities: { formatDate: () => '2026-08-25T18:00:00' },
     ContentService: { MimeType: { JSON: 'json' },
       createTextOutput: t => ({ _t: t, setMimeType() { return this; }, getContent() { return this._t; } }) }
   });
-  const j = JSON.parse(g.doGet({ parameter: {} }).getContent());
+  const j = JSON.parse(g.doGet({ parameter: { k: 'kk' } }).getContent());
   eq(j.ok, false);
   ok(String(j.error).indexOf('SHEET_ID') >= 0, 'ต้องบอกสาเหตุจริง');
 });
@@ -204,4 +206,51 @@ test('payloadAll_ ได้รูปร่างตามที่ล็อก�
   ok(Array.isArray(p.picks) && Array.isArray(p.bets));
   ok(typeof p.at === 'string' && p.at.indexOf('+07:00') > 0, 'เวลาเป็น +07:00');
   ok(p.ledger && 'อัตราชนะ' in p.ledger);
+});
+
+/* ---- ด่านกุญแจ (ห้ามให้คนอื่นอ่านบิลได้จาก URL เปล่า) ---- */
+
+const KEYBOOK = () => bookOf([betRow({ ID: 'B1', เงิน: 100, กำไร: 90 })], [['Arsenal', 'อาร์เซนอล']]);
+const getJson = (g, q) => JSON.parse(g.doGet({ parameter: q }).getContent());
+
+test('ไม่ได้ตั้ง APP_KEY = ปิดตาย ไม่ใช่เปิดหมด (fail-closed)', () => {
+  const g = apiEnv(KEYBOOK());                       // ไม่มี APP_KEY ในพร็อพเพอร์ตี้
+  const r = getJson(g, { p: 'all' });
+  eq(r.ok, false, 'ยังไม่ตั้งกุญแจต้องไม่คายข้อมูล');
+  eq(r.needKey, true);
+});
+
+test('ตั้ง APP_KEY แล้ว แต่ไม่ส่งกุญแจมา = ปฏิเสธ', () => {
+  const g = apiEnv(KEYBOOK(), { APP_KEY: 'ss1234' });
+  const r = getJson(g, { p: 'all' });
+  eq(r.ok, false);
+  eq(r.needKey, true);
+});
+
+test('ส่งกุญแจผิด = ปฏิเสธ', () => {
+  const g = apiEnv(KEYBOOK(), { APP_KEY: 'ss1234' });
+  eq(getJson(g, { p: 'all', k: 'ss1235' }).ok, false);
+});
+
+test('ส่งกุญแจถูก = ได้ข้อมูล', () => {
+  const g = apiEnv(KEYBOOK(), { APP_KEY: 'ss1234' });
+  const r = getJson(g, { p: 'all', k: 'ss1234' });
+  eq(r.ok, true);
+  eq(r.bets.length, 1);
+});
+
+test('ตอนปฏิเสธห้ามมีเศษข้อมูลบิลติดออกไปเลย', () => {
+  const g = apiEnv(KEYBOOK(), { APP_KEY: 'ss1234' });
+  const raw = g.doGet({ parameter: { p: 'all' } }).getContent();
+  ok(raw.indexOf('bets') < 0, 'ไม่ควรมีคำว่า bets');
+  ok(raw.indexOf('อาร์เซนอล') < 0, 'ไม่ควรมีชื่อทีม');
+  ok(raw.indexOf('ss1234') < 0, 'ห้ามบอกกุญแจที่ถูกต้องออกไป');
+});
+
+test('ping ยังเช็คได้โดยไม่ต้องมีกุญแจ (ไว้ดูว่า deploy ติดไหม) แต่ต้องไม่มีข้อมูล', () => {
+  const g = apiEnv(KEYBOOK(), { APP_KEY: 'ss1234' });
+  const r = getJson(g, { p: 'ping' });
+  eq(r.ok, true);
+  eq(r.bets, undefined);
+  eq(r.ledger, undefined);
 });

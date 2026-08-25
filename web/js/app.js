@@ -39,6 +39,7 @@ function mount_() {
 
 /** ขึ้นจอจากแคชก่อน ไม่รอเน็ต แล้วค่อยทับด้วยของสดเมื่อมันมาถึง */
 function boot_() {
+  bootKey_();
   var picked = pickData(null, loadCache());
   STATE.data = picked.data; STATE.source = picked.source;
   mount_();

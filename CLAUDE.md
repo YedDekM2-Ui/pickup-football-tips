@@ -17,10 +17,13 @@
 
 ## สถานะขึ้นจริง (25 ส.ค. 69)
 
-- โค้ดครบงาน 1–8 · เทสต์ `ผ่าน 61/61`
-- GAS: สร้างโปรเจกต์ `Pickup Football Tips` (บัญชี t.seeedz) แล้ว · ดัน 5 ไฟล์ขึ้น HEAD แล้ว · scriptId อยู่ที่ `gas/.scriptId` (gitignore)
-- **ยังไม่ live** — ค้างที่ 4 อย่างที่ต้องทำเอง: รัน `setupSheets()` / กด Deploy ครั้งแรก / สร้าง repo GitHub + โทเคน / ตั้ง Pages
-- ได้ URL `/exec` มาแล้วให้ทำต่อที่ Step 5 ของ `docs/superpowers/plans/2026-08-25-pickup-web-and-data.md`
+- โค้ดครบงาน 1–8 · เทสต์ `ผ่าน 75/75`
+- ชีตสร้างแล้ว (3 แท็บ) · หลังบ้าน **LIVE v2** · `?p=ping` และ `?p=all` ยิงผ่านแล้ว
+- **ด่านกุญแจ**: `doGet` ต้องมี `?k=` ตรงกับ Script Property `APP_KEY` — ยังไม่ตั้ง = ปฏิเสธทุกอย่าง (ห้าม default เป็นเปิดหมด)
+  - `?p=ping` เปิดโล่งได้ แต่ต้องไม่มีข้อมูลติดออกไป
+  - หน้าเว็บรับกุญแจจาก `?k=` ครั้งเดียว เก็บ localStorage `pickup.key.v1` แล้วลบออกจากแถบที่อยู่ · **กุญแจห้ามอยู่ในไฟล์ repo**
+- **ค้างที่เจ้าของ**: ตั้ง `APP_KEY` เอง / สร้าง repo + โทเคน (Contents+Pages RW) / ตั้ง Pages ที่ `/web` / BotFather / rotate คีย์ Vision
+- ทำต่อที่ Step 6 ของ `docs/superpowers/plans/2026-08-25-pickup-web-and-data.md`
 
 ## แก้แล้วขึ้นยังไง
 

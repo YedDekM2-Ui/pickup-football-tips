@@ -4,6 +4,27 @@
 
 var API_URL = 'https://script.google.com/macros/s/AKfycbzDNNda4bOOkcu0ashVFGIK7F3MoeSqGUBabMjvQVsVw_jaonJVKd8uKVmsn7admOqKcg/exec';
 var CACHE_KEY = 'pickup.data.v1';
+var KEY_STORE = 'pickup.key.v1';
+
+/* กุญแจไม่เคยอยู่ในไฟล์นี้ (repo เป็น public) — รับจาก ?k= ตอนเปิดครั้งแรก แล้วจำไว้ในเครื่อง */
+function keyFromUrl_() {
+  var s = (typeof location !== 'undefined' && location.search) ? String(location.search) : '';
+  var m = s.match(/[?&]k=([^&]*)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
+function saveKey_(k) { try { localStorage.setItem(KEY_STORE, k); } catch (e) {} }
+function loadKey_() { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
+
+/** เปิดด้วยลิงก์ที่มีกุญแจ = จำไว้ แล้วลบออกจากแถบที่อยู่ทันที กันติดไปกับการแชร์ลิงก์ */
+function bootKey_() {
+  var k = keyFromUrl_();
+  if (k) {
+    saveKey_(k);
+    try { history.replaceState(null, '', location.pathname + (location.hash || '')); } catch (e) {}
+  }
+  return k || loadKey_();
+}
 
 function saveCache(d) {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), d: d })); }
@@ -21,6 +42,9 @@ function loadCache() {
 
 function pickData(fresh, cached) {
   if (fresh && fresh.ok === true) return { data: fresh, source: 'สด' };
+  if (fresh && fresh.needKey === true) {
+    return { data: (cached && cached.ok === true) ? cached : MOCK, source: 'ต้องใส่กุญแจ' };
+  }
   if (cached && cached.ok === true) return { data: cached, source: 'แคช' };
   return { data: MOCK, source: 'ตัวอย่าง' };
 }
@@ -28,12 +52,14 @@ function pickData(fresh, cached) {
 function staleNote(source, atMs) {
   if (source === 'สด') return 'ล่าสุด ' + thTime(new Date(Number(atMs)).toISOString());
   if (source === 'แคช') return 'ออฟไลน์ — ของที่จำไว้ล่าสุด';
+  if (source === 'ต้องใส่กุญแจ') return 'ต้องใส่กุญแจก่อน — เปิดลิงก์ที่ลงท้าย ?k=... อีกครั้ง';
   return 'ข้อมูลตัวอย่าง — ยังไม่ได้ต่อเซิร์ฟเวอร์';
 }
 
 function fetchAll_() {
-  if (!API_URL) return Promise.resolve(null);
-  return fetch(API_URL + '?p=all', { method: 'GET' })
+  var k = loadKey_() || keyFromUrl_();
+  if (!API_URL || !k) return Promise.resolve(null);
+  return fetch(API_URL + '?p=all&k=' + encodeURIComponent(k), { method: 'GET' })
     .then(function (r) { return r.json(); })
     .catch(function () { return null; });
 }

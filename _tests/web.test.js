@@ -263,3 +263,61 @@ test('staleNote บอกที่มาของข้อมูลเป็น�
   ok(a.staleNote('แคช', Date.now()).indexOf('ออฟไลน์') >= 0);
   ok(a.staleNote('ตัวอย่าง', Date.now()).indexOf('ตัวอย่าง') >= 0);
 });
+
+/* ---- กุญแจฝั่งหน้าเว็บ: รับจาก ?k= ครั้งเดียวแล้วจำไว้ ห้ามฝังในไฟล์ ---- */
+
+const kenv = (search, stubs) => loadWeb(['web/js/fmt.js', 'web/js/mock.js', 'web/js/api.js'],
+  Object.assign({ location: { hash: '', search: search || '', pathname: '/' },
+                  history: { replaceState: function () {} } }, stubs || {}));
+
+test('อ่านกุญแจจาก ?k= ได้', () => {
+  eq(kenv('?k=ss1234').keyFromUrl_(), 'ss1234');
+});
+
+test('มีตัวแปรอื่นปนก็ยังอ่านออก และไม่มี k = ได้ค่าว่าง', () => {
+  eq(kenv('?x=1&k=ss1234&y=2').keyFromUrl_(), 'ss1234');
+  eq(kenv('?x=1').keyFromUrl_(), '');
+  eq(kenv('').keyFromUrl_(), '');
+});
+
+test('ไฟล์ที่ขึ้น repo ต้องไม่มีกุญแจฝังอยู่', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'api.js'), 'utf8');
+  ok(!/APP_KEY\s*=\s*['\"][^'\"]+/.test(src), 'ห้ามมีกุญแจตัวจริงในไฟล์');
+});
+
+test('เปิดด้วย ?k= แล้วจำไว้ ครั้งต่อไปเปิดเปล่าๆ ก็ยังได้กุญแจเดิม', () => {
+  const a = kenv('?k=ss1234');
+  eq(a.bootKey_(), 'ss1234');
+  eq(a.__ls().getItem('pickup.key.v1'), 'ss1234');
+});
+
+test('ไม่มีกุญแจเลย = ไม่ต้องยิงเน็ตให้เปลืองรอ', () => {
+  let called = 0;
+  const a = kenv('', { fetch: () => { called++; return Promise.resolve({ json: () => ({}) }); } });
+  return a.fetchAll_().then((r) => { eq(r, null); eq(called, 0, 'ไม่ควรยิง'); });
+});
+
+test('มีกุญแจ = แนบไปกับคำขอ', () => {
+  let url = '';
+  const a = kenv('?k=ss1234', { fetch: (u) => { url = u; return Promise.resolve({ json: () => ({ ok: true }) }); } });
+  a.bootKey_();
+  return a.fetchAll_().then(() => {
+    ok(url.indexOf('p=all') > 0, 'ต้องขอ p=all');
+    ok(url.indexOf('k=ss1234') > 0, 'ต้องแนบกุญแจ');
+  });
+});
+
+test('เซิร์ฟเวอร์บอกว่ากุญแจไม่ผ่าน = หน้าเว็บต้องบอกให้ใส่กุญแจ ไม่ใช่เงียบ', () => {
+  const a = kenv('');
+  const r = a.pickData({ ok: false, needKey: true }, null);
+  eq(r.source, 'ต้องใส่กุญแจ');
+  ok(a.staleNote('ต้องใส่กุญแจ', Date.now()).indexOf('กุญแจ') >= 0);
+});
+
+test('กุญแจไม่ผ่าน แต่เคยมีแคช = ยังเห็นของเดิม พร้อมป้ายบอกว่าต้องใส่กุญแจ', () => {
+  const a = kenv('');
+  const cached = { ok: true, picks: [], bets: [], ledger: {} };
+  const r = a.pickData({ ok: false, needKey: true }, cached);
+  eq(r.source, 'ต้องใส่กุญแจ');
+  eq(r.data, cached);
+});
