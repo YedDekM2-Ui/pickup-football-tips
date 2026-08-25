@@ -2,7 +2,7 @@
    บทเรียนจาก TimeTrack: เปิดแอปต้องเห็นของทันที ห้ามรอเน็ต → อ่านแคชก่อนเสมอ */
 'use strict';
 
-var API_URL = '';                       /* เติมตอน deploy (Task 9) */
+var API_URL = 'https://script.google.com/macros/s/AKfycbzDNNda4bOOkcu0ashVFGIK7F3MoeSqGUBabMjvQVsVw_jaonJVKd8uKVmsn7admOqKcg/exec';
 var CACHE_KEY = 'pickup.data.v1';
 
 function saveCache(d) {
