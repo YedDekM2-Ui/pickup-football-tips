@@ -155,3 +155,63 @@ test('renderMyBet ไม่มีบิล = บอกตรงๆ', () => {
   const html = wm.renderMyBet({ picks: [], bets: [], ledger: {} }, Date.now());
   ok(html.indexOf('ยังไม่มีบิล') >= 0);
 });
+
+const wl = loadWeb(['web/js/fmt.js', 'web/js/mock.js', 'web/js/page-forebet.js',
+                    'web/js/page-mybet.js', 'web/js/page-ledger.js']);
+
+test('segColor แดงเมื่อติดลบ เขียวเมื่อบวกหรือศูนย์', () => {
+  eq(wl.segColor(-1), 'var(--red)');
+  eq(wl.segColor(0), 'var(--green)');
+  eq(wl.segColor(5), 'var(--green)');
+});
+
+test('curveSvg เส้นแบน (ทุกจุดเท่ากัน) ต้องไม่หารด้วยศูนย์', () => {
+  const svg = wl.curveSvg([{ 'วันที่':'2026-08-01','สะสม':100 },
+                           { 'วันที่':'2026-08-02','สะสม':100 }], 300, 90);
+  ok(svg.indexOf('<svg') === 0);
+  ok(svg.indexOf('NaN') === -1, 'ห้ามมี NaN หลุดเข้า svg');
+  ok(svg.indexOf('Infinity') === -1);
+});
+
+test('curveSvg จุดเดียวก็ยังวาดได้ ไม่พัง', () => {
+  const svg = wl.curveSvg([{ 'วันที่':'2026-08-01','สะสม':-50 }], 300, 90);
+  ok(svg.indexOf('<svg') === 0);
+  ok(svg.indexOf('NaN') === -1);
+});
+
+test('curveSvg ไม่มีจุดเลย = ไม่วาด', () => {
+  eq(wl.curveSvg([], 300, 90), '');
+});
+
+test('curveSvg แต่ละท่อนใช้สีตามค่าปลายท่อน + มีเส้นศูนย์', () => {
+  const svg = wl.curveSvg([{ 'วันที่':'2026-08-24','สะสม':100 },
+                           { 'วันที่':'2026-08-25','สะสม':-150 },
+                           { 'วันที่':'2026-08-26','สะสม':615.05 }], 300, 90);
+  ok(svg.indexOf('var(--red)') >= 0, 'ท่อนที่จบต่ำกว่าศูนย์ต้องแดง');
+  ok(svg.indexOf('var(--green)') >= 0, 'ท่อนที่จบเหนือศูนย์ต้องเขียว');
+  ok(svg.indexOf('stroke-dasharray') >= 0, 'ต้องมีเส้นศูนย์แบบประ');
+  eq((svg.match(/<line /g) || []).length, 3, 'จุด 3 = ท่อน 2 + เส้นศูนย์ 1');
+});
+
+test('renderLedger โชว์ตัวเลขสรุปครบ', () => {
+  const html = wl.renderLedger(wl.MOCK);
+  ok(html.indexOf('+615.05') >= 0, 'กำไรสะสม');
+  ok(html.indexOf('450.00') >= 0, 'ลงไปทั้งหมด');
+  ok(html.indexOf('100%') >= 0, 'อัตราชนะ');
+  ok(html.indexOf('<svg') >= 0, 'ต้องมีกราฟ');
+});
+
+test('renderLedger อัตราชนะเป็น null = ขีด ไม่ใช่ NaN', () => {
+  const d = { picks: [], bets: [], ledger: { 'กำไรสะสม':0, 'ลงไปทั้งหมด':0,
+    'จำนวนใบ':0, 'อัตราชนะ':null, 'เส้นกราฟ':[] } };
+  const html = wl.renderLedger(d);
+  ok(html.indexOf('—') >= 0, 'ต้องโชว์ขีด');
+  eq(html.indexOf('NaN'), -1);
+});
+
+test('renderLedger เรียงบิลใหม่สุดขึ้นก่อน', () => {
+  const html = wl.renderLedger(wl.MOCK);
+  const iNew = html.indexOf('อองเซ กัลดาส');   // เตะ 26 ส.ค.
+  const iOld = html.indexOf('อินเตอร์');        // เตะ 25 ส.ค.
+  ok(iNew < iOld, 'บิลที่เตะทีหลังต้องอยู่บนกว่า');
+});
