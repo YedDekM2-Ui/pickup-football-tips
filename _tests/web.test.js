@@ -56,6 +56,30 @@ test('pickCard โชว์ครบ ทีม/เวลา/เปอร์เ�
   ok(html.indexOf('56%') >= 0, 'ต้องมีเปอร์เซ็นต์');
   ok(html.indexOf('1.95') >= 0, 'ต้องมีราคา');
   ok(html.indexOf('อีก 3 ชม. 12 น.') >= 0, 'ต้องมีนับถอยหลัง');
+  ok(html.indexOf('VS') >= 0, 'คู่บอลใช้คำว่า VS');
+  eq(html.indexOf('พบ'), -1, 'ไม่ใช้คำว่า พบ แล้ว');
+});
+
+test('pickCard โชว์ 1X2 กับสกอร์ที่เดา', () => {
+  const now = Date.parse('2026-08-25T18:33:00+07:00');
+  const h1 = f.pickCard(f.MOCK.picks[0], now);          // เดาผล 1 = เหย้า
+  ok(h1.indexOf('เต็ง อินเตอร์') >= 0, '1 = เต็งเจ้าบ้าน');
+  ok(h1.indexOf('เดาสกอร์ 2-1') >= 0, 'ต้องมีสกอร์ที่เดา');
+
+  const h2 = f.pickCard(f.MOCK.picks[1], now);          // เดาผล X = เสมอ
+  ok(h2.indexOf('เสมอ') >= 0, 'X = เสมอ');
+  ok(h2.indexOf('เดาสกอร์ 1-1') >= 0, 'ต้องมีสกอร์ที่เดา');
+
+  const away = Object.assign({}, f.MOCK.picks[0], { 'เดาผล': '2' });
+  ok(f.pickCard(away, now).indexOf('เต็ง มิลาน') >= 0, '2 = เต็งทีมเยือน');
+});
+
+test('ไม่มี 1X2/สกอร์ที่เดา = ไม่ขึ้นบรรทัดเปล่า', () => {
+  const now = Date.parse('2026-08-25T18:33:00+07:00');
+  const bare = Object.assign({}, f.MOCK.picks[0], { 'เดาผล': '', 'เดาสกอร์': '' });
+  const html = f.pickCard(bare, now);
+  eq(html.indexOf('pick-pred'), -1, 'ไม่มีข้อมูลก็ไม่ต้องมีบรรทัด');
+  eq(html.indexOf('เดาสกอร์'), -1, 'ห้ามมีป้ายลอย');
 });
 
 test('renderForebet เรียงเปอร์เซ็นต์มากไปน้อย และไม่เกิน 4 ใบ', () => {
@@ -105,18 +129,25 @@ test('marketLine เขียนแต่ละตลาดเป็นภาษ
   eq(wm.marketLine({ 'ตลาด':'CORRECT_SCORE', 'ทายสกอร์':'2-1' }), 'สกอร์ตรง 2-1');
 });
 
-test('betSlip โชว์เงิน ราคา ผล และบิลย่อยครบ', () => {
+test('betSlip โชว์ ราคา ผล กำไร และบิลย่อยครบ', () => {
   const html = wm.betSlip(wm.MOCK.bets[0], Date.now());
   ok(html.indexOf('อองเซ กัลดาส') >= 0, 'ต้องมีทีมที่เลือก');
   ok(html.indexOf('+0.5') >= 0, 'ต้องมีแฮนดิแคป');
   ok(html.indexOf('1.95') >= 0, 'ต้องมีราคา');
-  ok(html.indexOf('300.00') >= 0, 'ต้องมีเงินที่ลง');
   ok(html.indexOf('ชนะเต็ม') >= 0, 'ต้องมีผล');
   ok(html.indexOf('สูง 1.5') >= 0, 'ต้องมีบิลย่อยใบที่ 1');
   ok(html.indexOf('เสมอ') >= 0, 'ต้องมีบิลย่อยใบที่ 2');
   ok(html.indexOf('6.161') >= 0, 'ราคาบิลย่อยห้ามปัด');
-  ok(html.indexOf('450.00') >= 0, 'ต้องมียอดรวมเงินทั้งคู่');
   ok(html.indexOf('+615.05') >= 0, 'ต้องมียอดรวมกำไรทั้งคู่');
+  ok(html.indexOf('VS') >= 0, 'คู่บอลใช้คำว่า VS');
+});
+
+test('หน้า 2 ห้ามโชว์ยอดเงินที่แทง (เรื่องเงินอยู่หน้า 3)', () => {
+  const html = wm.betSlip(wm.MOCK.bets[0], Date.now());
+  eq(html.indexOf('300.00'), -1, 'ห้ามโชว์เงินใบหลัก');
+  eq(html.indexOf('100.00'), -1, 'ห้ามโชว์เงินบิลย่อยใบที่ 1');
+  eq(html.indexOf('50.00'), -1, 'ห้ามโชว์เงินบิลย่อยใบที่ 2');
+  eq(html.indexOf('450.00'), -1, 'ห้ามโชว์ยอดเงินรวม');
 });
 
 test('หน้า 2 ห้ามหลุดของต้องห้าม (กฎเหล็กสเปกข้อ 10)', () => {
@@ -212,8 +243,67 @@ test('renderLedger อัตราชนะเป็น null = ขีด ไม�
 test('renderLedger เรียงบิลใหม่สุดขึ้นก่อน', () => {
   const html = wl.renderLedger(wl.MOCK);
   const iNew = html.indexOf('อองเซ กัลดาส');   // เตะ 26 ส.ค.
-  const iOld = html.indexOf('อินเตอร์');        // เตะ 25 ส.ค.
+  const iOld = html.indexOf('มิลาน');           // เตะ 25 ส.ค. (โชว์แค่ฝั่งที่เลือก)
   ok(iNew < iOld, 'บิลที่เตะทีหลังต้องอยู่บนกว่า');
+});
+
+test('หน้า 3 เอาวันที่กับเวลาขึ้นก่อนชื่อทีม', () => {
+  const html = wl.renderLedger(wl.MOCK);
+  const iWhen = html.indexOf('26 ส.ค. 69');
+  const iTeam = html.indexOf('อองเซ กัลดาส');
+  ok(iWhen >= 0 && iWhen < iTeam, 'วันที่ต้องมาก่อนชื่อทีม');
+  ok(html.indexOf('08:00') >= 0, 'ต้องมีเวลาเตะด้วย');
+});
+
+test('หน้า 3 โชว์เฉพาะฝั่งที่เลือก ไม่เอาชื่อทีมทั้งคู่', () => {
+  const html = wl.renderLedger(wl.MOCK);
+  ok(html.indexOf('อองเซ กัลดาส +0.5') >= 0, 'ต้องมีฝั่งที่เลือก + แฮนดิแคป');
+  eq(html.indexOf('จูเนียร์'), -1, 'ห้ามมีชื่อทีมอีกฝั่ง');
+  eq(html.indexOf('อินเตอร์'), -1, 'ห้ามมีชื่อทีมอีกฝั่งของอีกบิล');
+});
+
+test('หน้า 3 มีบรรทัดย่อยของบิลย่อยในคู่เดิม', () => {
+  const html = wl.renderLedger(wl.MOCK);
+  ok(html.indexOf('lg-sub') >= 0, 'ต้องมีบรรทัดย่อย');
+  ok(html.indexOf('สูง 1.5') >= 0, 'บิลย่อยใบที่ 1');
+  ok(html.indexOf('+258.05') >= 0, 'กำไรบิลย่อยใบที่ 2');
+});
+
+test('หน้า 3 มีลำดับบิล + หัวเดือนบอกจำนวนบิล', () => {
+  const html = wl.renderLedger(wl.MOCK);
+  ok(html.indexOf('ส.ค. 69 · 2 บิล') >= 0, 'หัวเดือนต้องบอกว่าเดือนนี้กี่บิล');
+  ok(html.indexOf('#2') >= 0, 'ใบใหม่สุดของเดือนได้เลขสูงสุด');
+  ok(html.indexOf('#1') >= 0, 'ใบแรกของเดือนคือ #1');
+  ok(html.indexOf('#2') < html.indexOf('#1'), 'เลขไล่จากมากลงน้อยตามลำดับที่โชว์');
+});
+
+test('ตลาดที่ไม่มีฝั่งเลือก ตกมาใช้ชื่อคู่ VS', () => {
+  const html = wl.renderLedger({
+    ledger: {},
+    bets: [{
+      'ตลาด': 'OVER_UNDER', 'เส้น': 2.5,
+      'เหย้า': 'Inter', 'เหย้าไทย': 'อินเตอร์',
+      'เยือน': 'Milan', 'เยือนไทย': 'มิลาน',
+      'เวลาเตะ': '2026-08-25T21:45:00+07:00', 'รวมกำไร': -100, subs: []
+    }]
+  });
+  ok(html.indexOf('อินเตอร์ VS มิลาน · สูง 2.5') >= 0, 'ไม่มีฝั่งเลือกให้บอกคู่ไว้');
+});
+
+test('บิลข้ามเดือน แยกหัวเดือน นับใหม่ทุกเดือน', () => {
+  const mk = (iso) => ({
+    'ตลาด': 'DRAW', 'ทีมที่เลือก': 'Inter', 'ทีมที่เลือกไทย': 'อินเตอร์',
+    'เวลาเตะ': iso, 'รวมกำไร': 10, subs: []
+  });
+  const html = wl.renderLedger({
+    ledger: {},
+    bets: [mk('2026-09-02T20:00:00+07:00'),
+           mk('2026-08-30T20:00:00+07:00'),
+           mk('2026-08-29T20:00:00+07:00')]
+  });
+  ok(html.indexOf('ก.ย. 69 · 1 บิล') >= 0, 'เดือนใหม่แยกหัว');
+  ok(html.indexOf('ส.ค. 69 · 2 บิล') >= 0, 'เดือนเก่านับของตัวเอง');
+  ok(html.indexOf('ก.ย. 69') < html.indexOf('ส.ค. 69'), 'เดือนใหม่อยู่บน');
 });
 
 const a = loadWeb(['web/js/fmt.js', 'web/js/mock.js', 'web/js/api.js']);
@@ -363,4 +453,67 @@ test('ข้อมูลว่างของจริงยังนับเ�
   const r = allPages.pickData(EMPTY_LIVE, null);
   eq(r.source, 'สด');
   eq(r.data.bets.length, 0);
+});
+
+/* ---- หน้า 2: 1 คู่ = 1 กรอบ + เรียงบรรทัดใหม่ ---- */
+
+test('หน้า 2 แต่ละคู่แยกกรอบของตัวเอง ตัดรูปทีละคู่ได้', () => {
+  const html = wm.renderMyBet(wm.MOCK, Date.now());
+  const boxes = html.split('dos-wrap').length - 1;
+  eq(boxes, wm.MOCK.bets.length, 'จำนวนกรอบต้องเท่าจำนวนคู่');
+  const iOnce = html.indexOf('อองเซ กัลดาส');
+  const iInter = html.indexOf('อินเตอร์');
+  ok(html.lastIndexOf('dos-wrap', iInter) > iOnce, 'คู่อินเตอร์ต้องอยู่คนละกรอบกับคู่แรก');
+});
+
+test('หน้า 2 เรียง วันเวลา → ลีก → คู่แข่งขัน และตัวหนังสือคนละแบบ', () => {
+  const html = wm.betSlip(wm.MOCK.bets[0], Date.now());
+  const iWhen = html.indexOf('slip-when');
+  const iLeague = html.indexOf('slip-league');
+  const iTeams = html.indexOf('slip-teams');
+  ok(iWhen >= 0 && iLeague > iWhen && iTeams > iLeague, 'ต้องเรียง เวลา→ลีก→คู่');
+  eq(html.indexOf('slip-top'), -1, 'บรรทัดรวมแบบเก่าต้องไม่เหลือ');
+});
+
+/* ---- ป้าย LIVE: กระพริบเฉพาะตอนของสดจริงเท่านั้น ---- */
+
+test('statusPill ขึ้น LIVE เฉพาะข้อมูลสด', () => {
+  ok(a.statusPill('สด', Date.now()).indexOf('>LIVE<') >= 0);
+  ok(a.statusPill('สด', Date.now()).indexOf('pill live') >= 0);
+});
+
+test('statusPill ของเก่า/ตัวอย่าง ห้ามขึ้น LIVE เด็ดขาด', () => {
+  ['แคช', 'ตัวอย่าง', 'ต้องใส่กุญแจ'].forEach(function (s) {
+    const h = a.statusPill(s, Date.now());
+    eq(h.indexOf('LIVE'), -1, s + ' ต้องไม่โชว์ LIVE');
+    ok(h.indexOf('pill off') >= 0);
+  });
+  ok(a.statusPill('แคช', Date.now()).indexOf('OFFLINE') >= 0);
+  ok(a.statusPill('ตัวอย่าง', Date.now()).indexOf('DEMO') >= 0);
+  ok(a.statusPill('ต้องใส่กุญแจ', Date.now()).indexOf('NO KEY') >= 0);
+});
+
+/* ---- หน้า 3 แบบแอปหุ้น ---- */
+
+test('billCount_ นับทุกใบ รวมบิลย่อยและใบที่ยังไม่รู้ผล', () => {
+  eq(wl.billCount_(wl.MOCK.bets), 4);   // ใบหลัก 2 + ใบย่อย 2
+  eq(wl.billCount_([]), 0);
+  eq(wl.billCount_(null), 0);
+});
+
+test('roiText_ ยังไม่ลงเงิน = ขีด ไม่ใช่ NaN หรือหารศูนย์', () => {
+  eq(wl.roiText_(0, 0), '—');
+  eq(wl.roiText_(100, ''), '—');
+  ok(wl.roiText_(615.05, 450).indexOf('▲') === 0);
+  ok(wl.roiText_(-90, 450).indexOf('▼') === 0);
+  eq(wl.roiText_(-90, 450).indexOf('NaN'), -1);
+});
+
+test('หน้า 3 หัวแบบแอปหุ้น ป้ายอังกฤษครบ', () => {
+  const html = wl.renderLedger(wl.MOCK);
+  ['TOTAL P/L', 'ROI', 'BILLS', 'COST', 'WIN RATE'].forEach(function (t) {
+    ok(html.indexOf(t) >= 0, 'ต้องมีป้าย ' + t);
+  });
+  ok(html.indexOf('3 settled') >= 0, 'ต้องบอกด้วยว่ารู้ผลแล้วกี่ใบ');
+  ok(html.indexOf('>4<') >= 0, 'BILLS ต้องนับรวมบิลย่อย = 4');
 });

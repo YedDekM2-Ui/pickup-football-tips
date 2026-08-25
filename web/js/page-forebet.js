@@ -17,6 +17,26 @@ function esc_(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/** 1X2 ที่ Forebet เดา — แปลงเป็นชื่อทีมเลย จะได้ไม่ต้องแปลในหัว
+    ไม่มีค่ามา = คืนค่าว่าง ให้คนเรียกตัดบรรทัดทิ้ง */
+function wdlText_(p) {
+  var w = String(p['เดาผล'] || '').trim().toUpperCase();
+  if (w === '1') return 'เต็ง ' + teamTh(p['เหย้า'], p['เหย้าไทย']);
+  if (w === '2') return 'เต็ง ' + teamTh(p['เยือน'], p['เยือนไทย']);
+  if (w === 'X') return 'เสมอ';
+  return '';
+}
+
+function predictLine_(p) {
+  var parts = [];
+  var w = wdlText_(p);
+  if (w) parts.push(w);
+  var sc = String(p['เดาสกอร์'] || '').trim();
+  if (sc) parts.push('เดาสกอร์ ' + sc);
+  if (!parts.length) return '';
+  return '<div class="pick-pred">' + esc_(parts.join(' · ')) + '</div>';
+}
+
 function pickCard(p, nowMs) {
   var home = esc_(teamTh(p['เหย้า'], p['เหย้าไทย']));
   var away = esc_(teamTh(p['เยือน'], p['เยือนไทย']));
@@ -26,7 +46,8 @@ function pickCard(p, nowMs) {
     '<div class="card pick">' +
       '<div class="row"><span class="muted">' + esc_(p['ลีก']) + '</span>' +
         '<span class="muted">' + esc_(thDate(p['เวลาเตะ'])) + ' ' + esc_(thTime(p['เวลาเตะ'])) + '</span></div>' +
-      '<div class="big">' + home + ' <span class="muted">พบ</span> ' + away + '</div>' +
+      '<div class="big">' + home + ' <span class="muted">VS</span> ' + away + '</div>' +
+      predictLine_(p) +
       '<div class="row">' +
         '<span class="pick-pct">' + (isNaN(pct) ? '' : pct + '%') + '</span>' +
         '<span class="pick-odds">' + esc_(fmtOdds(p['ราคา'])) + '</span>' +
