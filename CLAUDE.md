@@ -1,0 +1,33 @@
+# Pickup Football Tips — อ่านก่อนแตะโค้ด
+
+สมุดบันทึกแทงบอลส่วนตัวคนเดียว ใช้จากไอโฟน Safari · แยกขาดจาก PIKTAX
+สเปก: `docs/superpowers/specs/2026-08-25-pickup-football-tips-design.md`
+แผน: `docs/superpowers/plans/`
+
+## กฎเหล็ก
+
+| # | กฎ | ถ้าพัง |
+|---|---|---|
+| 1 | คนละบอท คนละ GAS project คนละชีตกับ PIKTAX · ห้ามเรียก `?ff=` ของ PIKTAX | สลิปบอลไหลเข้าบัญชีภาษี / PIKTAX ล่มแล้วลามมา |
+| 2 | ห้ามแตะ `BetSlip.gs` `BetGate.gs` `BetRules.gs` `BetTeam.gs` ใน PIKTAX | ด่านกันสลิปบอลปนบัญชีพัง |
+| 3 | คีย์/โทเคน/ไอดีชีต อยู่ใน Script Properties เท่านั้น | คีย์หลุด |
+| 4 | หน้า 2 (MY BET) ห้ามโชว์ เปอร์เซ็นต์ / สกอร์ที่เดา / Bet ID / เรื่อง OCR-เทเลแกรม-ชีต | ผิดสเปกข้อ 10 |
+| 5 | ทางที่แค่อ่านชีต ใช้ `sheetIfExists_` (ไม่มีชีตคืน null) — `sheetEnsure_` ใช้เฉพาะทางเขียน | สร้างชีตเปล่าทิ้งไว้ (เคยพลาดใน PIKTAX) |
+| 6 | ราคา แฮนดิแคป สกอร์ เวลา ห้ามแปลง ห้ามปัด | ตัวเลขไม่ตรงสลิป |
+
+## แก้แล้วขึ้นยังไง
+
+1. `node _tests/run.js` ต้องเขียวหมดก่อน
+2. หลังบ้าน: `node "C:\Users\jazza\.claude\skills\gas\scripts\push.js" "D:\Projects\t.seeedz\pickup-football-tips" "ข้อความ version"`
+3. หน้าเว็บ: คอมมิตแล้ว push ขึ้น GitHub — Pages ชี้ที่โฟลเดอร์ `web/`
+4. ยิงเน็ตต้องใช้ PowerShell `Invoke-WebRequest` (Bash tool บนเครื่องนี้ออกเน็ตไม่ได้)
+
+## ไฟล์สำคัญ
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `gas/Api.gs` | `doGet` คาย JSON ก้อนเดียว + จัดบิลย่อย + สถิติ |
+| `gas/Sheets.gs` | เปิด/อ่าน/สร้างแท็บชีต |
+| `gas/Setup.gs` | `setupSheets()` รันครั้งเดียวตอนตั้งระบบ |
+| `web/js/fmt.js` | ฟอร์แมตทุกอย่างที่โชว์บนจอ |
+| `web/js/page-*.js` | ปั้น HTML ของแต่ละหน้า (คืนเป็น string เพื่อให้เทสต์ได้) |
