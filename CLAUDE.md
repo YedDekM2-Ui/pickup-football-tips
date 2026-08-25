@@ -22,7 +22,9 @@
 - **ด่านกุญแจ**: `doGet` ต้องมี `?k=` ตรงกับ Script Property `APP_KEY` — ยังไม่ตั้ง = ปฏิเสธทุกอย่าง (ห้าม default เป็นเปิดหมด) · เจ้าของตั้งค่าแล้ว 25 ส.ค. 69 ยิงผ่านจริง (ค่ากุญแจไม่มีใครรู้นอกจากเจ้าของ)
   - `?p=ping` เปิดโล่งได้ แต่ต้องไม่มีข้อมูลติดออกไป
   - หน้าเว็บรับกุญแจจาก `?k=` ครั้งเดียว เก็บ localStorage `pickup.key.v1` แล้วลบออกจากแถบที่อยู่ · **กุญแจห้ามอยู่ในไฟล์ repo**
-- **ค้างที่เจ้าของ**: สร้าง repo + โทเคน (Contents+Pages RW) / ตั้ง Pages ที่ `/web` / BotFather / rotate คีย์ Vision
+- หน้าเว็บ: repo `YedDekM2-Ui/pickup-football-tips` (public) ดันขึ้นแล้ว 25 ส.ค. 69 · โทเคนอยู่ที่ `D:\Projects\.gas-creds\github-pickup.token.txt`
+  - ⚠️ โทเคนมีสิทธิ์ Pages แค่ **อ่าน** (POST /pages โดน 403) — สั่งเปิด Pages ผ่าน API ไม่ได้ ต้องกดในหน้า Settings → Pages เอง
+- **ค้างที่เจ้าของ**: ตั้ง Pages ที่ branch `main` โฟลเดอร์ `/web` / BotFather / rotate คีย์ Vision
 - ทำต่อที่ Step 6 ของ `docs/superpowers/plans/2026-08-25-pickup-web-and-data.md`
 
 ## แก้แล้วขึ้นยังไง
