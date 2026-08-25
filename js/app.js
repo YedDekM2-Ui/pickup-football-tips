@@ -25,17 +25,33 @@ function renderPage(route, data, nowMs) {
   return renderForebet(data, nowMs);
 }
 
-/** ผูกกับ DOM — ส่วนนี้ไม่มีเทสต์ เพราะมันแค่เอา string ไปแปะ
-    Task 8 จะมาแทนที่ mount_ ด้วยตัวที่ดึงของจริง */
+var STATE = { data: MOCK, source: 'ตัวอย่าง', at: Date.now() };
+
+/** ผูกกับ DOM — ส่วนนี้ไม่มีเทสต์ เพราะมันแค่เอา string ไปแปะ */
 function mount_() {
   if (typeof document === 'undefined') return;
   var route = routeOf(location.hash);
   document.body.className = 'page-' + route;
-  document.getElementById('app').innerHTML = renderPage(route, MOCK, Date.now());
+  document.getElementById('note').textContent = staleNote(STATE.source, STATE.at);
+  document.getElementById('app').innerHTML = renderPage(route, STATE.data, Date.now());
   document.getElementById('nav').innerHTML = renderNav(route);
+}
+
+/** ขึ้นจอจากแคชก่อน ไม่รอเน็ต แล้วค่อยทับด้วยของสดเมื่อมันมาถึง */
+function boot_() {
+  var picked = pickData(null, loadCache());
+  STATE.data = picked.data; STATE.source = picked.source;
+  mount_();
+
+  fetchAll_().then(function (fresh) {
+    var p = pickData(fresh, loadCache());
+    if (fresh && fresh.ok === true) saveCache(fresh);
+    STATE.data = p.data; STATE.source = p.source; STATE.at = Date.now();
+    mount_();
+  });
 }
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   window.addEventListener('hashchange', mount_);
-  window.addEventListener('DOMContentLoaded', mount_);
+  window.addEventListener('DOMContentLoaded', boot_);
 }
