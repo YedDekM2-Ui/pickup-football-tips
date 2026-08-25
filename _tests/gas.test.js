@@ -80,3 +80,128 @@ test('หัวตารางทั้ง 3 ชีตตรงตามที�
   eq(g.HEADERS.BETS[1], 'Parent_ID');
   eq(g.HEADERS.BETS[2], 'Bill_Type');
 });
+
+function apiEnv(book) {
+  return loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Api.gs'], {
+    SpreadsheetApp: new FakeSpreadsheetApp(book),
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => k === 'SHEET_ID' ? 'S' : null }) },
+    Utilities: { formatDate: () => '2026-08-25T18:00:00' },
+    ContentService: {
+      MimeType: { JSON: 'json' },
+      createTextOutput: t => ({ _t: t, setMimeType() { return this; }, getContent() { return this._t; } })
+    }
+  });
+}
+function betRow(o) {
+  const g = { 'ID':'', 'Parent_ID':'', 'Bill_Type':'MAIN', 'วันที่':'2026-08-25', 'ลีก':'', 
+    'ทีมเหย้า':'', 'ทีมเยือน':'', 'ทีมที่เลือก':'', 'คู่แข่ง':'', 'ตลาด':'AH', 'แฮนดิแคป':0,
+    'เส้น':'', 'ทายสกอร์':'', 'ราคา':1.9, 'เงิน':100, 'เวลาเตะ':'2026-08-25T21:45:00+07:00',
+    'สถานะ':'จบ', 'สกอร์เหย้า':1, 'สกอร์เยือน':0, 'ผล':'WIN_FULL', 'กำไร':90,
+    'Telegram_Message_ID':'', 'กุญแจกันซ้ำ':'', 'สร้างเมื่อ':'', 'อัปเดตเมื่อ':'' };
+  return Object.assign(g, o);
+}
+function bookOf(bets, teams) {
+  return {
+    BETS: [HEAD_BETS].concat(bets.map(b => HEAD_BETS.map(h => b[h]))),
+    TEAMS: [['ชื่ออังกฤษ','ชื่อไทย']].concat(teams || [])
+  };
+}
+const HEAD_BETS = ['ID','Parent_ID','Bill_Type','วันที่','ลีก','ทีมเหย้า','ทีมเยือน',
+  'ทีมที่เลือก','คู่แข่ง','ตลาด','แฮนดิแคป','เส้น','ทายสกอร์','ราคา','เงิน','เวลาเตะ',
+  'สถานะ','สกอร์เหย้า','สกอร์เยือน','ผล','กำไร','Telegram_Message_ID','กุญแจกันซ้ำ',
+  'สร้างเมื่อ','อัปเดตเมื่อ'];
+
+test('nestBets_ บิลย่อยเข้าไปอยู่ใต้บิลแม่ ไม่โผล่เป็นใบเดี่ยว', () => {
+  const g = apiEnv(bookOf([
+    betRow({ 'ID':'B1' }),
+    betRow({ 'ID':'B2', 'Parent_ID':'B1', 'Bill_Type':'SUB', 'เงิน':150, 'กำไร':-150 })
+  ]));
+  const out = g.nestBets_(g.readObjects_('BETS'), {});
+  eq(out.length, 1, 'ต้องเหลือใบแม่ใบเดียวบนสุด');
+  eq(out[0].subs.length, 1);
+  eq(out[0]['รวมเงิน'], 250);
+  eq(out[0]['รวมกำไร'], -60);
+});
+
+test('nestBets_ บิลย่อยที่หาแม่ไม่เจอ ต้องเด้งขึ้นมาเป็นใบเดี่ยว ห้ามหายเงียบ', () => {
+  const g = apiEnv(bookOf([ betRow({ 'ID':'B9', 'Parent_ID':'ไม่มีจริง', 'Bill_Type':'SUB' }) ]));
+  const out = g.nestBets_(g.readObjects_('BETS'), {});
+  eq(out.length, 1);
+  eq(out[0]['ID'], 'B9');
+});
+
+test('nestBets_ เติมชื่อไทยจากตาราง TEAMS แปลไม่เจอปล่อยว่าง', () => {
+  const g = apiEnv(bookOf([ betRow({ 'ID':'B1', 'ทีมเหย้า':'Milan', 'ทีมเยือน':'Nowhere FC' }) ],
+                          [['Milan','มิลาน']]));
+  const out = g.nestBets_(g.readObjects_('BETS'), g.teamMap_());
+  eq(out[0]['เหย้าไทย'], 'มิลาน');
+  eq(out[0]['เยือนไทย'], '');
+});
+
+test('ledgerStats_ นับชนะครึ่งเป็นครึ่งใบ', () => {
+  const g = apiEnv(bookOf([]));
+  const s = g.ledgerStats_([
+    { 'ผล':'WIN_FULL', 'เงิน':100, 'กำไร':90, 'วันที่':'2026-08-01' },
+    { 'ผล':'WIN_HALF', 'เงิน':100, 'กำไร':45, 'วันที่':'2026-08-01' },
+    { 'ผล':'LOSS_FULL','เงิน':100, 'กำไร':-100,'วันที่':'2026-08-02' }
+  ]);
+  eq(s['จำนวนใบ'], 3);
+  eq(s['ลงไปทั้งหมด'], 300);
+  eq(s['กำไรสะสม'], 35);
+  eq(s['อัตราชนะ'], 0.5, '(1 + 0.5) ÷ 3');
+});
+
+test('ledgerStats_ คืนทุนไม่นับเป็นใบที่แพ้ ต้องตัดออกจากตัวหาร', () => {
+  const g = apiEnv(bookOf([]));
+  const s = g.ledgerStats_([
+    { 'ผล':'WIN_FULL','เงิน':100,'กำไร':90,'วันที่':'2026-08-01' },
+    { 'ผล':'PUSH',    'เงิน':100,'กำไร':0, 'วันที่':'2026-08-01' }
+  ]);
+  eq(s['อัตราชนะ'], 1, '1 ÷ (2 − 1 คืนทุน)');
+});
+
+test('ledgerStats_ ยังไม่มีใบที่รู้ผล = อัตราชนะเป็น null ไม่ใช่ NaN', () => {
+  const g = apiEnv(bookOf([]));
+  const s = g.ledgerStats_([{ 'ผล':'', 'เงิน':100, 'กำไร':'', 'วันที่':'2026-08-01' }]);
+  eq(s['จำนวนใบ'], 0);
+  eq(s['อัตราชนะ'], null);
+});
+
+test('ledgerStats_ เส้นกราฟเป็นยอดสะสม เรียงวันเก่าไปใหม่', () => {
+  const g = apiEnv(bookOf([]));
+  const s = g.ledgerStats_([
+    { 'ผล':'LOSS_FULL','เงิน':100,'กำไร':-100,'วันที่':'2026-08-02' },
+    { 'ผล':'WIN_FULL', 'เงิน':100,'กำไร':90, 'วันที่':'2026-08-01' },
+    { 'ผล':'WIN_FULL', 'เงิน':100,'กำไร':90, 'วันที่':'2026-08-03' }
+  ]);
+  eq(s['เส้นกราฟ'].map(p => p['วันที่']).join(','), '2026-08-01,2026-08-02,2026-08-03');
+  eq(s['เส้นกราฟ'].map(p => p['สะสม']).join(','), '90,-10,80');
+});
+
+test('doGet?p=ping ตอบได้ตั้งแต่ยังไม่มีข้อมูล', () => {
+  const g = apiEnv({});
+  const j = JSON.parse(g.doGet({ parameter: { p: 'ping' } }).getContent());
+  eq(j.ok, true);
+});
+
+test('doGet พังต้องตอบเป็น JSON ok:false ไม่ใช่หน้า error ของกูเกิล', () => {
+  const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Api.gs'], {
+    SpreadsheetApp: new FakeSpreadsheetApp({}),
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+    Utilities: { formatDate: () => '2026-08-25T18:00:00' },
+    ContentService: { MimeType: { JSON: 'json' },
+      createTextOutput: t => ({ _t: t, setMimeType() { return this; }, getContent() { return this._t; } }) }
+  });
+  const j = JSON.parse(g.doGet({ parameter: {} }).getContent());
+  eq(j.ok, false);
+  ok(String(j.error).indexOf('SHEET_ID') >= 0, 'ต้องบอกสาเหตุจริง');
+});
+
+test('payloadAll_ ได้รูปร่างตามที่ล็อกไว้', () => {
+  const g = apiEnv(bookOf([ betRow({ 'ID':'B1' }) ]));
+  const p = g.payloadAll_();
+  eq(p.ok, true);
+  ok(Array.isArray(p.picks) && Array.isArray(p.bets));
+  ok(typeof p.at === 'string' && p.at.indexOf('+07:00') > 0, 'เวลาเป็น +07:00');
+  ok(p.ledger && 'อัตราชนะ' in p.ledger);
+});
