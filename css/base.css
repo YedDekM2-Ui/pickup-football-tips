@@ -52,3 +52,9 @@ body {
 .pick .big { margin: 6px 0 8px; }
 .pick-pct { color: var(--gold); font-weight: 700; font-size: 18px; }
 .pick-odds { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+
+.lg-big { font-size: 30px; font-weight: 800; margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
+.lg-row { display: flex; justify-content: space-between; align-items: center;
+          gap: 10px; min-height: 44px; border-bottom: 1px solid var(--line); }
+.lg-row:last-child { border-bottom: 0; }
+.lg-right { font-weight: 700; font-variant-numeric: tabular-nums; }
