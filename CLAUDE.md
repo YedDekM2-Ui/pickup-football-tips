@@ -32,7 +32,8 @@
 ## แก้แล้วขึ้นยังไง
 
 1. `node _tests/run.js` ต้องเขียวหมดก่อน
-2. หลังบ้าน: `node "C:\Users\jazza\.claude\skills\gas\scripts\push.js" "D:\Projects\t.seeedz\pickup-football-tips" "ข้อความ version"`
+2. หลังบ้าน: `node "C:\Users\jazza\.claude\skills\gas\scripts\push.js" "D:\Projects\t.seeedz\pickup-football-tips\gas" "ข้อความ version"`
+   (**ต้องชี้ที่โฟลเดอร์ `gas` ไม่ใช่รากโปรเจกต์** — `.scriptId`/`.deployId` กับไฟล์ `.gs` อยู่ในนั้น)
 3. หน้าเว็บ: คอมมิต → push `main` → **แล้วต้องดัน `web/` ขึ้น `gh-pages` ด้วย (ไม่งั้นหน้าเว็บไม่เปลี่ยน)**
    ```powershell
    $t = (Get-Content "D:\Projects\.gas-creds\github-pickup.token.txt" -Raw).Trim()
