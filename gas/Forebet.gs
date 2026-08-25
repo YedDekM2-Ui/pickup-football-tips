@@ -286,13 +286,70 @@ function fbSnapTick() {
   try { fbSnapRun_(); } catch (err) { Logger.log('fbSnapTick: ' + err); }
 }
 
+/** ติด trigger ให้ถ้าทำได้ — ทำไม่ได้ก็ห้ามล้มทั้งงาน
+    (deployment นี้ไม่ได้ขอสิทธิ์ script.scriptapp ไว้ เรียกแล้วมัน throw
+     ถ้าปล่อยให้ throw มันจะกลืนรายงานของ fbSnapRun_ ที่สำเร็จไปแล้วทั้งก้อน) */
 function fbEnsureTrigger_() {
-  var all = ScriptApp.getProjectTriggers();
-  for (var i = 0; i < all.length; i++) {
-    if (all[i].getHandlerFunction && all[i].getHandlerFunction() === 'fbSnapTick') return 'มีอยู่แล้ว';
+  try {
+    var all = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].getHandlerFunction && all[i].getHandlerFunction() === 'fbSnapTick') return 'มีอยู่แล้ว';
+    }
+    ScriptApp.newTrigger('fbSnapTick').timeBased().everyHours(6).create();
+    return 'ติดตั้งแล้ว';
+  } catch (err) {
+    return 'ติดไม่ได้ (ไม่ได้ขอสิทธิ์ trigger) — ไม่เป็นไร หน้าเว็บดึงเองเมื่อของเก่าเกิน ' + FB_STALE_HOURS + ' ชม.';
   }
-  ScriptApp.newTrigger('fbSnapTick').timeBased().everyHours(6).create();
-  return 'ติดตั้งแล้ว';
+}
+
+/* ---------- ดึงเองเมื่อของเก่า (ไม่พึ่ง trigger) ---------- */
+/* ทำไมต้องมี: ทางติด trigger ขอสิทธิ์ script.scriptapp ที่ deployment นี้ไม่ได้ขอไว้
+   ถ้าไปเพิ่มสิทธิ์ทีหลัง เจ้าของต้องกดอนุญาตใหม่ทั้งชุดจากมือถือ เสี่ยงพังของที่ใช้อยู่
+   จึงให้ "ทางอ่านข้อมูล" เป็นคนดึงเองเมื่อภาพนิ่งเก่าเกินกำหนด — ไม่ใช้สิทธิ์เพิ่มเลย */
+var FB_STALE_HOURS = 6;    /* ภาพนิ่งเก่ากว่านี้ = ถึงเวลาไปดูใหม่ */
+var FB_RETRY_MIN = 30;     /* ดึงพลาด (403) ห้ามยิงรัว ไม่งั้นเปิดหน้าทีไรก็ต้องรอโหลด */
+
+function fbMs_(v) {
+  var t = Date.parse(String(v || ''));
+  return isNaN(t) ? 0 : t;
+}
+
+/** ภาพนิ่งเก่าเกินกำหนดหรือยัง — ช่องไหนยังไม่เคยดึงเลย ก็ถือว่าเก่า */
+function fbStale_(pickRows, nowMs) {
+  var kinds = [FB_KIND.FEATURED, FB_KIND.POTD];
+  for (var i = 0; i < kinds.length; i++) {
+    var r = fbLatest_(pickRows || [], kinds[i]);
+    if (!r) return true;
+    var t = fbMs_(r['สร้างเมื่อ']);
+    if (!t) return true;
+    if (nowMs - t > FB_STALE_HOURS * 3600000) return true;
+  }
+  return false;
+}
+
+function fbLastTry_() {
+  try { return fbMs_(prop_('FB_LAST_TRY')); } catch (err) { return 0; }
+}
+function fbMarkTry_(iso) {
+  try { PropertiesService.getScriptProperties().setProperty('FB_LAST_TRY', iso); }
+  catch (err) { /* จดเวลาไม่ได้ก็ไม่เป็นไร แค่เสียตัวหน่วง */ }
+}
+
+/** เรียกจากทางอ่านข้อมูล (?p=all)
+    คืน true ถ้ามีของใหม่เข้าชีต — คนเรียกต้องอ่านชีตซ้ำ
+    ห้าม throw เด็ดขาด หน้าเว็บต้องขึ้นได้เสมอ ถึง forebet จะล่มก็ตาม */
+function fbAutoSnap_(pickRows, nowMs) {
+  try {
+    var now = nowMs || Date.now();
+    if (!fbStale_(pickRows, now)) return false;
+    var last = fbLastTry_();
+    if (last && now - last < FB_RETRY_MIN * 60000) return false;   /* เพิ่งลองไป ยังไม่ถึงคิว */
+    fbMarkTry_(new Date(now).toISOString());
+    var r = fbSnapRun_();
+    return !!(r && r.added && r.added.length);
+  } catch (err) {
+    return false;
+  }
 }
 
 /** ตัวส่องปัญหา — ใช้ตอนตัวอ่านอ่านไม่ออก จะได้รู้ว่าหน้าเว็บเขาหน้าตายังไง

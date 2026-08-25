@@ -128,6 +128,9 @@ function payloadAll_() {
   var tmap = teamMap_();
   var betRows = readObjects_(SHEETS.BETS);
   var pickRows = readObjects_(SHEETS.PICKS);
+  /* ภาพนิ่งเก่าเกินกำหนด = ไปดึงใหม่ตรงนี้เลย (ไม่พึ่ง trigger เพราะ deployment นี้ไม่ได้ขอสิทธิ์ไว้)
+     ดึงไม่ได้ก็ผ่าน — ของเก่าต้องขึ้นเหมือนเดิม */
+  if (fbAutoSnap_(pickRows)) pickRows = readObjects_(SHEETS.PICKS);
   var picks = [];
   for (var i = 0; i < pickRows.length; i++) picks.push(pickOut_(pickRows[i], tmap));
   return {
@@ -158,7 +161,7 @@ function doGet(e) {
     /* 2 ทางนี้ต้องอยู่หลังด่านกุญแจ — มันยิงเน็ตออกและเขียนชีต ไม่ใช่ทางอ่านเฉยๆ */
     if (p === 'snap') {
       var snap = fbSnapRun_();
-      snap.trigger = fbEnsureTrigger_();
+      snap.trigger = fbEnsureTrigger_();   /* ติดไม่ได้ก็คืนข้อความมา ห้ามกลืนรายงาน snap */
       return jsonOut_(snap);
     }
     if (p === 'fbprobe') return jsonOut_(fbProbe_());

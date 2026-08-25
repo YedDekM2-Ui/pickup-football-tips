@@ -165,3 +165,135 @@ test('ยังไม่เคยดึงเลย = pinned ว่าง หน
   eq(g.fbPinned_([], {}).length, 0);
   eq(g.fbPinned_(null, {}).length, 0);
 });
+
+/* ================= ดึงเองเมื่อของเก่า (ไม่พึ่ง trigger) =================
+   ที่มา: ยิง ?p=snap จริงแล้วได้ error "ไม่ได้รับอนุญาตให้เรียกใช้ ScriptApp.getProjectTriggers"
+   deployment ตัวนี้ไม่ได้ขอสิทธิ์ script.scriptapp ไว้ และจะไปเพิ่มทีหลังไม่ได้
+   (เจ้าของต้องกดอนุญาตใหม่ทั้งชุดจากมือถือ เสี่ยงพังของที่ใช้อยู่)
+   ทางแก้: ให้ทางอ่านข้อมูลดึงเองเมื่อภาพนิ่งเก่าเกินกำหนด */
+
+/** env ที่ "ไม่" ทับ PropertiesService — ตัวหน่วง FB_LAST_TRY ถึงจะทำงานจริง
+    คืน g.__n มาให้นับว่ายิงเน็ตไปกี่ครั้ง */
+function fbEnvP(book, body, code) {
+  const app = new FakeSpreadsheetApp(book);
+  const box = { n: 0 };
+  const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
+    SpreadsheetApp: app,
+    Utilities: { formatDate: () => '2026-08-25T18:00:00' },
+    UrlFetchApp: { fetch: () => { box.n++; return fakeResponse(code === undefined ? 200 : code, body); } }
+  });
+  g.PropertiesService.getScriptProperties().setProperty('SHEET_ID', 'S');
+  g.__app = app;
+  g.__box = box;
+  return g;
+}
+const T = (s) => Date.parse(s);
+
+test('ติด trigger ไม่ได้ = คืนข้อความบอกเหตุ ห้าม throw', () => {
+  const g = fbEnv(bookOf([]), '');            /* stub มาตรฐาน: newTrigger โยน error */
+  const msg = g.fbEnsureTrigger_();
+  eq(typeof msg, 'string');
+  ok(msg.indexOf('ติดไม่ได้') === 0, 'ต้องบอกว่าติดไม่ได้ ไม่ใช่เงียบหรือพัง');
+});
+
+test('trigger ติดไม่ได้ ต้องไม่กลืนรายงานของ snap ที่สำเร็จไปแล้ว', () => {
+  /* นี่คือบั๊กจริงที่เจ้าของเจอ: doGet ทำ snap สำเร็จ แล้วบรรทัดถัดไป throw ทิ้งทั้งก้อน */
+  const g = fbEnv(bookOf([]), pageHtml(PAGE_A));
+  const snap = g.fbSnapRun_();
+  snap.trigger = g.fbEnsureTrigger_();
+  eq(snap.ok, true);
+  eq(snap.added.length, 2, 'ของที่ดึงมาได้ต้องรายงานครบ');
+  ok(String(snap.trigger).length > 0);
+  eq(nPicks(g), 2);
+});
+
+test('ยังไม่เคยดึงเลย = ถือว่าเก่า ต้องไปดูใหม่', () => {
+  const g = fbEnv(bookOf([]), '');
+  eq(g.fbStale_([], T('2026-08-25T12:00:00+07:00')), true);
+  eq(g.fbStale_(null, T('2026-08-25T12:00:00+07:00')), true);
+});
+
+test('มีแค่ช่องเดียว = ยังถือว่าเก่า (อีกช่องยังขาด)', () => {
+  const g = fbEnv(bookOf([]), '');
+  const rows = [pickRow({ 'ช่อง':'FEATURED', 'สร้างเมื่อ':'2026-08-25T11:00:00+07:00' })];
+  eq(g.fbStale_(rows, T('2026-08-25T12:00:00+07:00')), true);
+});
+
+test('ดึงมาไม่ถึง 6 ชม. = ยังสด ไม่ต้องไปกวนเขา', () => {
+  const g = fbEnv(bookOf([]), '');
+  const rows = [
+    pickRow({ 'ช่อง':'FEATURED', 'สร้างเมื่อ':'2026-08-25T11:00:00+07:00' }),
+    pickRow({ 'ช่อง':'POTD', 'สร้างเมื่อ':'2026-08-25T11:00:00+07:00' })
+  ];
+  eq(g.fbStale_(rows, T('2026-08-25T12:00:00+07:00')), false);
+  eq(g.fbStale_(rows, T('2026-08-25T18:00:00+07:00')), true, 'เกิน 6 ชม. = เก่า');
+});
+
+test('ช่อง สร้างเมื่อ ว่างหรืออ่านไม่ออก = ถือว่าเก่า ไม่ใช่ถือว่าสด', () => {
+  const g = fbEnv(bookOf([]), '');
+  const rows = [
+    pickRow({ 'ช่อง':'FEATURED', 'สร้างเมื่อ':'' }),
+    pickRow({ 'ช่อง':'POTD', 'สร้างเมื่อ':'2026-08-25T11:00:00+07:00' })
+  ];
+  eq(g.fbStale_(rows, T('2026-08-25T12:00:00+07:00')), true);
+});
+
+test('ของยังสด = ห้ามยิงเน็ตเลยแม้แต่ครั้งเดียว (เปิดหน้าต้องไว)', () => {
+  const g = fbEnvP(bookOf([]), pageHtml(PAGE_A));
+  const rows = [
+    pickRow({ 'ช่อง':'FEATURED', 'สร้างเมื่อ':'2026-08-25T11:00:00+07:00' }),
+    pickRow({ 'ช่อง':'POTD', 'สร้างเมื่อ':'2026-08-25T11:00:00+07:00' })
+  ];
+  eq(g.fbAutoSnap_(rows, T('2026-08-25T12:00:00+07:00')), false);
+  eq(g.__box.n, 0, 'ไม่ควรมีการยิงเน็ต');
+});
+
+test('ของเก่า + ดึงได้ = จดลงชีต แล้วบอกคนเรียกให้อ่านชีตซ้ำ', () => {
+  const g = fbEnvP(bookOf([]), pageHtml(PAGE_A));
+  eq(g.fbAutoSnap_([], T('2026-08-25T12:00:00+07:00')), true);
+  eq(nPicks(g), 2);
+  ok(g.__box.n > 0, 'ต้องมีการยิงเน็ตจริง');
+});
+
+test('ของเก่า + โดน 403 = คืน false ไม่เขียนชีต ไม่ throw หน้าเว็บต้องขึ้นได้', () => {
+  const old = [pickRow({ 'ช่อง':'FEATURED', 'ทีมเหย้า':'Arsenal', 'ทีมเยือน':'Leeds' })];
+  const g = fbEnvP(bookOf(old), 'blocked', 403);
+  eq(g.fbAutoSnap_(g.readObjects_('PICKS'), T('2026-08-25T12:00:00+07:00')), false);
+  eq(nPicks(g), 1, 'ของเก่าต้องอยู่ครบ');
+});
+
+test('ดึงพลาดแล้วห้ามยิงรัว — ภายใน 30 นาทีต้องไม่ยิงซ้ำ', () => {
+  const g = fbEnvP(bookOf([]), 'blocked', 403);
+  const t0 = T('2026-08-25T12:00:00+07:00');
+  /* นับเป็น "มียิงเพิ่มหรือเปล่า" — 1 รอบดึงมันลองหลาย URL ไม่ใช่ครั้งเดียว */
+  g.fbAutoSnap_([], t0);
+  const after1 = g.__box.n;
+  ok(after1 > 0, 'รอบแรกต้องออกไปดึงจริง');
+
+  g.fbAutoSnap_([], t0 + 10 * 60000);        /* ผ่านไป 10 นาที */
+  eq(g.__box.n, after1, 'ยังไม่ถึงคิว ห้ามยิงซ้ำ');
+
+  g.fbAutoSnap_([], t0 + 31 * 60000);        /* ผ่านไป 31 นาที */
+  ok(g.__box.n > after1, 'พ้น 30 นาทีแล้วลองใหม่ได้');
+});
+
+test('ทางอ่านข้อมูลดึงเองได้จริง — ของเก่า/ยังไม่มี แล้วคู่ปักหมุดโผล่ในรอบเดียว', () => {
+  const g = fbEnvP(bookOf([]), pageHtml(PAGE_A));
+  const out = g.payloadAll_();
+  eq(out.ok, true);
+  eq(out.pinned.length, 2, 'ต้องได้คู่ปักหมุดโดยไม่ต้องพึ่ง trigger');
+  eq(out.pinned[0]['ช่อง'], 'FEATURED');
+  eq(out.pinned[0]['เหย้า'], 'Arsenal');
+});
+
+test('forebet ล่ม/บล็อก = payloadAll_ ต้องยังคายของเก่าออกมาได้ตามปกติ', () => {
+  const old = [
+    pickRow({ 'ID':'FB-FEATURED-1', 'ช่อง':'FEATURED', 'ทีมเหย้า':'Arsenal', 'ทีมเยือน':'Leeds' }),
+    pickRow({ 'ID':'FB-POTD-1', 'ช่อง':'POTD', 'ทีมเหย้า':'PSV', 'ทีมเยือน':'Sparta' })
+  ];
+  const g = fbEnvP(bookOf(old), 'blocked', 403);
+  const out = g.payloadAll_();
+  eq(out.ok, true);
+  eq(out.pinned.length, 2, 'ของเก่าต้องยังขึ้นหน้า 1');
+  eq(nPicks(g), 2, 'ห้ามเขียนอะไรเพิ่ม');
+});
