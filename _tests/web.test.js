@@ -105,6 +105,39 @@ test('renderForebet มีปุ่มกรอกเองเสมอ แล�
   ok(f.renderForebet({ picks: [], bets: [], ledger: {} }, Date.now()).indexOf('กรอกเอง') >= 0);
 });
 
+test('pinCard บอกว่าเป็นช่องไหน และดึงมาเมื่อไหร่', () => {
+  const html = f.pinCard(f.MOCK.pinned[0], Date.now());
+  ok(html.indexOf('FEATURED MATCH') >= 0, 'ต้องมีป้ายช่อง');
+  ok(html.indexOf('อาร์เซนอล') >= 0, 'ต้องมีชื่อทีมไทย');
+  ok(html.indexOf('เต็ง อาร์เซนอล') >= 0, 'ต้องมี 1X2');
+  ok(html.indexOf('เดาสกอร์ 2-0') >= 0, 'ต้องมีสกอร์ที่เดา');
+  ok(html.indexOf('ดึงมาเมื่อ') >= 0, 'ภาพนิ่งต้องบอกเวลาที่ดึง');
+  ok(html.indexOf('12:00') >= 0, 'ต้องมีเวลาที่ดึงจริง');
+  eq(f.pinCard(f.MOCK.pinned[1], Date.now()).indexOf('PICK OF THE DAY') >= 0, true);
+});
+
+test('ไม่รู้เวลาเตะ = ไม่โชว์บรรทัดนับถอยหลังมั่ว', () => {
+  const html = f.pinCard(f.MOCK.pinned[0], Date.now());
+  eq(html.indexOf('รอเตะ'), -1, 'ไม่มีเวลาเตะก็ห้ามเดา');
+  eq(html.indexOf('อีก '), -1, 'ห้ามนับถอยหลังจากเวลาว่าง');
+});
+
+test('renderForebet ปักหมุดไว้บนสุด และไม่โผล่ซ้ำในลิสต์ปกติ', () => {
+  const html = f.renderForebet(f.MOCK, Date.now());
+  eq((html.match(/class="card pick pin"/g) || []).length, 2, 'ปักหมุด 2 ใบ');
+  eq((html.match(/Premier League/g) || []).length, 1, 'คู่ปักหมุดต้องโผล่ใบเดียว');
+  const iPin = html.indexOf('FEATURED MATCH'), iNorm = html.indexOf('อินเตอร์');
+  ok(iPin >= 0 && iNorm >= 0 && iPin < iNorm, 'ใบปักหมุดต้องอยู่บนใบปกติ');
+});
+
+test('ไม่มีคู่ปักหมุด = หน้าเดิมไม่พัง', () => {
+  const noPin = Object.assign({}, f.MOCK, { pinned: [] });
+  const html = f.renderForebet(noPin, Date.now());
+  eq(html.indexOf('card pick pin'), -1, 'ไม่มีก็ไม่ต้องมีกรอบเปล่า');
+  ok(html.indexOf('อินเตอร์') >= 0, 'ใบปกติต้องยังอยู่');
+  ok(f.renderForebet({ picks: [] }, Date.now()).indexOf('ยังไม่มีคู่ของรอบนี้') >= 0);
+});
+
 const wm = loadWeb(['web/js/fmt.js', 'web/js/mock.js',
                     'web/js/page-forebet.js', 'web/js/page-mybet.js']);
 

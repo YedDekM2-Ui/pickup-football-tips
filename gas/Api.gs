@@ -119,7 +119,8 @@ function pickOut_(r, tmap) {
     'เดาผล': String(r['เดาผล'] || ''),
     'เดาสกอร์': String(r['เดาสกอร์'] || ''),
     'เปอร์เซ็นต์': Number(r['เปอร์เซ็นต์']) || 0,
-    'ราคา': Number(r['ราคา']) || 0
+    'ราคา': Number(r['ราคา']) || 0,
+    'ดึงเมื่อ': String(r['สร้างเมื่อ'] || '')   /* คู่ปักหมุดต้องบอกได้ว่าภาพนี้ของตอนไหน */
   };
 }
 
@@ -133,6 +134,7 @@ function payloadAll_() {
     ok: true,
     at: nowIso_(),
     picks: picks,
+    pinned: fbPinned_(pickRows, tmap),   /* Featured / Pick of the day ที่แช่ไว้ */
     bets: nestBets_(betRows, tmap),
     ledger: ledgerStats_(betRows)
   };
@@ -153,6 +155,13 @@ function doGet(e) {
     var p = q.p ? String(q.p) : 'all';
     if (p === 'ping') return jsonOut_({ ok: true, at: nowIso_() });
     if (!keyOk_(q)) return jsonOut_({ ok: false, needKey: true, error: 'ต้องใส่กุญแจ' });
+    /* 2 ทางนี้ต้องอยู่หลังด่านกุญแจ — มันยิงเน็ตออกและเขียนชีต ไม่ใช่ทางอ่านเฉยๆ */
+    if (p === 'snap') {
+      var snap = fbSnapRun_();
+      snap.trigger = fbEnsureTrigger_();
+      return jsonOut_(snap);
+    }
+    if (p === 'fbprobe') return jsonOut_(fbProbe_());
     return jsonOut_(payloadAll_());
   } catch (err) {
     return jsonOut_({ ok: false, error: String(err && err.message ? err.message : err) });

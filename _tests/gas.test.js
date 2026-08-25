@@ -83,7 +83,7 @@ test('หัวตารางทั้ง 3 ชีตตรงตามที�
 
 function apiEnv(book, props) {
   const P = Object.assign({ SHEET_ID: 'S' }, props || {});
-  return loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Api.gs'], {
+  return loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
     SpreadsheetApp: new FakeSpreadsheetApp(book),
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in P ? P[k] : null) }) },
     Utilities: { formatDate: () => '2026-08-25T18:00:00' },
@@ -186,7 +186,7 @@ test('doGet?p=ping ตอบได้ตั้งแต่ยังไม่ม�
 });
 
 test('doGet พังต้องตอบเป็น JSON ok:false ไม่ใช่หน้า error ของกูเกิล', () => {
-  const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Api.gs'], {
+  const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
     SpreadsheetApp: new FakeSpreadsheetApp({}),
     // ผ่านด่านกุญแจมาแล้ว (มี APP_KEY) แต่ยังไม่ได้ตั้ง SHEET_ID
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k === 'APP_KEY' ? 'kk' : null) }) },
