@@ -1334,8 +1334,10 @@ const { loadGas } = require('./gasEnv');
 const { FakeSpreadsheetApp } = require('./fakeSheet');
 
 function env(book) {
+  const app = new FakeSpreadsheetApp(book);
   return loadGas(['gas/Config.gs', 'gas/Sheets.gs'], {
-    SpreadsheetApp: new FakeSpreadsheetApp(book),
+    SpreadsheetApp: app,
+    __book: () => app.book,
     PropertiesService: {
       getScriptProperties: () => ({
         getProperty: k => ({ SHEET_ID: 'SHEET-TEST' })[k] || null,

@@ -6,9 +6,10 @@
  *     '2026-07-28' → Date object  (เทียบ String() ไม่มีวันตรง)
  * ทำแบบนี้เพื่อให้เทสต์จับบั๊กตัวจริงได้ ไม่ใช่ผ่านเพราะชีตปลอมใจดีเกินไป
  */
-function fakeSheet(headers) {
-  const rows = [headers.slice()];
+function makeSheet_(name, initialRows) {
+  const rows = (initialRows || []).map((r) => r.slice());
   const fmt = {};                                   // fmt['r,c'] = '@'
+  const textCols = [];                              // เลขคอลัมน์ (เริ่มที่ 1) ที่ถูกตั้งเป็น @
   const coerce = (v, key) => {
     if (fmt[key] === '@') return v;
     if (typeof v !== 'string') return v;
@@ -18,9 +19,10 @@ function fakeSheet(headers) {
   };
   return {
     rows,
-    getName: () => 'fake',
+    textCols,
+    getName: () => name,
     getMaxRows: () => Math.max(rows.length, 1),
-    getMaxColumns: () => headers.length,
+    getMaxColumns: () => (rows[0] ? rows[0].length : 0),
     getLastRow: () => rows.length,
     insertRowsAfter: () => {},
     insertColumnsAfter: () => {},
@@ -32,6 +34,11 @@ function fakeSheet(headers) {
     getRange: (r, c, nr, nc) => ({
       setNumberFormat: (f) => {
         for (let i = 0; i < nr; i++) for (let k = 0; k < nc; k++) fmt[`${r + i},${c + k}`] = f;
+        if (f === '@') {
+          for (let k = 0; k < nc; k++) {
+            if (textCols.indexOf(c + k) < 0) textCols.push(c + k);
+          }
+        }
       },
       clearContent: () => {
         for (let i = 0; i < nr; i++) if (rows[r + i - 1]) rows[r + i - 1] = [];
@@ -52,4 +59,29 @@ function fakeSheet(headers) {
   };
 }
 
-module.exports = { fakeSheet };
+function fakeSheet(headers) { return makeSheet_('fake', [headers]); }
+
+/**
+ * FakeSpreadsheetApp — แทน SpreadsheetApp ทั้งตัว
+ * สร้างด้วย { ชื่อชีต: [[หัวตาราง], [แถว], ...] } · อ่านสภาพหลังรันได้ที่ .book
+ */
+function FakeSpreadsheetApp(initial) {
+  const book = { id: 'SHEET-TEST', url: 'https://docs.google.com/spreadsheets/d/SHEET-TEST/edit', sheets: {} };
+  Object.keys(initial || {}).forEach((n) => { book.sheets[n] = makeSheet_(n, initial[n]); });
+
+  const ss = {
+    getId: () => book.id,
+    getUrl: () => book.url,
+    getSheetByName: (n) => book.sheets[n] || null,
+    getSheets: () => Object.keys(book.sheets).map((n) => book.sheets[n]),
+    insertSheet: (n) => { book.sheets[n] = makeSheet_(n, []); return book.sheets[n]; },
+    deleteSheet: (sh) => { delete book.sheets[sh.getName()]; }
+  };
+
+  this.book = book;
+  this.openById = () => ss;
+  this.getActiveSpreadsheet = () => ss;
+  this.create = () => ss;
+}
+
+module.exports = { fakeSheet, FakeSpreadsheetApp };
