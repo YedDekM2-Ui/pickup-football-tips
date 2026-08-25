@@ -321,3 +321,46 @@ test('กุญแจไม่ผ่าน แต่เคยมีแคช = �
   eq(r.source, 'ต้องใส่กุญแจ');
   eq(r.data, cached);
 });
+
+/* ── ของจริงวันแรก: เซิร์ฟเวอร์ตอบมาว่าง (ยังไม่มีบิลสักใบ) ──
+   ก่อนหน้านี้เทสต์ใช้ MOCK ที่มีบิลเต็มตลอด ของว่างจริงไม่เคยผ่านตาโค้ดเลย
+   ก้อนนี้คือคำตอบจริงจาก /exec เมื่อ 25 ส.ค. 69 ห้ามแก้ให้สวยขึ้น */
+const EMPTY_LIVE = {
+  ok: true, at: '2026-08-25T17:01:34+07:00',
+  picks: [], bets: [],
+  ledger: { 'กำไรสะสม': 0, 'ลงไปทั้งหมด': 0, 'จำนวนใบ': 0, 'อัตราชนะ': null, 'เส้นกราฟ': [] }
+};
+const allPages = loadWeb(['web/js/fmt.js', 'web/js/mock.js', 'web/js/page-forebet.js',
+  'web/js/page-mybet.js', 'web/js/page-ledger.js', 'web/js/api.js', 'web/js/app.js']);
+
+test('ข้อมูลว่างของจริง: ทั้ง 3 หน้าต้องปั้นได้ ไม่พังกลางทาง', () => {
+  ['forebet', 'mybet', 'ledger'].forEach((r) => {
+    const html = allPages.renderPage(r, EMPTY_LIVE, Date.parse('2026-08-25T17:05:00+07:00'));
+    ok(typeof html === 'string' && html.length > 0, 'หน้า ' + r + ' ปั้นไม่ออก');
+    ok(html.indexOf('undefined') < 0, 'หน้า ' + r + ' มีคำว่า undefined โผล่บนจอ');
+    ok(html.indexOf('NaN') < 0, 'หน้า ' + r + ' มีคำว่า NaN โผล่บนจอ');
+  });
+});
+
+test('ข้อมูลว่างของจริง: แต่ละหน้าต้องบอกว่ายังไม่มีอะไร ไม่ใช่จอโล่ง', () => {
+  const t = Date.parse('2026-08-25T17:05:00+07:00');
+  ok(allPages.renderPage('forebet', EMPTY_LIVE, t).indexOf('ยังไม่มีคู่ของรอบนี้') >= 0);
+  ok(allPages.renderPage('mybet', EMPTY_LIVE, t).indexOf('ยังไม่มีบิล') >= 0);
+  ok(allPages.renderPage('ledger', EMPTY_LIVE, t).indexOf('ยังไม่มีบิล') >= 0);
+});
+
+test('อัตราชนะเป็น null (ยังไม่มีใบให้คิด) ต้องขึ้นขีด ไม่ใช่ 0% หรือ NaN%', () => {
+  const html = allPages.renderPage('ledger', EMPTY_LIVE, Date.now());
+  ok(html.indexOf('—') >= 0, 'ควรมีขีด');
+  ok(html.indexOf('0%') < 0, 'ห้ามโกหกว่าชนะ 0% ทั้งที่ยังไม่ได้แทง');
+});
+
+test('กราฟยังไม่มีจุดสักจุด = ไม่ต้องวาด ไม่ใช่ svg เปล่าที่พัง', () => {
+  eq(allPages.curveSvg([], 320, 90), '');
+});
+
+test('ข้อมูลว่างของจริงยังนับเป็นของสด ไม่ใช่ตกไปใช้ตัวอย่าง', () => {
+  const r = allPages.pickData(EMPTY_LIVE, null);
+  eq(r.source, 'สด');
+  eq(r.data.bets.length, 0);
+});
