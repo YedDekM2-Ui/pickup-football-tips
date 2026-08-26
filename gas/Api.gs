@@ -124,20 +124,25 @@ function pickOut_(r, tmap) {
   };
 }
 
-function payloadAll_() {
+/* nowMs = เวลาที่ใช้ตัดสินว่า "ยังไม่ถึงเวลาเตะ" — ปกติไม่ต้องส่ง (ใช้เวลาจริง)
+   มีไว้ให้เทสต์ตรึงเวลาได้ ไม่งั้นเทสต์จะพังเองเมื่อวันเปลี่ยน */
+function payloadAll_(nowMs) {
+  var now = nowMs || Date.now();
   var tmap = teamMap_();
   var betRows = readObjects_(SHEETS.BETS);
   var pickRows = readObjects_(SHEETS.PICKS);
   /* ภาพนิ่งเก่าเกินกำหนด = ไปดึงใหม่ตรงนี้เลย (ไม่พึ่ง trigger เพราะ deployment นี้ไม่ได้ขอสิทธิ์ไว้)
      ดึงไม่ได้ก็ผ่าน — ของเก่าต้องขึ้นเหมือนเดิม */
-  if (fbAutoSnap_(pickRows)) pickRows = readObjects_(SHEETS.PICKS);
+  if (fbAutoSnap_(pickRows, now)) pickRows = readObjects_(SHEETS.PICKS);
+  /* หน้าเว็บเอาเฉพาะคู่ที่ยังไม่ถึงเวลาแข่ง (เจ้าของสั่ง) — ชีตยังเก็บของเก่าไว้ครบเหมือนเดิม */
+  var live = fbUpcoming_(pickRows, now);
   var picks = [];
-  for (var i = 0; i < pickRows.length; i++) picks.push(pickOut_(pickRows[i], tmap));
+  for (var i = 0; i < live.length; i++) picks.push(pickOut_(live[i], tmap));
   return {
     ok: true,
     at: nowIso_(),
     picks: picks,
-    pinned: fbPinned_(pickRows, tmap),   /* Featured / Pick of the day ที่แช่ไว้ */
+    pinned: fbPinned_(live, tmap),       /* Featured / Pick of the day ที่ยังไม่เตะ */
     bets: nestBets_(betRows, tmap),
     ledger: ledgerStats_(betRows)
   };

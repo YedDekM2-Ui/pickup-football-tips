@@ -121,6 +121,16 @@ function fbMatchId_(raw) {
   return m ? m[1] : '';
 }
 
+/** ลิงก์หน้าของคู่นั้นเอง — ในกล่องปักหมุดมีให้ (itemprop="url")
+    ต้องมี เพราะเปอร์เซ็นต์กับสกอร์ที่เดา "ไม่ได้อยู่ในกล่อง" และคู่ปักหมุดก็ไม่โผล่ในตารางใหญ่
+    (วัดแล้ว: รหัสคู่ 2526629/2476034 ปรากฏเฉพาะในกล่อง ไม่มีในตารางหน้าแรกเลย)
+    -> ทางเดียวที่ได้ของครบคือตามลิงก์นี้ไปเปิดหน้าของคู่ ตามที่เจ้าของสั่งไว้ */
+function fbMatchUrl_(raw) {
+  var m = /href="(\/en\/football\/matches\/[^"]{5,180})"/i.exec(String(raw || ''));
+  if (!m) return '';
+  return 'https://www.forebet.com' + fbClean_(m[1]);
+}
+
 /** ชื่อลีก — เขาฝังไว้ในพารามิเตอร์ของ getstag(...)
     ไม่มีมา (บางคู่เขาส่งค่าว่าง) = ใช้ตัวย่อที่หน้าเว็บโชว์จริง เช่น Co1 */
 function fbLeague_(raw) {
@@ -275,6 +285,7 @@ function fbParseOne_(html, kind) {
     'เปอร์เซ็นต์': fbPct_(row, wdl),
     'ราคา': fbOdds_(row),
     'รหัสคู่': id,
+    'ลิงก์': fbMatchUrl_(w.raw),
     'อ่านทีมจาก': t.how
   };
 }
@@ -311,18 +322,15 @@ function fbLooksLikePage_(body) {
          s.indexOf(FB_ANCHOR.POTD) >= 0;
 }
 
-/** ไล่ยิงทีละ url จนกว่าจะได้ 200 ที่มีเนื้อ — ทุกอันพังก็คืนอันสุดท้ายไปเป็นหลักฐาน */
-function fbFetchAny_() {
-  var urls = prop_('FOREBET_URL') ? [prop_('FOREBET_URL')] : FB_URLS;
+/** ทางอ้อมที่จะใช้ — '' = ไม่อ้อม ('-' ใน Script Property คือเจ้าของสั่งปิด) */
+function fbProxy_() {
   var proxy = prop_('FB_PROXY');
   if (proxy === null || proxy === undefined || proxy === '') proxy = FB_PROXY;
-  if (proxy === '-') proxy = '';                     /* เจ้าของสั่งปิดทางอ้อม */
+  return (proxy === '-') ? '' : proxy;
+}
 
-  /* ยิงตรงก่อนเพราะเร็วกว่า ไม่ผ่านค่อยอ้อม — ทางอ้อมคือทางที่วัดแล้วว่าได้ */
-  var ways = [];
-  for (var i = 0; i < urls.length; i++) ways.push({ url: urls[i], via: '' });
-  if (proxy) for (var j = 0; j < urls.length; j++) ways.push({ url: urls[j], via: proxy });
-
+/** ไล่ยิงทีละทางจนกว่าจะได้ 200 ที่เป็นหน้าจริง — ทุกทางพังก็คืนอันสุดท้ายไปเป็นหลักฐาน */
+function fbTryWays_(ways) {
   var last = { url: '', via: '', code: 0, body: '' };
   for (var k = 0; k < ways.length; k++) {
     try {
@@ -335,6 +343,70 @@ function fbFetchAny_() {
     }
   }
   return last;
+}
+
+function fbFetchAny_() {
+  var urls = prop_('FOREBET_URL') ? [prop_('FOREBET_URL')] : FB_URLS;
+  var proxy = fbProxy_();
+  /* ยิงตรงก่อนเพราะเร็วกว่า ไม่ผ่านค่อยอ้อม — ทางอ้อมคือทางที่วัดแล้วว่าได้ */
+  var ways = [], i;
+  for (i = 0; i < urls.length; i++) ways.push({ url: urls[i], via: '' });
+  if (proxy) for (i = 0; i < urls.length; i++) ways.push({ url: urls[i], via: proxy });
+  return fbTryWays_(ways);
+}
+
+/** เปิด "หน้าของคู่" 1 หน้า — ทางเดียวกับหน้าแรกเป๊ะ (ตรงก่อน ไม่ผ่านค่อยอ้อม)
+    ลิงก์ของเขามีตัวอักษรนอก ASCII ได้ (boyacá-chicó...) ต้องเข้ารหัสก่อนส่ง ไม่งั้นยิงไม่ออก */
+function fbFetchMatch_(url) {
+  var u = String(url || '');
+  if (!/^https:\/\/www\.forebet\.com\//.test(u)) return { code: 0, body: '', url: u, via: '' };
+  try { u = encodeURI(u); } catch (err) { /* เข้ารหัสไม่ได้ก็ส่งของเดิม */ }
+  var proxy = fbProxy_(), ways = [{ url: u, via: '' }];
+  if (proxy) ways.push({ url: u, via: proxy });
+  return fbTryWays_(ways);
+}
+
+/* ---------- ตามไปเปิดหน้าของคู่ เอา 1X2 กับสกอร์ที่เดา ---------- */
+
+/** กล่องปักหมุดให้มาแค่ ทีม/ลีก/เวลา/ผลที่เขาเดา (1 X หรือ 2)
+    "เปอร์เซ็นต์" กับ "สกอร์ที่เดา (0-?)" ไม่มีในกล่อง และคู่ปักหมุดก็ไม่โผล่ในตารางใหญ่ของหน้าแรก
+    -> ต้องเปิดหน้าของคู่เอง แล้วอ่านจากแถวแรกที่เป็นตาราง 1X2
+
+    ระวัง: หน้าของคู่มีคู่เดิมซ้ำหลายแถว (แท็บ 1X2 / Btts / Handicap / Corners / Cards)
+    แถวแรกคือ 1X2 · แท็บอื่นเลขคนละความหมาย หยิบผิดแท็บ = เปอร์เซ็นต์มั่วแบบเนียนๆ
+    จึงกันไว้ 2 ชั้น: ต้องเป็นแถวของ "คู่เดียวกัน" และต้องมีเลข 3 ตัว (1/X/2) เท่านั้น
+
+    อ่านไม่ได้ = ปล่อยของเดิม ห้ามล้มทั้งงาน (กฎข้อ 1) */
+function fbEnrich_(snap) {
+  if (!snap) return snap;
+  if (snap['เปอร์เซ็นต์'] && snap['เดาสกอร์']) return snap;   /* ได้จากหน้าแรกแล้ว ไม่ต้องเปิดซ้ำ */
+
+  var url = snap['ลิงก์'];
+  if (!url) { snap['เปิดหน้าคู่'] = 'ไม่มีลิงก์'; return snap; }
+
+  var got;
+  try { got = fbFetchMatch_(url); } catch (err) { got = { code: -1, body: '' }; }
+  if (got.code !== 200 || !fbLooksLikePage_(got.body)) {
+    snap['เปิดหน้าคู่'] = 'เปิดไม่ได้ (' + got.code + ')';
+    return snap;
+  }
+
+  var row = fbRowById_(got.body, snap['รหัสคู่']);
+  if (!row) { snap['เปิดหน้าคู่'] = 'ไม่เจอแถวของคู่นี้'; return snap; }
+
+  var t = fbTeams_(row);
+  if (!t || t.home !== snap['ทีมเหย้า'] || t.away !== snap['ทีมเยือน']) {
+    snap['เปิดหน้าคู่'] = 'แถวที่เจอเป็นคนละคู่';   /* กันหยิบของคู่อื่นมาใส่ */
+    return snap;
+  }
+
+  var wdl = snap['เดาผล'] || fbWdl_(row);
+  if (!snap['เดาผล'] && wdl) snap['เดาผล'] = wdl;
+  if (!snap['เดาสกอร์']) snap['เดาสกอร์'] = fbScore_(row);
+  if (!snap['เปอร์เซ็นต์']) snap['เปอร์เซ็นต์'] = fbPct_(row, wdl);
+  if (!snap['ราคา']) snap['ราคา'] = fbOdds_(row);
+  snap['เปิดหน้าคู่'] = 'ได้';
+  return snap;
 }
 
 /* ---------- ทางชีต ---------- */
@@ -377,6 +449,70 @@ function fbAppend_(snap, stamp) {
   return vals['ID'];
 }
 
+/* ---------- ด่านกันลงซ้ำ ---------- */
+/* เจ้าของสั่ง: "ห้ามลงชีตคู่ที่ซ้ำเด็ดขาด · ตรวจก่อนค่อยลง"
+   ของเดิมเทียบแค่ "แถวล่าสุดของช่องเดียวกัน" ซึ่งรั่ว 3 ทาง:
+     1) คู่ A -> คู่ B -> คู่ A กลับมา = ลงซ้ำ (เพราะแถวล่าสุดตอนนั้นเป็น B)
+     2) คู่เดียวกันโผล่ทั้ง Featured และ Pick of the day = ลงซ้ำคนละช่อง
+     3) รอบเดียวกันอ่านได้ 2 กล่องเป็นคู่เดียวกัน = ลงซ้ำในรอบเดียว
+   ตอนนี้ดึงทุกครั้งที่เปิดหน้า ทั้ง 3 ทางเกิดจริงแน่ จึงเทียบกับ "ทั้งชีต" ไม่ใช่แถวเดียว */
+
+/** วันที่จากชีต -> 'YYYY-MM-DD'
+    ชีตคืนช่องวันที่มาเป็น Date ไม่ใช่ข้อความ (ถึงจะสั่ง TEXT_COLS ไว้ก็ตาม —
+    แถวเก่าที่เคยลงก่อนสั่งก็ยังเป็น Date อยู่ดี) ถ้าเทียบเป็นข้อความตรงๆ
+    จะได้ "Wed Aug 26 2026 ..." ซึ่งไม่มีวันตรงกับ "2026-08-26" -> ด่านกันซ้ำหลุดทันที */
+function fbYmd_(v) {
+  function p2(n) { return (n < 10 ? '0' : '') + n; }
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return '';
+    return v.getFullYear() + '-' + p2(v.getMonth() + 1) + '-' + p2(v.getDate());
+  }
+  var m = /(\d{4})-(\d{2})-(\d{2})/.exec(String(v === null || v === undefined ? '' : v));
+  return m ? m[0] : '';
+}
+
+/** เวลาจากชีต -> 'HH:MM' (ชีตกลืนเป็น Date ได้เหมือนกัน) */
+function fbHm_(v) {
+  function p2(n) { return (n < 10 ? '0' : '') + n; }
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return '';
+    return p2(v.getHours()) + ':' + p2(v.getMinutes());
+  }
+  var m = /^(\d{1,2}):(\d{2})/.exec(String(v === null || v === undefined ? '' : v).trim());
+  return m ? p2(Number(m[1])) + ':' + m[2] : '';
+}
+
+/** กุญแจของคู่ = ทีมเหย้า|ทีมเยือน
+    ไม่เอา 'ช่อง' มาเป็นส่วนของกุญแจ เพราะคู่เดียวกันโผล่คนละช่องก็ยังนับว่าซ้ำ
+    ไม่เอา 'วันที่' มารวมด้วย เพราะหน้าเว็บเขาโชว์วันที่สลับ วัน/เดือน ได้ (วัดมาแล้ว)
+    คู่เดียวกันจึงอาจได้วันคลาดกัน 1 วัน แล้วเล็ดลอดด่านไปลงซ้ำ
+    ใช้รหัสคู่ไม่ได้ เพราะชีตไม่มีคอลัมน์นั้น (เจ้าของสั่งพักเรื่องเพิ่มคอลัมน์ไว้ก่อน) */
+function fbKey_(o) {
+  if (!o) return '';
+  function n(v) { return String(v === null || v === undefined ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase(); }
+  var h = n(o['ทีมเหย้า']), a = n(o['ทีมเยือน']);
+  if (!h || !a) return '';
+  return h + '|' + a;
+}
+
+/** มีคู่นี้ในชีตแล้วหรือยัง — ตรวจ "ทุกแถว" ไม่ใช่แถวล่าสุดของช่องนั้น
+    นับว่าซ้ำเมื่อ ทีมตรงกัน และ (วันเดียวกัน หรือ ของเดิมยังไม่ถึงเวลาเตะ)
+    -> คู่เดิมที่ยังไม่เตะ ห้ามลงซ้ำเด็ดขาด · ส่วนคู่ที่เตะจบไปแล้วนานๆ
+       เจอกันใหม่รอบหน้า ยังลงได้ ไม่ถูกด่านนี้บล็อกทิ้ง
+    อ่านชื่อทีมไม่ออก = ถือว่าซ้ำ (ไม่ลง) ดีกว่าลงขยะ */
+function fbExists_(rows, snap, nowMs) {
+  var key = fbKey_(snap);
+  if (!key) return true;
+  var now = nowMs || Date.now(), day = fbYmd_(snap && snap['วันที่']);
+  for (var i = 0; i < (rows || []).length; i++) {
+    if (fbKey_(rows[i]) !== key) continue;
+    if (day && fbYmd_(rows[i]['วันที่']) === day) return true;
+    var k = fbKickMs_(rows[i]);
+    if (!k || k >= now) return true;      /* ของเดิมยังไม่เตะ = ตัวเดียวกัน */
+  }
+  return false;
+}
+
 /* ---------- งานจริง ---------- */
 
 /** ดึง 1 รอบ — คืนรายงานว่าเกิดอะไรขึ้นบ้าง ไม่ throw ออกไปข้างนอก
@@ -400,14 +536,22 @@ function fbSnapRun_() {
     var kind = kinds[i], snap;
     try { snap = fbParseOne_(got.body, kind); } catch (err) { snap = null; }
     if (!snap) { out.missed.push(kind); continue; }
-    if (fbSameMatch_(fbLatest_(rows, kind), snap)) {
+    /* ตรวจก่อนค่อยลง — ตรวจ "ทั้งชีต" ไม่ใช่แค่แถวล่าสุดของช่องนี้
+       และตรวจก่อนเปิดหน้าคู่ด้วย จะได้ไม่เสียเวลายิงเน็ตฟรีๆ กับคู่ที่มีอยู่แล้ว */
+    if (fbExists_(rows, snap)) {
       out.skipped.push(kind);            /* คู่เดิม = ปล่อยของเก่าไว้ ห้ามเขียนทับ */
       continue;
     }
+    /* เปอร์เซ็นต์กับสกอร์ที่เดา ไม่ได้อยู่ในกล่องปักหมุด ต้องตามลิงก์ไปเปิดหน้าของคู่เอา
+       เติมไม่ได้ก็ลงเท่าที่มี ห้ามทิ้งคู่ทั้งคู่เพราะขาดตัวเลข */
+    try { snap = fbEnrich_(snap); } catch (err) { /* ปล่อย ลงของเท่าที่อ่านได้ */ }
     try {
-      out.added.push({ 'ช่อง': kind, id: fbAppend_(snap, stamp),
+      var id = fbAppend_(snap, stamp);
+      rows.push(snap);                   /* กันซ้ำในรอบเดียวกัน: 2 กล่องเป็นคู่เดียวกันได้ */
+      out.added.push({ 'ช่อง': kind, id: id,
                        คู่: snap['ทีมเหย้า'] + ' VS ' + snap['ทีมเยือน'],
-                       'อ่านทีมจาก': snap['อ่านทีมจาก'] });
+                       'อ่านทีมจาก': snap['อ่านทีมจาก'],
+                       'เปิดหน้าคู่': snap['เปิดหน้าคู่'] || '' });
     } catch (err) {
       out.missed.push(kind + ' (เขียนชีตไม่ได้)');
     }
@@ -441,8 +585,11 @@ function fbEnsureTrigger_() {
 /* ทำไมต้องมี: ทางติด trigger ขอสิทธิ์ script.scriptapp ที่ deployment นี้ไม่ได้ขอไว้
    ถ้าไปเพิ่มสิทธิ์ทีหลัง เจ้าของต้องกดอนุญาตใหม่ทั้งชุดจากมือถือ เสี่ยงพังของที่ใช้อยู่
    จึงให้ "ทางอ่านข้อมูล" เป็นคนดึงเองเมื่อภาพนิ่งเก่าเกินกำหนด — ไม่ใช้สิทธิ์เพิ่มเลย */
-var FB_STALE_HOURS = 6;    /* ภาพนิ่งเก่ากว่านี้ = ถึงเวลาไปดูใหม่ */
-var FB_RETRY_MIN = 30;     /* ดึงพลาด (403) ห้ามยิงรัว ไม่งั้นเปิดหน้าทีไรก็ต้องรอโหลด */
+/* เจ้าของสั่ง "ทุกครั้งที่เปิด ข้อมูลต้องไปลงในชีต" -> 0 = ไม่มีคำว่าของยังใหม่อยู่ ดึงทุกครั้ง
+   ตัวหน่วง 10 นาทีคงไว้ เพราะ 1 รอบยิงเน็ต 3 หน้า (หน้าแรก + หน้าของคู่ 2 คู่)
+   ถ้าไม่หน่วงเลย คนกดรัวๆ จะได้หน้าเว็บที่ค้างรอโหลดทุกครั้ง และเสี่ยงโดนบล็อก */
+var FB_STALE_HOURS = 0;    /* 0 = ถือว่าเก่าเสมอ ดึงใหม่ทุกครั้งที่เปิดหน้า */
+var FB_RETRY_MIN = 10;     /* ยิงถี่กว่านี้ไม่ได้ กันหน้าเว็บค้างและกันโดนบล็อก */
 
 function fbMs_(v) {
   var t = Date.parse(String(v || ''));
@@ -505,6 +652,32 @@ function fbProbe_() {
       ได้: parsed,
       ตัวอย่างข้อความ: String(w.text || '').slice(0, 400)
     };
+  }
+  return out;
+}
+
+/* ---------- เอาเฉพาะคู่ที่ยังไม่ถึงเวลาแข่ง ---------- */
+/* เจ้าของสั่ง: "เอาเฉพาะในชีตที่ยังไม่ถึงเวลาแข่งขันมาลงเว็บแอป"
+   ชีตเก็บทุกอย่างไว้เหมือนเดิม (ไว้เกรดผลย้อนหลัง) แต่หน้าเว็บกรองตอนส่งออก */
+
+/** เวลาเตะเป็นตัวเลข (ms) — 'วันที่'/'เวลาเตะ' ในชีตเป็นเวลาไทยแล้ว จึงต้องลบ 7 ชม. กลับเป็น UTC
+    อ่านวันที่ไม่ออก = คืน 0 แปลว่า "ไม่รู้" ซึ่งกฎข้อ 6 (ห้ามเดา) ให้เก็บไว้ ไม่ใช่ตัดทิ้ง
+    ไม่มีเวลาเตะ = ใช้ท้ายวันนั้น (23:59) เพื่อไม่ให้คู่ของวันนี้หายไปตั้งแต่เที่ยงคืน */
+function fbKickMs_(row) {
+  var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fbYmd_(row && row['วันที่']));
+  if (!d) return 0;
+  var t = /^(\d{1,2}):(\d{2})$/.exec(fbHm_(row && row['เวลาเตะ']));
+  var hh = t ? Number(t[1]) : 23, mm = t ? Number(t[2]) : 59;
+  if (hh > 23 || mm > 59) { hh = 23; mm = 59; }
+  return Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]), hh, mm) - FB_TZ_SHIFT * 3600000;
+}
+
+/** คู่ที่ยังไม่เตะ — อ่านเวลาไม่ออกก็ปล่อยผ่าน ห้ามทำของหายเพราะเดาไม่ถูก */
+function fbUpcoming_(rows, nowMs) {
+  var now = nowMs || Date.now(), out = [];
+  for (var i = 0; i < (rows || []).length; i++) {
+    var k = fbKickMs_(rows[i]);
+    if (!k || k >= now) out.push(rows[i]);
   }
   return out;
 }
