@@ -460,6 +460,11 @@ function fbParseOne_(html, kind) {
   var shown = fbWhenText_(w.raw);
   var src = fbDate_(w.raw);
   var thai = fbWhenLocal_(src, shown, prop_('FB_TZ_SHIFT'));
+  /* เวลาที่ forebet โชว์ไม่คงที่ (เขาปรับตามโซนของเครื่องที่ยิงเข้าไป = เครื่อง jina)
+     ถ้าถามฟีด LiveScore ได้ ให้ยึดของนั้นแทน เพราะมันเป็นเวลา UTC ตายตัว -> ไทย +7
+     ถามไม่ได้/จับคู่ไม่ชัด = ใช้ของเดิมต่อ ห้ามเดา */
+  var real = (typeof lsWhenThai_ === 'function') ? lsWhenThai_(t.home, t.away, src) : null;
+  if (real) thai = real;
   return {
     'ช่อง': kind,
     'ลีก': fbLeague_(w.raw, row, id),
@@ -919,7 +924,9 @@ function fbSaveReport_(out) {
       skipped: (out && out.skipped) ? out.skipped.join(',') : '',
       fixed: (out && out.fixed) ? out.fixed.join(',') : '',
       missed: (out && out.missed) ? out.missed.join(',') : '',
-      error: (out && out.error) ? String(out.error) : ''
+      error: (out && out.error) ? String(out.error) : '',
+      /* ฟีดเวลาเตะตอบมากี่คู่ต่อวัน — ว่าง/เป็น 0 หมด = โดนบล็อก เวลาจะกลับไปเพี้ยนแบบเดิม */
+      เวลาเตะจากฟีด: (typeof LS_LOG_ !== 'undefined') ? LS_LOG_.join(' ') : ''
     };
     PropertiesService.getScriptProperties().setProperty('FB_LAST_REPORT', JSON.stringify(rep));
   } catch (err) { /* จดไม่ได้ ห้ามทำให้งานหลักล้ม */ }
