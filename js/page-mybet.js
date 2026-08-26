@@ -130,7 +130,7 @@ function betFormHtml() {
   return '<div class="bf">' +
     '<div class="bf-head">ลงบิลใหม่</div>' +
     '<label class="bf-shot">🖼 เลือกรูปบิลจากอัลบั้ม' +
-      '<input type="file" accept="image/*" onchange="betFormShot(this)">' +
+      '<input type="file" accept="image/jpeg,image/png,image/webp,image/heic" onchange="betFormShot(this)">' +
     '</label>' +
     '<label class="bf-row"><span class="bf-k">ตลาด</span>' +
       '<select class="bf-i" onchange="betFormSet(\'ตลาด\', this.value)">' +
