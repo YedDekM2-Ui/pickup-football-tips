@@ -853,6 +853,7 @@ function fbSaveReport_(out) {
       trail: out ? String(out.trail || '') : '',
       why: out ? String(out.why || '') : '',
       skipped: (out && out.skipped) ? out.skipped.join(',') : '',
+      fixed: (out && out.fixed) ? out.fixed.join(',') : '',
       missed: (out && out.missed) ? out.missed.join(',') : '',
       error: (out && out.error) ? String(out.error) : ''
     };
