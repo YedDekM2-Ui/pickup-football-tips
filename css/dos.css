@@ -40,3 +40,43 @@ body.page-mybet { background: #000; }
 .r-losshalf { color: #ffb14a; }
 .r-lossfull { color: #ff5a4a; }
 .r-pending  { color: #6fe3ff; }
+
+/* ---------- ฟอร์มลงบิล ----------
+   ช่องกรอกใหญ่พอกดด้วยนิ้วโป้งบนมือถือ (ตัวหนังสือ 16px ไม่งั้น iOS ซูมเข้าเอง) */
+.bf-bar { margin-bottom: 12px; }
+.bf-open, .bf-save, .bf-close {
+  font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace;
+  font-size: 15px; font-weight: 700; letter-spacing: .06em;
+  padding: 12px 18px; border-radius: 10px; cursor: pointer;
+}
+.bf-open {
+  width: 100%; background: #000; color: #33ff66;
+  border: 1px dashed #1c7a3a;
+}
+.bf {
+  background: #000; color: #33ff66;
+  border: 1px solid #1c7a3a; border-radius: 10px;
+  padding: 14px; margin-bottom: 12px;
+  font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace;
+}
+.bf-head { font-size: 13px; letter-spacing: .2em; opacity: .8; margin-bottom: 10px; }
+.bf-shot {
+  display: block; text-align: center; padding: 14px;
+  border: 1px dashed #1c7a3a; border-radius: 10px; margin-bottom: 12px;
+  font-size: 15px; cursor: pointer;
+}
+.bf-shot input { display: none; }
+.bf-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.bf-k { flex: 0 0 88px; font-size: 12px; opacity: .75; }
+.bf-i {
+  flex: 1 1 auto; min-width: 0;
+  background: #04140a; color: #33ff66;
+  border: 1px solid #1c7a3a; border-radius: 6px;
+  padding: 10px; font-size: 16px;
+  font-family: inherit;
+}
+.bf-msg { margin: 10px 0; font-size: 13px; color: #ffd34d; }
+.bf-btns { display: flex; gap: 8px; margin-top: 12px; }
+.bf-save { flex: 1 1 auto; background: #12331d; color: #33ff66; border: 1px solid #33ff66; }
+.bf-save[disabled] { opacity: .5; }
+.bf-close { background: #000; color: #33ff66; border: 1px solid #1c7a3a; }

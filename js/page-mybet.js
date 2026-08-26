@@ -79,13 +79,142 @@ function dosBox_(inner) {
   return '<div class="dos-wrap"><div class="dos-mark">Pickup</div>' + inner + '</div>';
 }
 
+
+/* ---------- ฟอร์มลงบิล ----------
+   ทางเข้าของบิลอยู่ตรงนี้ที่เดียว: ถ่ายรูปสลิป → OCR อ่านมากรอกให้ → ตรวจ → กดบันทึก
+   OCR แค่กรอกให้ ไม่ได้ลงชีตเอง อ่านผิดก็แก้ในช่องได้ก่อนกด
+   ค่าที่พิมพ์เก็บไว้ใน BETFORM ไม่ได้อยู่ใน DOM เพราะหน้านี้ถูกวาดใหม่ได้ตลอด (mount_)
+   ถ้าเก็บใน DOM อย่างเดียว ของสดมาถึงเมื่อไหร่ที่พิมพ์ไว้หายทันที */
+var BETFORM = { open: false, busy: false, msg: '', v: {} };
+
+var BET_FIELDS = [
+  { k: 'ลีก',        t: 'text',   ph: 'Champions League Women' },
+  { k: 'ทีมเหย้า',   t: 'text',   ph: 'Czarni Sosnowiec W' },
+  { k: 'ทีมเยือน',   t: 'text',   ph: 'OH Leuven W' },
+  { k: 'วันที่',      t: 'date',   ph: '' },
+  { k: 'เวลา',       t: 'time',   ph: '' },
+  { k: 'ทีมที่เลือก', t: 'text',   ph: 'ทีมที่แทง (ถ้าเป็นแฮนดิแคป)' },
+  { k: 'แฮนดิแคป',   t: 'text',   ph: '-0.5' },
+  { k: 'เส้น',       t: 'text',   ph: 'สูงใส่ 2.5 · ต่ำใส่ -2.5' },
+  { k: 'ทายสกอร์',   t: 'text',   ph: '1-0' },
+  { k: 'ราคา',       t: 'text',   ph: '1.90' },
+  { k: 'เงิน',       t: 'text',   ph: '100' }
+];
+
+var BET_MARKETS = [
+  { v: 'AH',            t: 'แฮนดิแคป' },
+  { v: 'OVER_UNDER',    t: 'สูง/ต่ำ' },
+  { v: 'DRAW',          t: 'เสมอ' },
+  { v: 'CORRECT_SCORE', t: 'สกอร์ตรง' }
+];
+
+function betFormSet(k, v) { BETFORM.v[k] = v; }
+function betFormVal_(k) { return BETFORM.v[k] === undefined ? '' : String(BETFORM.v[k]); }
+
+function betFormField_(f) {
+  return '<label class="bf-row"><span class="bf-k">' + esc_(f.k) + '</span>' +
+    '<input class="bf-i" type="' + f.t + '" value="' + esc_(betFormVal_(f.k)) + '"' +
+    (f.ph ? ' placeholder="' + esc_(f.ph) + '"' : '') +
+    ' oninput="betFormSet(\'' + f.k + '\', this.value)"></label>';
+}
+
+function betFormHtml() {
+  if (!BETFORM.open) {
+    return '<div class="bf-bar"><button class="bf-open" onclick="betFormToggle()">＋ ลงบิล</button></div>';
+  }
+  var opts = BET_MARKETS.map(function (m) {
+    var on = betFormVal_('ตลาด') === m.v ? ' selected' : '';
+    return '<option value="' + m.v + '"' + on + '>' + m.t + '</option>';
+  }).join('');
+
+  return '<div class="bf">' +
+    '<div class="bf-head">ลงบิลใหม่</div>' +
+    '<label class="bf-shot">📷 ถ่ายรูปสลิป / เลือกรูป' +
+      '<input type="file" accept="image/*" capture="environment" onchange="betFormShot(this)">' +
+    '</label>' +
+    '<label class="bf-row"><span class="bf-k">ตลาด</span>' +
+      '<select class="bf-i" onchange="betFormSet(\'ตลาด\', this.value)">' +
+      '<option value="">— เลือก —</option>' + opts + '</select></label>' +
+    BET_FIELDS.map(betFormField_).join('') +
+    (BETFORM.msg ? '<div class="bf-msg">' + esc_(BETFORM.msg) + '</div>' : '') +
+    '<div class="bf-btns">' +
+      '<button class="bf-save" onclick="betFormSave()"' + (BETFORM.busy ? ' disabled' : '') + '>' +
+        (BETFORM.busy ? 'กำลังส่ง…' : 'บันทึกบิล') + '</button>' +
+      '<button class="bf-close" onclick="betFormToggle()">ปิด</button>' +
+    '</div>' +
+  '</div>';
+}
+
 /** 1 คู่ = 1 กรอบ แยกกันชัดๆ (บิลย่อยยังอยู่ในกรอบเดียวกับคู่ของมัน)
     ตัดรูปทีละคู่ได้เลย ไม่ต้องมานั่งเล็งเส้นแบ่ง */
 function renderMyBet(data, nowMs) {
   var bets = (data && data.bets ? data.bets : []);
+  var form = betFormHtml();
   if (!bets.length) {
-    return dosBox_('<div class="slip"><div class="slip-teams">ยังไม่มีบิล</div>' +
-      '<div class="slip-kick">ส่งสลิปเข้าบอทหรือกรอกเองได้เลย</div></div>');
+    return form + dosBox_('<div class="slip"><div class="slip-teams">ยังไม่มีบิล</div>' +
+      '<div class="slip-kick">กด ＋ ลงบิล แล้วถ่ายรูปสลิปได้เลย</div></div>');
   }
-  return bets.map(function (b) { return dosBox_(betSlip(b, nowMs)); }).join('');
+  return form + bets.map(function (b) { return dosBox_(betSlip(b, nowMs)); }).join('');
+}
+
+/* ---------- ปุ่มของฟอร์ม ----------
+   ส่วนนี้แตะ DOM กับเน็ต เลยไม่มีเทสต์ (เหมือน mount_ ใน app.js) */
+function betFormRedraw_() { if (typeof mount_ === 'function') mount_(); }
+
+function betFormToggle() {
+  BETFORM.open = !BETFORM.open;
+  BETFORM.msg = '';
+  betFormRedraw_();
+}
+
+/** ถ่ายรูป/เลือกรูป → ส่งให้ Vision อ่าน → เอาที่อ่านได้มากรอกให้ล่วงหน้า
+    ของที่อ่านมาได้ทับเฉพาะช่องที่ยังว่าง ที่พิมพ์เองไว้แล้วห้ามทับ */
+function betFormShot(input) {
+  var f = input && input.files ? input.files[0] : null;
+  if (!f) return;
+  BETFORM.busy = true; BETFORM.msg = 'กำลังอ่านสลิป…'; betFormRedraw_();
+  var rd = new FileReader();
+  rd.onload = function () {
+    apiPost_('ocr', { image: String(rd.result || '') }).then(function (r) {
+      BETFORM.busy = false;
+      if (!r || !r.ok) { BETFORM.msg = 'อ่านสลิปไม่ได้: ' + ((r && r.error) || 'ไม่รู้สาเหตุ'); }
+      else {
+        var got = 0, fl = r.fields || {};
+        for (var k in fl) {
+          if (!Object.prototype.hasOwnProperty.call(fl, k)) continue;
+          if (String(fl[k]) === '') continue;
+          if (betFormVal_(k) !== '') continue;
+          BETFORM.v[k] = fl[k]; got++;
+        }
+        BETFORM.msg = got ? ('อ่านมาให้ ' + got + ' ช่อง — ตรวจก่อนกดบันทึก')
+                          : 'อ่านสลิปแล้วแต่จับอะไรไม่ได้ กรอกเองได้เลย';
+      }
+      betFormRedraw_();
+    });
+  };
+  rd.onerror = function () {
+    BETFORM.busy = false; BETFORM.msg = 'เปิดไฟล์รูปไม่ได้'; betFormRedraw_();
+  };
+  rd.readAsDataURL(f);
+}
+
+function betFormSave() {
+  if (BETFORM.busy) return;
+  BETFORM.busy = true; BETFORM.msg = 'กำลังบันทึก…'; betFormRedraw_();
+  apiPost_('bet', { bet: BETFORM.v }).then(function (r) {
+    BETFORM.busy = false;
+    if (!r || !r.ok) { BETFORM.msg = (r && r.error) || 'บันทึกไม่สำเร็จ'; betFormRedraw_(); return; }
+    if (r.dup) { BETFORM.msg = r.error || 'บิลนี้ลงไปแล้ว'; betFormRedraw_(); return; }
+    BETFORM.open = false; BETFORM.v = {}; BETFORM.msg = '';
+    /* ลงแล้วต้องเห็นบิลบนจอทันที ไม่ใช่ให้ไปกดรีเฟรชเอง */
+    if (typeof fetchAll_ === 'function') {
+      fetchAll_().then(function (fresh) {
+        if (fresh && fresh.ok === true) {
+          saveCache(fresh);
+          if (typeof STATE !== 'undefined') { STATE.data = fresh; STATE.source = 'สด'; STATE.at = Date.now(); }
+        }
+        betFormRedraw_();
+      });
+    } else { betFormRedraw_(); }
+  });
 }
