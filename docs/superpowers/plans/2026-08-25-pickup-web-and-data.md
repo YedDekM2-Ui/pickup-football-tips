@@ -2137,7 +2137,7 @@ git remote add origin https://github.com/<user>/pickup-football-tips.git
 git branch -M main && git push -u origin main
 ```
 
-- [ ] **Step 7: เช็กบนมือถือจริง (เฟส 1-3 จบตรงนี้)**
+- [x] **Step 7: เช็กบนมือถือจริง (เฟส 1-3 จบตรงนี้)**
 
 เปิด `https://<user>.github.io/pickup-football-tips/` บน iPhone แล้วไล่ 5 ข้อ:
 
@@ -2159,7 +2159,7 @@ if (e && e.parameter && e.parameter.callback) {
 ```
 **อย่าเพิ่งใส่ไว้ก่อน** — ใส่ต่อเมื่อเจอจริง ไม่งั้นเพิ่มทางเข้าที่ไม่มีใครเทสต์
 
-- [ ] **Step 8: คอมมิตปิดเฟส**
+- [x] **Step 8: คอมมิตปิดเฟส** — ✅ ปิดแล้ว 26 ส.ค. 69 (คอมมิต `582cd86` ดันขึ้น main แล้ว · GAS LIVE v6 · เทสต์ 125/125)
 
 ```bash
 cd "D:/Projects/t.seeedz/pickup-football-tips"
