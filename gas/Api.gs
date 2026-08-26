@@ -110,7 +110,8 @@ function ledgerStats_(rows) {
 
 /** ชีตกลืนข้อความเป็น Date ได้ (เช่น "3-1" -> 1 มี.ค. / "02:18" -> 30 ธ.ค. 1899)
     ค่าที่โดนกลืนแล้ว "ย้อนกลับไม่ได้" (1 มี.ค. เป็นได้ทั้ง 3-1 และ 1-3) จึงปล่อยว่าง
-    ห้ามเดาให้ — กฎข้อ 6 · รอบดึงถัดไปมันจะเติมของจริงกลับมาเอง */
+    ห้ามเดาให้ — กฎข้อ 6
+    ใครเติมกลับ: fbFixMarkets_ ใน Forebet.gs (คู่ปักหมุดโดนด่านกันซ้ำเด้ง ไม่ได้เติมเองอัตโนมัติ) */
 function noDate_(v) {
   if (v instanceof Date) return '';
   return String(v === null || v === undefined ? '' : v);
@@ -147,11 +148,11 @@ function pickOut_(r, tmap) {
     'HTเปอร์เซ็นต์': noDate_(r['HT %']),
     'HTเรท': noDate_(r['HT เรท']),
     '1X2เปอร์เซ็นต์': noDate_(r['1X2 %']),
-    'Overเปอร์เซ็นต์': String(r['Over %'] || ''),
-    'BTTSเปอร์เซ็นต์': String(r['BTTS YES %'] || ''),
-    'DBเปอร์เซ็นต์': String(r['DB %'] || ''),
+    'Overเปอร์เซ็นต์': noDate_(r['Over %']),
+    'BTTSเปอร์เซ็นต์': noDate_(r['BTTS YES %']),
+    'DBเปอร์เซ็นต์': noDate_(r['DB %']),
     'DBเดาผล': noDate_(r['DB เดาผล']),
-    'HTFTเปอร์เซ็นต์': String(r['HT/FT %'] || ''),
+    'HTFTเปอร์เซ็นต์': noDate_(r['HT/FT %']),
     'HTFTเดาผล': noDate_(r['HT/FT เดาผล'])
   };
 }

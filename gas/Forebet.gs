@@ -802,6 +802,64 @@ function fbFixWhen_(snap) {
   return fixed;
 }
 
+/* ช่องตลาดที่ชีตกลืนเป็นวันที่ได้ ("1/1" -> 1 ม.ค. · "1-0" -> 1 ต.ค.)
+   กลืนไปแล้วอ่านกลับไม่ได้ noDate_ จึงคืนค่าว่าง = การ์ดโชว์ "HT/FT 17" ห้วนๆ ไม่มี (1/1) */
+var FB_MKT_FIX_ = ['เดาสกอร์', 'เรท Over', 'เรท BTTS YES', 'HT เดาผล', 'HT %', 'HT เรท',
+                   '1X2 %', 'Over %', 'BTTS YES %', 'DB %', 'DB เดาผล', 'HT/FT %', 'HT/FT เดาผล'];
+
+/** ช่องนี้เสียไหม — ว่าง หรือ โดนชีตกลืนเป็น Date ไปแล้ว */
+function fbCellBad_(v) {
+  if (v instanceof Date) return true;
+  return String(v === null || v === undefined ? '' : v).trim() === '';
+}
+
+/** ซ่อมช่องตลาดของแถวเก่า — ช่องที่ 3 ที่ยอมให้เขียนทับ ต่อจาก 'ลีก' และ 'วันเวลา'
+    ทำไมไม่ขัดกฎ "คู่เดิมห้ามแก้แถวเก่า": อันนี้ไม่ได้แก้คำทำนาย มันคือ "เติมของที่หายไป"
+    ด่านกันพลาด 3 ชั้น:
+      1. เติมเฉพาะช่องที่ว่าง/โดนกลืนเป็น Date เท่านั้น — ช่องที่ยังอ่านออกอยู่ห้ามแตะเด็ดขาด
+      2. แถวที่มีสกอร์จริงแล้ว = จบไปแล้ว ห้ามแตะ
+      3. ไม่มีอะไรเสียสักช่อง = ออกตั้งแต่ต้น ไม่เปิดหน้าคู่ให้เสียเน็ตฟรี */
+function fbFixMarkets_(snap) {
+  var key = fbKey_(snap);
+  if (!key) return 0;
+  var sh = sheetIfExists_(SHEETS.PICKS);
+  if (!sh) return 0;
+  var vals = sh.getDataRange().getValues();
+  if (vals.length < 2) return 0;
+
+  var head = vals[0], col = {}, c, r, h, f, i;
+  for (c = 0; c < head.length; c++) col[String(head[c])] = c;
+
+  /* รอบแรก: หาว่ามีอะไรเสียบ้าง ยังไม่ยิงเน็ต */
+  var jobs = [];
+  for (r = 1; r < vals.length; r++) {
+    var o = {};
+    for (h = 0; h < head.length; h++) o[String(head[h])] = vals[r][h];
+    if (fbKey_(o) !== key) continue;
+    if (String(o['สกอร์จริง'] === null || o['สกอร์จริง'] === undefined ? '' : o['สกอร์จริง']).trim()) continue;
+    for (i = 0; i < FB_MKT_FIX_.length; i++) {
+      f = FB_MKT_FIX_[i];
+      if (col[f] === undefined) continue;
+      if (fbCellBad_(o[f])) jobs.push({ r: r, c: col[f], f: f });
+    }
+  }
+  if (!jobs.length) return 0;
+
+  /* มีของเสียจริงถึงค่อยเปิดหน้าคู่ไปเอาค่ามาเติม — เปิดไม่ได้ก็ไม่แตะชีต */
+  try { snap = fbEnrich_(snap); } catch (err) { return 0; }
+
+  var fixed = 0;
+  for (i = 0; i < jobs.length; i++) {
+    var v = snap[jobs[i].f];
+    if (v === null || v === undefined || String(v).trim() === '') continue;
+    var rg = sh.getRange(jobs[i].r + 1, jobs[i].c + 1, 1, 1);
+    rg.setNumberFormat('@');   /* ไม่ตั้งเป็นข้อความก่อน ชีตกลืน "1/1" เป็นวันที่ซ้ำอีกรอบ = ซ่อมเสียเปล่า */
+    rg.setValues([[String(v)]]);
+    fixed++;
+  }
+  return fixed;
+}
+
 function fbExists_(rows, snap, nowMs) {
   var key = fbKey_(snap);
   if (!key) return true;
@@ -849,6 +907,10 @@ function fbSnapRun_() {
       /* ช่องที่ 2: วัน-เวลาเตะ ที่เคยเพี้ยนไป 1 วัน ให้แถวเก่าซ่อมตัวเองด้วย */
       try { var nw = fbFixWhen_(snap); if (nw) out.fixed.push(kind + ' วันเวลา=' + snap['วันที่'] + ' ' + snap['เวลาเตะ']); }
       catch (err2) { /* เหมือนกัน ซ่อมไม่ได้ก็ปล่อย ห้ามให้รอบนี้ล้ม */ }
+      /* ช่องที่ 3: ตัวเลขตลาด/สกอร์เดา ที่ชีตกลืนเป็นวันที่ไปแล้ว (การ์ดเลยโชว์ "HT/FT 17" ห้วนๆ)
+         ก่อนหน้านี้คู่ปักหมุดโดนเด้งตรงนี้ทุกรอบ = ไม่มีใครเติมกลับให้เลยสักที */
+      try { var nm = fbFixMarkets_(snap); if (nm) out.fixed.push(kind + ' ตลาด=' + nm + ' ช่อง'); }
+      catch (err3) { /* เหมือนกัน ซ่อมไม่ได้ก็ปล่อย ห้ามให้รอบนี้ล้ม */ }
       continue;
     }
     /* เปอร์เซ็นต์กับสกอร์ที่เดา ไม่ได้อยู่ในกล่องปักหมุด ต้องตามลิงก์ไปเปิดหน้าของคู่เอา

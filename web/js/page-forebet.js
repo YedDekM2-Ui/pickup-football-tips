@@ -76,11 +76,13 @@ function marketLine_(p) {
     parts.push(ht);
   }
 
+  /* DB กับ HT/FT ต้องมีครบทั้งเลขและผลที่เดา ขาดอย่างใดอย่างหนึ่ง = ตัดทั้งท่อน
+     "DB 80" หรือ "HT/FT 17" เดี่ยวๆ ไม่ได้บอกอะไร นอกจากทำให้อ่านผิด */
   var dp = s_(p['DBเปอร์เซ็นต์']), dw = s_(p['DBเดาผล']);
-  if (dp || dw) parts.push('DB ' + (dp && dw ? dp + '/' + dw : dp || dw));
+  if (dp && dw) parts.push('DB ' + dp + '/' + dw);
 
   var fp = s_(p['HTFTเปอร์เซ็นต์']), fw = s_(p['HTFTเดาผล']);
-  if (fp || fw) parts.push('HT/FT ' + (fp && fw ? fp + '(' + fw + ')' : fp || fw));
+  if (fp && fw) parts.push('HT/FT ' + fp + '(' + fw + ')');
 
   if (!parts.length) return '';
   return '<div class="pick-mkt">' + esc_(parts.join(' · ')) + '</div>';
