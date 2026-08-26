@@ -19,18 +19,19 @@ var FB_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 
             '(KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
 var FB_KIND = { FEATURED: 'FEATURED', POTD: 'POTD' };
-
-/* คำที่ใช้หาหัวข้อ — เผื่อมี tag คั่นกลางระหว่างคำ เลยยอมให้มีอะไรคั่นได้ไม่เกิน 40 ตัว */
+/* หัวข้อ 2 กล่องที่เจ้าของสั่ง — ต้องตรงตัวและเป็นข้อความในแท็กของมันเอง
+   ห้ามใช้คำหลวมๆ: หน้าเดียวกันมี <h1>Featured matches</h1> ของตารางใหญ่อยู่ด้วย
+   เผลอไปจับอันนั้น = ได้คู่มั่วจากตาราง ไม่ใช่คู่ในกล่อง */
 var FB_ANCHOR = {
-  FEATURED: ['featured', 'match'],
-  POTD: ['pick', 'of', 'the', 'day']
+  FEATURED: 'Featured match',
+  POTD: 'Pick of the day'
 };
 
-var FB_WINDOW = 4000;   /* อ่านต่อจากหัวข้อไปเท่านี้ตัวอักษร พอสำหรับ 1 การ์ด */
+var FB_WINDOW = 4000;   /* อ่านต่อจากหัวข้อไปเท่านี้ตัวอักษร พอสำหรับ 1 กล่อง */
 
-/* ---------- ตัวช่วยล้วนๆ (ไม่แตะเน็ต ไม่แตะชีต) เทสต์ได้ตรงๆ ---------- */
+/* ---------- ตัวช่วยอ่านหน้าเว็บ ---------- */
 
-/** ถอด tag ออกให้เหลือแต่ข้อความ — script/style ต้องทิ้งทั้งก้อน ไม่งั้นได้โค้ดปนมา */
+/** ตัด tag/สคริปต์/สไตล์ทิ้ง เหลือแต่ตัวหนังสือ */
 function fbStrip_(html) {
   var s = String(html || '');
   s = s.replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -44,135 +45,190 @@ function fbStrip_(html) {
   return s.replace(/\s+/g, ' ').trim();
 }
 
-/** สร้าง regex จากรายการคำ ยอมให้มี tag/ช่องว่างคั่นระหว่างคำได้ */
-function fbAnchorRe_(words) {
-  var parts = [];
-  for (var i = 0; i < words.length; i++) parts.push(words[i]);
-  return new RegExp(parts.join('[\\s\\S]{0,40}?'), 'i');
+function fbClean_(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
 }
 
-/** หาหัวข้อแล้วตัดหน้าต่างข้อมูลออกมา — ไม่เจอหัวข้อ = คืน found:false ไม่ throw */
+/** หัวข้อต้องเป็นข้อความเดี่ยวๆ ในแท็ก: >Featured match<
+    "Featured matches" จะไม่เข้าเงื่อนไข เพราะหลังคำมีตัว s ไม่ใช่ < */
+function fbAnchorRe_(phrase) {
+  var p = String(phrase || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return new RegExp('>\\s*' + p + '\\s*<', 'i');
+}
+
 function fbWindow_(html, kind) {
-  var words = FB_ANCHOR[kind] || [];
   var s = String(html || '');
-  var m = fbAnchorRe_(words).exec(s);
+  var m = fbAnchorRe_(FB_ANCHOR[kind] || '').exec(s);
   if (!m) return { found: false, idx: -1, raw: '', text: '' };
   var start = m.index + m[0].length;
   var raw = s.slice(start, start + FB_WINDOW);
   return { found: true, idx: m.index, raw: raw, text: fbStrip_(raw) };
 }
 
-function fbClean_(s) {
-  return String(s === null || s === undefined ? '' : s)
-    .replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
-}
+/* ---------- อ่านทีละช่อง ---------- */
 
-/** ชื่อทีมที่รับได้: มีตัวอักษร ยาว 2-40 ไม่ใช่ตัวเลขล้วน */
+/** หัวตารางของเขาเขียนว่า "Home team / Away team" — หลุดมาเมื่อไหร่คือจับผิดกล่อง */
 function fbTeamOk_(s) {
   var t = fbClean_(s);
   if (t.length < 2 || t.length > 40) return false;
-  return /[A-Za-zÀ-ÿ]/.test(t);
+  if (/^(home|away)\s*team$/i.test(t)) return false;
+  return /[A-Za-zÀ-ɏ]/.test(t);
 }
 
-/** ชั้นที่ 1 — ยึดชื่อ class ของ forebet (แม่นสุดตอนที่เขายังไม่แก้หน้าเว็บ) */
-function fbTeamsByClass_(raw) {
+/** ชื่อทีมจริงซ่อนอยู่ชั้นในของ microdata:
+    <span itemprop="homeTeam" ...><span itemprop="name">ชื่อ</span></span>
+    (ของเดิมอ่านชั้นเดียว เลยได้ค่าว่าง แล้วไปตกที่ตัวสำรองที่คว้าหัวตารางมาแทน) */
+function fbNameOf_(raw, prop) {
   var s = String(raw || '');
-  var h = /class="[^"]*homeTeam[^"]*"[^>]*>\s*([^<]{2,40}?)\s*</i.exec(s);
-  var a = /class="[^"]*awayTeam[^"]*"[^>]*>\s*([^<]{2,40}?)\s*</i.exec(s);
-  if (h && a) return { home: fbClean_(h[1]), away: fbClean_(a[1]), how: 'class' };
-  var t = /class="[^"]*tnms[^"]*"[^>]*>[\s\S]{0,200}?>\s*([^<]{2,40}?)\s*<[\s\S]{0,200}?>\s*([^<]{2,40}?)\s*</i.exec(s);
-  if (t) return { home: fbClean_(t[1]), away: fbClean_(t[2]), how: 'tnms' };
-  return null;
+  var m = new RegExp('itemprop="' + prop + '"[\\s\\S]{0,400}?itemprop="name"[^>]*>\\s*([^<]{2,60}?)\\s*<', 'i').exec(s);
+  if (m) return fbClean_(m[1]);
+  m = new RegExp('itemprop="' + prop + '"[^>]*>([\\s\\S]{0,200}?)<\\/span>', 'i').exec(s);
+  return m ? fbClean_(fbStrip_(m[1])) : '';
 }
 
-/** ชั้นที่ 2 — ยึดข้อความ "ทีม - ทีม" / "ทีม vs ทีม" ที่ถอด tag แล้ว
-    ตัวคั่นต้องมีตัวอักษรขนาบทั้งสองข้าง เลข "2-1" จึงไม่หลุดมาเป็นชื่อทีม */
-function fbTeamsByText_(text) {
-  var re = /([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9.'\-]*(?: [A-Za-zÀ-ÿ0-9.'\-]+){0,3})\s+(?:-|–|—|vs\.?|v\.)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9.'\-]*(?: [A-Za-zÀ-ÿ0-9.'\-]+){0,3})/;
-  var m = re.exec(String(text || ''));
-  if (!m) return null;
-  return { home: fbClean_(m[1]), away: fbClean_(m[2]), how: 'text' };
-}
+function fbTeams_(raw) {
+  var h = fbNameOf_(raw, 'homeTeam'), a = fbNameOf_(raw, 'awayTeam');
+  if (fbTeamOk_(h) && fbTeamOk_(a)) return { home: h, away: a, how: 'micro' };
 
-function fbTeams_(raw, text) {
-  var byClass = fbTeamsByClass_(raw);
-  if (byClass && fbTeamOk_(byClass.home) && fbTeamOk_(byClass.away) &&
-      byClass.home !== byClass.away) return byClass;
-  var byText = fbTeamsByText_(text);
-  if (byText && fbTeamOk_(byText.home) && fbTeamOk_(byText.away) &&
-      byText.home !== byText.away) return byText;
-  return null;
-}
-
-/** 1X2 — ยึด class ก่อน ถ้าไม่มีค่อยหาตัวเดี่ยวๆ 1/X/2 ในข้อความ */
-function fbWdl_(raw, text) {
-  var m = /class="[^"]*forepr[^"]*"[^>]*>\s*([12X])\s*</i.exec(String(raw || ''));
-  if (m) return m[1].toUpperCase();
-  var t = /(?:^|\s)([12X])(?=\s+\d{1,3}\s*%)/.exec(String(text || ''));
-  return t ? t[1].toUpperCase() : '';
-}
-
-function fbPct_(text) {
-  var m = /(\d{1,3})\s*%/.exec(String(text || ''));
-  if (!m) return 0;
-  var n = Number(m[1]);
-  return (n >= 1 && n <= 100) ? n : 0;
-}
-
-/** ราคาแบบทศนิยม 2 ตำแหน่ง 1.01-99.99 — ต่ำกว่า 1.01 ไม่ใช่ราคา */
-function fbOdds_(text) {
-  var re = /\b([1-9]\d?\.\d{2})\b/g, m;
-  while ((m = re.exec(String(text || '')))) {
-    var n = Number(m[1]);
-    if (n >= 1.01 && n <= 99.99) return n;
+  /* สำรอง: <meta itemprop="name" content="ทีมเหย้า vs ทีมเยือน"> */
+  var m = /<meta[^>]*itemprop="name"[^>]*content="([^"]{5,90})"/i.exec(String(raw || ''));
+  if (m) {
+    var p = fbClean_(m[1]).split(/\s+vs\.?\s+/i);
+    if (p.length === 2 && fbTeamOk_(p[0]) && fbTeamOk_(p[1])) {
+      return { home: fbClean_(p[0]), away: fbClean_(p[1]), how: 'meta' };
+    }
   }
-  return 0;
+  return null;
 }
 
-/** สกอร์ที่เดา เช่น 2-1 — ต้องไม่มีตัวอักษรติดหัวท้าย และเลขไม่เกิน 2 หลัก */
-function fbScore_(text) {
-  var m = /(?:^|[^\d\w])(\d{1,2})\s*[-–:]\s*(\d{1,2})(?![\d\w])/.exec(String(text || ''));
-  return m ? (m[1] + '-' + m[2]) : '';
+/** รหัสคู่ของ forebet — ใช้ตามไปหาแถวเดียวกันในตารางใหญ่ (ชื่อทีมซ้ำกันได้ รหัสไม่ซ้ำ) */
+function fbMatchId_(raw) {
+  var s = String(raw || '');
+  var m = /getstag\(\s*this\s*,\s*(\d{4,12})/i.exec(s);
+  if (m) return m[1];
+  m = /itemprop="url"[^>]*href="[^"]*?-(\d{4,12})"/i.exec(s);
+  if (m) return m[1];
+  m = /id="(\d{4,12})"/i.exec(s);
+  return m ? m[1] : '';
 }
 
-/** วันที่ — รับ dd/mm/yyyy, dd.mm.yyyy และ yyyy-mm-dd คืนเป็น yyyy-mm-dd เสมอ */
-function fbDate_(text) {
-  var s = String(text || '');
-  var a = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(s);
-  if (a) return a[1] + '-' + a[2] + '-' + a[3];
-  var b = /\b(\d{2})[\/.](\d{2})[\/.](\d{4})\b/.exec(s);
-  if (b) return b[3] + '-' + b[2] + '-' + b[1];
-  return '';
-}
-
-/** ลีก — เอาจากลิงก์ทำนายผลของเขา ไม่มีก็ปล่อยว่าง ไม่ใช่เรื่องคอขาดบาดตาย */
+/** ชื่อลีก — เขาฝังไว้ในพารามิเตอร์ของ getstag(...)
+    ไม่มีมา (บางคู่เขาส่งค่าว่าง) = ใช้ตัวย่อที่หน้าเว็บโชว์จริง เช่น Co1 */
 function fbLeague_(raw) {
-  var m = /predictions-1x2\/[^"']*["'][^>]*>\s*([^<]{2,40}?)\s*</i.exec(String(raw || ''));
+  var s = String(raw || '');
+  var m = /getstag\([^)]*?,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*\)/i.exec(s);
+  if (m && fbClean_(m[2])) return fbClean_(m[2]);
+  if (m && fbClean_(m[1])) return fbClean_(m[1]);
+  var t = /class="[^"]*shortTag[^"]*"[^>]*>\s*([^<]{1,20}?)\s*</i.exec(s);
+  if (t) return fbClean_(t[1]);
+  var l = /predictions-1x2\/[^"']*["'][^>]*>\s*([^<]{2,40}?)\s*</i.exec(s);
+  return l ? fbClean_(l[1]) : '';
+}
+
+/** 1X2 — ตัวเลขอยู่ใน span ซ้อน span: <span class="forepr"><span>1</span></span> */
+function fbWdl_(raw) {
+  var m = /class="[^"]*forepr[^"]*"[^>]*>[\s\S]{0,40}?([12X])\s*<\/span>/i.exec(String(raw || ''));
+  return m ? m[1].toUpperCase() : '';
+}
+
+function fbDate_(raw) {
+  var s = String(raw || '');
+  var m = /itemprop="startDate"[^>]*datetime="(\d{4})-(\d{2})-(\d{2})/i.exec(s);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = /\b(\d{2})\/(\d{2})\/(\d{4})\b/.exec(s);
+  if (m) return m[3] + '-' + m[2] + '-' + m[1];
+  m = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(s);
+  return m ? m[1] + '-' + m[2] + '-' + m[3] : '';
+}
+
+/** วัน-เวลาตามที่หน้าเว็บเขาโชว์เป๊ะๆ ไม่แปลงเขตเวลา (กฎข้อ 6 ห้ามเดา) */
+function fbWhenText_(raw) {
+  var m = /class="[^"]*date_bah[^"]*"[^>]*>\s*([^<]{5,30}?)\s*</i.exec(String(raw || ''));
   return m ? fbClean_(m[1]) : '';
 }
 
-/** อ่าน 1 ก้อนให้จบ — อ่านชื่อทีมไม่ได้ = คืน null (ถือว่าไม่ได้ของ)
+/* ---------- ตามไปเก็บของที่กล่องไม่มี ---------- */
+
+/** กล่อง Featured / Pick of the day มีแค่ ทีม/ลีก/เวลา/1X2
+    สกอร์ที่เดากับเปอร์เซ็นต์อยู่ในแถวของคู่เดียวกันในตารางใหญ่ หน้าเดียวกันนั่นแหละ
+    → ไม่ต้องยิงเน็ตเพิ่ม แค่ตามรหัสคู่ไปหาแถวนั้น */
+function fbRowById_(html, id) {
+  var s = String(html || ''), key = String(id || '');
+  if (!key) return '';
+  var at = -1;
+  while ((at = s.indexOf(key, at + 1)) >= 0) {
+    var from = s.lastIndexOf('class="rcnt', at);
+    if (from < 0) continue;
+    if (at - from > FB_WINDOW) continue;
+    var chunk = s.slice(from, from + FB_WINDOW);
+    if (chunk.indexOf('ex_sc') >= 0) return chunk;
+  }
+  return '';
+}
+
+/** สกอร์ที่เดา — มี 2 ที่ในแถว (แบบมือถือกับแบบตาราง) เอาอันแรกที่อ่านออกเป็นตัวเลขจริง */
+function fbScore_(row) {
+  var s = String(row || '');
+  var re = /class="[^"]*ex_sc[^"]*"[^>]*>([\s\S]{0,120}?)<\/(?:div|span)>/gi, m;
+  while ((m = re.exec(s))) {
+    var n = /(\d{1,2})\s*[-–:]\s*(\d{1,2})/.exec(fbStrip_(m[1]));
+    if (n) return n[1] + '-' + n[2];
+  }
+  return '';
+}
+
+/** เปอร์เซ็นต์ — เขาให้มา 3 ตัวเรียง 1 / X / 2 ต้องหยิบตัวที่ตรงกับผลที่เขาเดา
+    ไม่รู้ว่าเขาเดาอะไร = ไม่หยิบ ดีกว่าหยิบผิดตัว */
+function fbPct_(row, wdl) {
+  var m = /class="[^"]*fprc[^"]*"[^>]*>([\s\S]{0,200}?)<\/div>/i.exec(String(row || ''));
+  if (!m) return 0;
+  var nums = fbStrip_(m[1]).match(/\d{1,3}/g) || [];
+  if (nums.length < 3) return 0;
+  var w = String(wdl || '').toUpperCase();
+  var i = (w === '1') ? 0 : (w === 'X') ? 1 : (w === '2') ? 2 : -1;
+  if (i < 0) return 0;
+  var n = Number(nums[i]);
+  return (n >= 1 && n <= 100) ? n : 0;
+}
+
+/** ราคา — ของเขาเป็นแบบอเมริกันได้ (-118) กฎข้อ 6 ห้ามแปลง ไม่ใช่ทศนิยมก็ปล่อย 0
+    และต้องอ่านจากช่องราคาเท่านั้น (เลข 2.74 ในแถวคือ "ค่าเฉลี่ยประตู" หน้าตาเหมือนราคามาก) */
+function fbOdds_(row) {
+  var m = /class="[^"]*prmod[^"]*"[^>]*>([\s\S]{0,400}?)<\/div>/i.exec(String(row || ''));
+  if (!m) return 0;
+  var n = /(?:^|[^\d.])([1-9]\d?\.\d{2})(?!\d)/.exec(fbStrip_(m[1]));
+  if (!n) return 0;
+  var v = Number(n[1]);
+  return (v >= 1.01 && v <= 99.99) ? v : 0;
+}
+
+/** อ่าน 1 กล่องให้จบ — อ่านชื่อทีมไม่ได้ = คืน null (ถือว่าไม่ได้ของ)
     ที่เหลืออ่านไม่ได้ = ปล่อยว่าง ยังนับว่าได้ของ */
 function fbParseOne_(html, kind) {
   var w = fbWindow_(html, kind);
   if (!w.found) return null;
-  var t = fbTeams_(w.raw, w.text);
+  var t = fbTeams_(w.raw);
   if (!t) return null;
+  var id = fbMatchId_(w.raw);
+  var row = fbRowById_(html, id);
+  var wdl = fbWdl_(w.raw) || fbWdl_(row);
   return {
     'ช่อง': kind,
     'ลีก': fbLeague_(w.raw),
     'ทีมเหย้า': t.home,
     'ทีมเยือน': t.away,
-    'วันที่': fbDate_(w.text),
+    'วันที่': fbDate_(w.raw),
     'เวลาเตะ': '',              /* ไม่รู้เขตเวลาของเขาแน่ชัด = ไม่กรอก ดีกว่ากรอกผิด */
-    'เดาผล': fbWdl_(w.raw, w.text),
-    'เดาสกอร์': fbScore_(w.text),
-    'เปอร์เซ็นต์': fbPct_(w.text),
-    'ราคา': fbOdds_(w.text),
+    'เวลาที่เขาโชว์': fbWhenText_(w.raw),
+    'เดาผล': wdl,
+    'เดาสกอร์': fbScore_(row),
+    'เปอร์เซ็นต์': fbPct_(row, wdl),
+    'ราคา': fbOdds_(row),
+    'รหัสคู่': id,
     'อ่านทีมจาก': t.how
   };
 }
-
 /* ---------- ทางเน็ต ---------- */
 
 function fbFetch_(url) {

@@ -21,23 +21,54 @@ function bookOf(picks) {
 }
 
 /** หน้าเว็บปลอมที่หน้าตาเหมือนของ forebet พอให้ตัวอ่านทำงานได้ */
+/** หน้าเว็บปลอม — ลอกโครงจริงของ forebet มาจาก _tests/fixtures/forebet-real.html
+    ต้องใช้ชื่อ class / microdata ชุดเดียวกับของจริง ไม่งั้นเทสต์เขียวแต่ของจริงพัง
+    ของจริงแยกเป็น 2 ที่: กล่องปักหมุดมีแค่ ทีม/ลีก/เวลา/1X2
+    ส่วนสกอร์ที่เดากับเปอร์เซ็นต์อยู่ในแถวของคู่เดียวกันในตารางใหญ่ */
+function fbFakeRow(m, big) {
+  const cols = big
+    ? '<div class="fprc"><span>' + m.p[0] + '</span><span>' + m.p[1] + '</span>' +
+        '<span class="fpr">' + m.p[2] + '</span></div>' +
+      '<span class="scrmobpred ex_sc">' + m.sc.split('-')[0] +
+        '<span class="scrmobpreddash">-</span>' + m.sc.split('-')[1] + '</span>' +
+      '<div class="ex_sc tabonly">' + m.sc.replace('-', ' - ') + '</div>' +
+      '<div class="avg_sc tabonly">2.37</div>' +
+      '<div class="bigOnly prmod"><span class="lscrsp" title="odds">' + m.odds + '</span></div>'
+    : '';
+  return '<div class="rcnt tr_0">' +
+    '<div class="stcn"><div class="shortagDiv tghov">' +
+      '<img class="flsc" onclick="getstag(this,' + m.id + ",'" + m.country + "','" + m.league +
+        "','football/predictions-1x2','xx')" + '">' +
+      '<span class="shortTag">' + m.tag + '</span></div>' +
+      '<div id="' + m.id + '" class="nofav fav_icon"></div></div>' +
+    '<div class="tnms"><div itemscope itemtype="http://schema.org/SportsEvent">' +
+      '<meta itemprop="name" content="' + m.home + ' vs ' + m.away + '">' +
+      '<a class="tnmscn" itemprop="url" href="/en/football/matches/x-' + m.id + '">' +
+      '<span class="homeTeam" itemprop="homeTeam" itemscope><span itemprop="name">' + m.home + '</span></span>' +
+      '<span class="awayTeam" itemprop="awayTeam" itemscope><span itemprop="name">' + m.away + '</span></span>' +
+      '<time itemprop="startDate" datetime="' + m.iso + 'T18:30:00+00:00">' +
+      '<span class="date_bah">' + m.shown + '</span></time></a>' +
+      '</div></div>' +
+    '<div class="predict"><span class="forepr"><span>' + m.wdl + '</span></span></div>' +
+    cols + '</div>';
+}
 function pageHtml(a) {
+  const feat = { id: 1111111, country: 'England', league: a.league1, tag: 'PL',
+    home: a.home1, away: a.away1, wdl: '1', p: [a.pct1, 12, 17],
+    sc: a.sc1, odds: a.odds1, iso: '2026-08-25', shown: a.date1 + ' 18:30' };
+  const potd = { id: 2222222, country: 'Netherlands', league: a.league2, tag: 'Ned1',
+    home: a.home2, away: a.away2, wdl: 'X', p: [20, a.pct2, 16],
+    sc: a.sc2, odds: a.odds2, iso: '2026-08-25', shown: a.date2 + ' 20:00' };
+  /* คั่นให้ห่างเกิน FB_WINDOW จริงๆ — กล่องปักหมุดต้องไม่บังเอิญเห็นแถวตารางใหญ่
+     ถ้าไม่คั่น เทสต์จะผ่านทั้งที่ตัวตามรหัสคู่ (fbRowById_) ไม่ได้ทำงานเลย */
+  const gap = '<!--' + 'x'.repeat(5000) + '-->';
   return '<html><body><div class="wrap">' +
-    '<h2>Featured match</h2>' +
-    '<div class="rcnt"><span class="shortTag">' + a.league1 + '</span>' +
-      '<span class="homeTeam">' + a.home1 + '</span>' +
-      '<span class="awayTeam">' + a.away1 + '</span>' +
-      '<span class="forepr">1</span><span class="fprc">' + a.pct1 + '%</span>' +
-      '<span class="ex_sc">' + a.sc1 + '</span><span class="lscrsp">' + a.odds1 + '</span>' +
-      '<span class="date_bah">' + a.date1 + '</span></div>' +
-    '<h2>Pick of the day</h2>' +
-    '<div class="rcnt"><span class="shortTag">' + a.league2 + '</span>' +
-      '<span class="homeTeam">' + a.home2 + '</span>' +
-      '<span class="awayTeam">' + a.away2 + '</span>' +
-      '<span class="forepr">X</span><span class="fprc">' + a.pct2 + '%</span>' +
-      '<span class="ex_sc">' + a.sc2 + '</span><span class="lscrsp">' + a.odds2 + '</span>' +
-      '<span class="date_bah">' + a.date2 + '</span></div>' +
-    '</div>' + '<!--' + 'x'.repeat(1200) + '-->' + '</body></html>';
+    '<div class="ftrdmtch"><h3>Featured match</h3>' + fbFakeRow(feat, false) + '</div>' +
+    '<div class="ftrdmtch"><h3>Pick of the day</h3>' + fbFakeRow(potd, false) + '</div>' +
+    gap +
+    '<h1>Featured matches</h1>' +          /* ตารางใหญ่ — คำนี้ห้ามถูกจับเป็นกล่อง */
+    '<div class="schema">' + fbFakeRow(feat, true) + fbFakeRow(potd, true) + '</div>' +
+    '</div></body></html>';
 }
 const PAGE_A = {
   league1: 'Premier League', home1: 'Arsenal', away1: 'Leeds',
@@ -137,10 +168,15 @@ test('หน้าเว็บเขาเปลี่ยนหน้าตา �
   eq(nPicks(g), 1, 'ห้ามเขียนทับของเก่า');
 });
 
-test('เลขสกอร์ 2-1 ต้องไม่หลุดมาเป็นชื่อทีม', () => {
+test('เลขสกอร์/หัวตาราง ต้องไม่หลุดมาเป็นชื่อทีม', () => {
   const g = fbEnv(bookOf([]), '');
-  eq(g.fbTeamsByText_('Featured 2 - 1 71%'), null);
-  ok(g.fbTeamsByText_('Arsenal - Leeds 2-0') !== null, 'ชื่อทีมจริงต้องยังอ่านออก');
+  eq(g.fbTeamOk_('Home team'), false, 'หัวตารางของเขา ไม่ใช่ชื่อทีม');
+  eq(g.fbTeamOk_('Away team'), false);
+  eq(g.fbTeamOk_('2 - 1'), false, 'ตัวเลขล้วน ไม่ใช่ชื่อทีม');
+  ok(g.fbTeamOk_('Arsenal'), 'ชื่อทีมจริงต้องยังผ่าน');
+  ok(g.fbTeamOk_('Cúcuta Deportivo'), 'ชื่อที่มีสระเสียงต้องผ่านด้วย');
+  /* กล่องที่มีแต่ตัวเลข = ถือว่าไม่ได้ของ ห้ามเดาชื่อทีมเอง */
+  eq(g.fbParseOne_('<h3>Featured match</h3><div class="rcnt">2 - 1 71%</div>', 'FEATURED'), null);
 });
 
 test('fbPinned_ คืนแถวล่าสุดของแต่ละช่อง พร้อมบอกว่าดึงเมื่อไหร่', () => {
@@ -296,4 +332,72 @@ test('forebet ล่ม/บล็อก = payloadAll_ ต้องยังค�
   eq(out.ok, true);
   eq(out.pinned.length, 2, 'ของเก่าต้องยังขึ้นหน้า 1');
   eq(nPicks(g), 2, 'ห้ามเขียนอะไรเพิ่ม');
+});
+
+/* ---------- ของจริง: หน้าเว็บที่เจ้าของก๊อปมาให้ ---------- */
+const REAL = require('fs').readFileSync(
+  require('path').join(__dirname, 'fixtures', 'forebet-real.html'), 'utf8');
+
+test('หน้าจริงของ forebet: อ่านออกครบทั้ง 2 กล่อง', () => {
+  const g = fbEnv(bookOf([]), REAL);
+
+  const f = g.fbParseOne_(REAL, 'FEATURED');
+  ok(f, 'กล่อง Featured match ต้องอ่านออก');
+  eq(f['ทีมเหย้า'], 'Fuglebakken KFUM');
+  eq(f['ทีมเยือน'], 'Vendsyssel FF');
+  eq(f['อ่านทีมจาก'], 'micro', 'ต้องได้จาก microdata ชั้นใน ไม่ใช่ตัวสำรอง');
+  eq(f['ลีก'], 'DBUs Landspokal');
+  eq(f['วันที่'], '2026-08-25');
+  eq(f['เดาผล'], '2');
+  eq(f['เดาสกอร์'], '0-1', 'สกอร์อยู่ในแถวตารางใหญ่ ต้องตามรหัสคู่ไปเก็บมา');
+  eq(f['เปอร์เซ็นต์'], 60, 'ต้องหยิบตัวที่ตรงกับผลที่เขาเดา (ช่อง 2)');
+  eq(f['รหัสคู่'], '2518832');
+  eq(f['เวลาที่เขาโชว์'], '25/08/2026 18:30');
+  eq(f['เวลาเตะ'], '', 'ไม่รู้เขตเวลาของเขา = ปล่อยว่าง ห้ามเดา');
+
+  const p = g.fbParseOne_(REAL, 'POTD');
+  ok(p, 'กล่อง Pick of the day ต้องอ่านออก');
+  eq(p['ทีมเหย้า'], 'Cúcuta Deportivo');
+  eq(p['ทีมเยือน'], 'Alianza Petrolera');
+  eq(p['เดาผล'], 'X');
+  eq(p['เดาสกอร์'], '1-1');
+  eq(p['เปอร์เซ็นต์'], 42, 'ผลเป็น X ต้องหยิบตัวกลาง');
+  eq(p['วันที่'], '2026-08-26');
+  eq(p['รหัสคู่'], '2528659');
+});
+
+test('หน้าจริง: จดลงชีตได้ครบ 2 แถว', () => {
+  const g = fbEnv(bookOf([]), REAL);
+  const r = g.fbSnapRun_();
+  eq(r.ok, true);
+  eq(r.missed.length, 0);
+  eq(nPicks(g), 2);
+  const rows = g.readObjects_('PICKS');
+  ok(rows.some(x => x['ทีมเหย้า'] === 'Fuglebakken KFUM'), 'คู่ Featured ต้องลงชีต');
+  ok(rows.some(x => x['ทีมเหย้า'] === 'Cúcuta Deportivo'), 'คู่ Pick of the day ต้องลงชีต');
+});
+
+test('ราคาแบบอเมริกัน (-1429 / +210) = ไม่กรอก ห้ามแปลงเอง (กฎข้อ 6)', () => {
+  const g = fbEnv(bookOf([]), REAL);
+  eq(g.fbParseOne_(REAL, 'FEATURED')['ราคา'], 0, 'หน้าจริงหน้านี้เป็นราคาอเมริกัน');
+  eq(g.fbOdds_('<div class="prmod"><span class="lscrsp">-1429</span></div>'), 0);
+  eq(g.fbOdds_('<div class="prmod"><span class="lscrsp">+210</span></div>'), 0);
+  eq(g.fbOdds_('<div class="prmod"><span class="lscrsp">1.42</span></div>'), 1.42,
+    'ถ้าเขาให้เป็นทศนิยม ต้องยังอ่านได้ตามเดิม');
+});
+
+test('เลขค่าเฉลี่ยประตูในแถวเดียวกัน ต้องไม่หลุดมาเป็นราคา', () => {
+  const g = fbEnv(bookOf([]), '');
+  const row = '<div class="rcnt"><div class="avg_sc tabonly">2.37</div>' +
+              '<div class="bigOnly prmod"><span class="lscrsp">-1429</span></div></div>';
+  eq(g.fbOdds_(row), 0, '2.37 คือค่าเฉลี่ยประตู ไม่ใช่ราคา');
+});
+
+test('หัวข้อ "Featured matches" ของตารางใหญ่ ต้องไม่ถูกจับเป็นกล่องปักหมุด', () => {
+  const g = fbEnv(bookOf([]), '');
+  const html = '<h1>Featured matches</h1><div class="rcnt">' +
+    '<span itemprop="homeTeam" itemscope><span itemprop="name">Home team</span></span>' +
+    '<span itemprop="awayTeam" itemscope><span itemprop="name">Away team</span></span></div>';
+  eq(g.fbWindow_(html, 'FEATURED').found, false, 'พหูพจน์ = คนละหัวข้อ');
+  eq(g.fbParseOne_(html, 'FEATURED'), null);
 });
