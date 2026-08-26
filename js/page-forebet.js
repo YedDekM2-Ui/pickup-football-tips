@@ -37,6 +37,29 @@ function predictLine_(p) {
   return '<div class="pick-pred">' + esc_(parts.join(' · ')) + '</div>';
 }
 
+/** 3 ตลาดที่มาจากหน้าของคู่เอง — เจ้าของเรียกด้วยคำพวกนี้ จึงคงคำเดิมไว้
+    เรทเป็น "ข้อความตามที่ forebet โชว์" (+150 / -208) ห้ามคิดเลขต่อ (กฎข้อ 6)
+    ช่องไหนว่างก็ข้ามไป ไม่มีสักช่อง = ไม่มีบรรทัดนี้เลย */
+function marketLine_(p) {
+  var parts = [];
+  var ov = String(p['เรทOver'] || '').trim();
+  if (ov) parts.push('Over ' + ov);
+  var bt = String(p['เรทBTTSYes'] || '').trim();
+  if (bt) parts.push('BTTS Yes ' + bt);
+  var hw = String(p['HTเดาผล'] || '').trim();
+  var hp = String(p['HTเปอร์เซ็นต์'] || '').trim();
+  var ho = String(p['HTเรท'] || '').trim();
+  if (hw || hp || ho) {
+    var ht = 'HT';
+    if (hw) ht += ' ' + hw;
+    if (hp) ht += ' (' + hp + ')';
+    if (ho) ht += ' ' + ho;
+    parts.push(ht);
+  }
+  if (!parts.length) return '';
+  return '<div class="pick-mkt">' + esc_(parts.join(' · ')) + '</div>';
+}
+
 /** ไส้ในของใบ — แยกออกมาเพราะใบปักหมุดใช้ไส้เดียวกัน ต่างแค่กรอบกับป้าย */
 function pickBody_(p, nowMs) {
   var home = esc_(teamTh(p['เหย้า'], p['เหย้าไทย']));
@@ -49,6 +72,7 @@ function pickBody_(p, nowMs) {
       '<span class="muted">' + (when ? esc_(thDate(when)) + ' ' + esc_(thTime(when)) : '') + '</span></div>' +
     '<div class="big">' + home + ' <span class="muted">VS</span> ' + away + '</div>' +
     predictLine_(p) +
+    marketLine_(p) +
     '<div class="row">' +
       '<span class="pick-pct">' + (isNaN(pct) ? '' : pct + '%') + '</span>' +
       '<span class="pick-odds">' + esc_(fmtOdds(p['ราคา'])) + '</span>' +
