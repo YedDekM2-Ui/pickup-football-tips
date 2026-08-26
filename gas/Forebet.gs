@@ -8,7 +8,9 @@
       เพราะเจ้าของขอภาพ ณ ตอนนั้น ไม่ใช่ตัวเลขล่าสุด
    3) ตัวอ่านห้ามยึดชื่อ class ของเว็บเขาอย่างเดียว — เขาแก้หน้าเว็บเมื่อไหร่ก็พังเมื่อนั้น
       จึงอ่าน 2 ชั้น: ชั้นแรกยึด class ชั้นสองยึด "ข้อความที่ถอด tag ออกแล้ว"
-   4) เวลาเตะ: ถ้าไม่รู้เขตเวลาแน่ชัด ปล่อยว่าง ห้ามเดาแล้วบวกลบเอง (กฎเหล็กข้อ 6) */
+   4) เวลาเตะ: เจ้าของสั่งให้ใช้เวลาไทย = เวลาที่หน้าเว็บโชว์ + 7 ชม.
+      (ปรับได้ที่ Script Property FB_TZ_SHIFT · ของต้นทางยังเก็บดิบไว้ในช่อง 'เวลาที่เขาโชว์')
+   5) ยิงตรงไปหา forebet โดน Cloudflare กั้น (403) — ทางที่ผ่านคือให้ Jina เปิดหน้าแทน */
 
 var FB_URLS = [
   'https://www.forebet.com/en',
@@ -17,6 +19,12 @@ var FB_URLS = [
 
 var FB_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
             '(KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+
+/* forebet ปิดประตูใส่ IP ที่ไม่ใช่คนจริง (Cloudflare ตอบ 403) — วัดแล้วยิงตรงไม่ผ่าน
+   ทางที่ผ่าน = ให้ Jina เปิดหน้าแทนเรา
+   สำคัญ: ต้องขอ 'html' ด้วย ไม่งั้น Jina คืน markdown ที่ไม่มี microdata = ตัวอ่านตาบอด
+   เปลี่ยน/ปิดได้จาก Script Property FB_PROXY (ใส่ '-' = ปิด ยิงตรงอย่างเดียว) */
+var FB_PROXY = 'https://r.jina.ai/';
 
 var FB_KIND = { FEATURED: 'FEATURED', POTD: 'POTD' };
 /* หัวข้อ 2 กล่องที่เจ้าของสั่ง — ต้องตรงตัวและเป็นข้อความในแท็กของมันเอง
@@ -142,10 +150,48 @@ function fbDate_(raw) {
   return m ? m[1] + '-' + m[2] + '-' + m[3] : '';
 }
 
-/** วัน-เวลาตามที่หน้าเว็บเขาโชว์เป๊ะๆ ไม่แปลงเขตเวลา (กฎข้อ 6 ห้ามเดา) */
+/** วัน-เวลาตามที่หน้าเว็บเขาโชว์เป๊ะๆ ไม่แปลงอะไรทั้งนั้น — เก็บไว้เป็นหลักฐานต้นทาง */
 function fbWhenText_(raw) {
   var m = /class="[^"]*date_bah[^"]*"[^>]*>\s*([^<]{5,30}?)\s*</i.exec(String(raw || ''));
   return m ? fbClean_(m[1]) : '';
+}
+
+/* เจ้าของสั่ง: ใช้เวลาไทย = บวก 7 จากเวลาที่หน้าเว็บโชว์
+   แก้ตัวเลขได้จาก Script Property FB_TZ_SHIFT (เผื่อ forebet เปลี่ยนค่าเริ่มต้นของเขา)
+   ของเดิมที่เขาโชว์ยังเก็บไว้ทั้งดุ้นในช่อง 'เวลาที่เขาโชว์' เทียบกันได้ตลอด */
+var FB_TZ_SHIFT = 7;
+
+/** เวลาไทยของคู่นี้ = วันที่(ISO จาก microdata) + เวลาที่เขาโชว์ + FB_TZ_SHIFT ชม.
+
+    ทำไมไม่อ่านวันที่จากข้อความที่เขาโชว์: หน้าเดียวกันโชว์คนละแบบตามคนขอ
+      เปิดจากเบราว์เซอร์เจ้าของ -> "25/08/2026 18:30"  (วัน/เดือน · 24 ชม.)
+      ดึงผ่าน Jina             -> "08/26/2026 3:30 PM" (เดือน/วัน · AM/PM)
+    เดาว่าตัวไหนคือเดือนแล้วเดาผิด = ได้ "เดือนที่ 25" ซึ่งมันทดไปเป็นปี 2028 เงียบๆ
+    -> เอาวันที่จาก startDate ที่เป็น ISO ไม่กำกวม เหลือแค่ "เวลา" ที่ต้องแกะ
+
+    อ่านไม่ออก = คืน null ปล่อยว่าง ห้ามเดาเวลาขึ้นมาเอง */
+function fbWhenLocal_(dateIso, text, shift) {
+  var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateIso || ''));
+  if (!d) return null;
+  var m = /(\d{1,2}):(\d{2})\s*([AaPp])?/.exec(String(text || ''));
+  if (!m) return null;
+  var hh = Number(m[1]), mm = Number(m[2]), ap = (m[3] || '').toUpperCase();
+  if (ap === 'P' && hh < 12) hh += 12;
+  if (ap === 'A' && hh === 12) hh = 0;
+  if (hh > 23 || mm > 59) return null;
+
+  /* ไม่ได้ตั้งค่าไว้ = ใช้ 7 · ระวัง prop_ คืน '' ได้ ซึ่ง Number('') = 0 (เท่ากับไม่บวกเลย) */
+  var h = (shift === undefined || shift === null || String(shift).trim() === '')
+            ? FB_TZ_SHIFT : Number(shift);
+  if (!isFinite(h)) h = FB_TZ_SHIFT;
+
+  var t = Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]), hh, mm) + h * 3600000;
+  var z = new Date(t);
+  function p2(n) { return (n < 10 ? '0' : '') + n; }
+  return {
+    date: z.getUTCFullYear() + '-' + p2(z.getUTCMonth() + 1) + '-' + p2(z.getUTCDate()),
+    time: p2(z.getUTCHours()) + ':' + p2(z.getUTCMinutes())
+  };
 }
 
 /* ---------- ตามไปเก็บของที่กล่องไม่มี ---------- */
@@ -213,14 +259,17 @@ function fbParseOne_(html, kind) {
   var id = fbMatchId_(w.raw);
   var row = fbRowById_(html, id);
   var wdl = fbWdl_(w.raw) || fbWdl_(row);
+  var shown = fbWhenText_(w.raw);
+  var src = fbDate_(w.raw);
+  var thai = fbWhenLocal_(src, shown, prop_('FB_TZ_SHIFT'));
   return {
     'ช่อง': kind,
     'ลีก': fbLeague_(w.raw),
     'ทีมเหย้า': t.home,
     'ทีมเยือน': t.away,
-    'วันที่': fbDate_(w.raw),
-    'เวลาเตะ': '',              /* ไม่รู้เขตเวลาของเขาแน่ชัด = ไม่กรอก ดีกว่ากรอกผิด */
-    'เวลาที่เขาโชว์': fbWhenText_(w.raw),
+    'วันที่': thai ? thai.date : src,
+    'เวลาเตะ': thai ? thai.time : '',   /* เวลาไทย · อ่านเวลาต้นทางไม่ออกก็ปล่อยว่าง ห้ามเดา */
+    'เวลาที่เขาโชว์': shown,
     'เดาผล': wdl,
     'เดาสกอร์': fbScore_(row),
     'เปอร์เซ็นต์': fbPct_(row, wdl),
@@ -231,31 +280,58 @@ function fbParseOne_(html, kind) {
 }
 /* ---------- ทางเน็ต ---------- */
 
-function fbFetch_(url) {
-  var res = UrlFetchApp.fetch(url, {
+function fbFetch_(url, via) {
+  var head = {
+    'User-Agent': FB_UA,
+    'Accept': 'text/html,application/xhtml+xml',
+    'Accept-Language': 'en-US,en;q=0.9'
+  };
+  var target = url;
+  if (via) {
+    target = via + url;
+    head['X-Return-Format'] = 'html';   /* ขาดบรรทัดนี้ = ได้ markdown อ่านไม่ออก */
+  }
+  var res = UrlFetchApp.fetch(target, {
     method: 'get',
     muteHttpExceptions: true,
     followRedirects: true,
-    headers: {
-      'User-Agent': FB_UA,
-      'Accept': 'text/html,application/xhtml+xml',
-      'Accept-Language': 'en-US,en;q=0.9'
-    }
+    headers: head
   });
   return { code: res.getResponseCode(), body: res.getContentText() };
+}
+
+/** ของที่ได้มา "ใช่หน้า forebet จริงไหม"
+    กันเคสร้าย: Cloudflare ตอบ 200 แต่เป็นหน้าให้รอ/ให้กดยืนยัน ยาวเกิน 1000 ตัวเหมือนกัน
+    ถ้าไม่เช็ก จะนับว่าสำเร็จแล้วไปตายตอนอ่าน = รายงานบอกว่า "อ่านไม่ออก" ทั้งที่ต้นเหตุคือโดนกั้น */
+function fbLooksLikePage_(body) {
+  var s = String(body || '');
+  if (s.length < 1000) return false;
+  return s.indexOf('itemprop="homeTeam"') >= 0 ||
+         s.indexOf(FB_ANCHOR.FEATURED) >= 0 ||
+         s.indexOf(FB_ANCHOR.POTD) >= 0;
 }
 
 /** ไล่ยิงทีละ url จนกว่าจะได้ 200 ที่มีเนื้อ — ทุกอันพังก็คืนอันสุดท้ายไปเป็นหลักฐาน */
 function fbFetchAny_() {
   var urls = prop_('FOREBET_URL') ? [prop_('FOREBET_URL')] : FB_URLS;
-  var last = { url: '', code: 0, body: '' };
-  for (var i = 0; i < urls.length; i++) {
+  var proxy = prop_('FB_PROXY');
+  if (proxy === null || proxy === undefined || proxy === '') proxy = FB_PROXY;
+  if (proxy === '-') proxy = '';                     /* เจ้าของสั่งปิดทางอ้อม */
+
+  /* ยิงตรงก่อนเพราะเร็วกว่า ไม่ผ่านค่อยอ้อม — ทางอ้อมคือทางที่วัดแล้วว่าได้ */
+  var ways = [];
+  for (var i = 0; i < urls.length; i++) ways.push({ url: urls[i], via: '' });
+  if (proxy) for (var j = 0; j < urls.length; j++) ways.push({ url: urls[j], via: proxy });
+
+  var last = { url: '', via: '', code: 0, body: '' };
+  for (var k = 0; k < ways.length; k++) {
     try {
-      var r = fbFetch_(urls[i]);
-      last = { url: urls[i], code: r.code, body: r.body || '' };
-      if (r.code === 200 && last.body.length > 1000) return last;
+      var r = fbFetch_(ways[k].url, ways[k].via);
+      last = { url: ways[k].url, via: ways[k].via, code: r.code, body: r.body || '' };
+      if (r.code === 200 && fbLooksLikePage_(last.body)) return last;
     } catch (err) {
-      last = { url: urls[i], code: -1, body: String(err && err.message ? err.message : err) };
+      last = { url: ways[k].url, via: ways[k].via, code: -1,
+               body: String(err && err.message ? err.message : err) };
     }
   }
   return last;
@@ -309,8 +385,11 @@ function fbSnapRun_() {
   var got = fbFetchAny_();
   var out = { ok: false, code: got.code, url: got.url, len: (got.body || '').length,
               added: [], skipped: [], missed: [] };
+  out.via = got.via ? 'ผ่าน ' + got.via : 'ยิงตรง';
+  /* ตรงนี้ตัดสินด้วย HTTP อย่างเดียวพอ — "หน้าใช่ไหม" เป็นเรื่องของ fbFetchAny_ ตอนเลือกทาง
+     ถ้าเอามาตัดสินซ้ำตรงนี้ วันที่เขาแก้หน้าเว็บจะรายงานว่า "ดึงไม่ได้" ทั้งที่ดึงได้แต่แกะไม่ออก */
   if (got.code !== 200 || out.len < 1000) {
-    out.error = 'ดึงหน้าเว็บไม่ได้ (' + got.code + ')';
+    out.error = 'ดึงหน้าเว็บไม่ได้ (' + got.code + ' · ' + out.via + ')';
     return out;
   }
 
@@ -412,7 +491,8 @@ function fbAutoSnap_(pickRows, nowMs) {
     คายเฉพาะของสาธารณะจาก forebet ไม่มีข้อมูลของเจ้าของ แต่ยังกันด้วยกุญแจตามกฎข้อ 3 */
 function fbProbe_() {
   var got = fbFetchAny_();
-  var out = { code: got.code, url: got.url, len: (got.body || '').length, blocks: {} };
+  var out = { code: got.code, url: got.url, via: got.via ? 'ผ่าน ' + got.via : 'ยิงตรง',
+              len: (got.body || '').length, blocks: {} };
   var kinds = [FB_KIND.FEATURED, FB_KIND.POTD];
   for (var i = 0; i < kinds.length; i++) {
     var kind = kinds[i], w = { found: false, text: '' };

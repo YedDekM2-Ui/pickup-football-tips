@@ -110,7 +110,7 @@ test('อ่านหน้าเว็บออก = ได้ทั้ง 2 �
   eq(feat['เดาสกอร์'], '2-0');
   eq(Number(feat['เปอร์เซ็นต์']), 71);
   eq(Number(feat['ราคา']), 1.42);
-  eq(String(feat['เวลาเตะ']), '', 'ไม่รู้เขตเวลาเขา = ปล่อยว่าง ห้ามเดา');
+  eq(String(feat['เวลาเตะ']), '01:30', 'เวลาไทย = ที่เขาโชว์ (18:30) บวก 7');
 
   const potd = rows.filter(x => x['ช่อง'] === 'POTD')[0];
   eq(potd['ทีมเหย้า'], 'PSV');
@@ -347,13 +347,13 @@ test('หน้าจริงของ forebet: อ่านออกครบ�
   eq(f['ทีมเยือน'], 'Vendsyssel FF');
   eq(f['อ่านทีมจาก'], 'micro', 'ต้องได้จาก microdata ชั้นใน ไม่ใช่ตัวสำรอง');
   eq(f['ลีก'], 'DBUs Landspokal');
-  eq(f['วันที่'], '2026-08-25');
+  eq(f['วันที่'], '2026-08-26', 'หน้าจริงโชว์ 25/08 18:30 -> ไทย 26/08 01:30');
   eq(f['เดาผล'], '2');
   eq(f['เดาสกอร์'], '0-1', 'สกอร์อยู่ในแถวตารางใหญ่ ต้องตามรหัสคู่ไปเก็บมา');
   eq(f['เปอร์เซ็นต์'], 60, 'ต้องหยิบตัวที่ตรงกับผลที่เขาเดา (ช่อง 2)');
   eq(f['รหัสคู่'], '2518832');
   eq(f['เวลาที่เขาโชว์'], '25/08/2026 18:30');
-  eq(f['เวลาเตะ'], '', 'ไม่รู้เขตเวลาของเขา = ปล่อยว่าง ห้ามเดา');
+  eq(f['เวลาเตะ'], '01:30', 'เวลาไทย +7 จากที่หน้าจริงโชว์');
 
   const p = g.fbParseOne_(REAL, 'POTD');
   ok(p, 'กล่อง Pick of the day ต้องอ่านออก');
@@ -400,4 +400,116 @@ test('หัวข้อ "Featured matches" ของตารางใหญ่
     '<span itemprop="awayTeam" itemscope><span itemprop="name">Away team</span></span></div>';
   eq(g.fbWindow_(html, 'FEATURED').found, false, 'พหูพจน์ = คนละหัวข้อ');
   eq(g.fbParseOne_(html, 'FEATURED'), null);
+});
+
+/* ---------- ทางเน็ต: forebet ปิดประตูใส่ IP เรา (403) ต้องอ้อมได้เอง ---------- */
+
+/** env ที่คุมได้ทั้ง "ใครขออะไร" และ "Script Property มีอะไร" */
+function fbNet(book, fetchFn, props) {
+  const app = new FakeSpreadsheetApp(book);
+  const calls = [];
+  const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
+    SpreadsheetApp: app,
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: k => Object.assign({ SHEET_ID: 'S' }, props || {})[k] || null
+      })
+    },
+    Utilities: { formatDate: () => '2026-08-25T18:00:00' },
+    UrlFetchApp: {
+      fetch: (url, opt) => {
+        calls.push({ url, opt });
+        return fetchFn(url, opt);
+      }
+    }
+  });
+  g.__app = app; g.__calls = calls;
+  return g;
+}
+
+const BLOCKED = '<html><head><title>Attention Required! | Cloudflare</title></head><body>' +
+                'Sorry, you have been blocked. '.repeat(60) + '</body></html>';
+
+test('ยิงตรงโดนกั้น 403 = ต้องอ้อม Jina เองแล้วได้ของครบ', () => {
+  const good = pageHtml(PAGE_A);
+  const g = fbNet(bookOf([]), url =>
+    url.indexOf('https://r.jina.ai/') === 0 ? fakeResponse(200, good) : fakeResponse(403, BLOCKED));
+  const r = g.fbSnapRun_();
+  eq(r.ok, true, 'อ้อมแล้วต้องสำเร็จ ไม่ใช่ยอมแพ้ตั้งแต่ 403');
+  eq(r.added.length, 2, 'ต้องได้ทั้ง 2 กล่อง');
+  eq(r.via, 'ผ่าน https://r.jina.ai/', 'รายงานต้องบอกว่าไปทางไหน จะได้ไล่ปัญหาถูก');
+  eq(nPicks(g), 2);
+});
+
+test('ตอนอ้อมต้องขอ html ด้วย ไม่งั้น Jina คืน markdown = ตัวอ่านตาบอด', () => {
+  const good = pageHtml(PAGE_A);
+  const g = fbNet(bookOf([]), url =>
+    url.indexOf('https://r.jina.ai/') === 0 ? fakeResponse(200, good) : fakeResponse(403, BLOCKED));
+  g.fbSnapRun_();
+  const viaCall = g.__calls.filter(c => c.url.indexOf('https://r.jina.ai/') === 0)[0];
+  eq(!!viaCall, true, 'ต้องมีการยิงผ่าน Jina จริง');
+  eq(String(viaCall.opt.headers['X-Return-Format']), 'html');
+  eq(viaCall.url, 'https://r.jina.ai/https://www.forebet.com/en', 'ต่อ url ตรงๆ ห้ามใส่ช่องว่าง/encode ทับ');
+});
+
+test('ยิงตรงผ่านอยู่แล้ว = ห้ามไปกวน Jina ให้เปลืองเวลา', () => {
+  const good = pageHtml(PAGE_A);
+  const g = fbNet(bookOf([]), () => fakeResponse(200, good));
+  const r = g.fbSnapRun_();
+  eq(r.ok, true);
+  eq(r.via, 'ยิงตรง');
+  eq(g.__calls.filter(c => c.url.indexOf('r.jina.ai') >= 0).length, 0);
+});
+
+test('หน้าที่ได้มาไม่ใช่หน้า forebet (โดนกั้นแต่ตอบ 200) = ต้องไม่หยุดแค่นั้น ไปลองทางอ้อมต่อ', () => {
+  const good = pageHtml(PAGE_A);
+  const g = fbNet(bookOf([]), url =>
+    url.indexOf('https://r.jina.ai/') === 0 ? fakeResponse(200, good) : fakeResponse(200, BLOCKED));
+  const r = g.fbSnapRun_();
+  eq(r.ok, true);
+  eq(r.added.length, 2);
+  eq(r.via, 'ผ่าน https://r.jina.ai/');
+});
+
+test('เจ้าของสั่งปิดทางอ้อม (FB_PROXY = "-") = ยิงตรงอย่างเดียว ไม่แอบอ้อม', () => {
+  const g = fbNet(bookOf([]), () => fakeResponse(403, BLOCKED), { FB_PROXY: '-' });
+  const r = g.fbSnapRun_();
+  eq(r.ok, false);
+  eq(g.__calls.filter(c => c.url.indexOf('r.jina.ai') >= 0).length, 0);
+  eq(nPicks(g), 0, 'ดึงไม่ได้ = ห้ามแตะชีต');
+});
+
+test('ทุกทางพัง = ของเก่าในชีตต้องอยู่ครบ ไม่ถูกลบไม่ถูกทับ', () => {
+  const old = pickRow({ 'ID': 'FB-FEATURED-1', 'ช่อง': 'FEATURED', 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds' });
+  const g = fbNet(bookOf([old]), () => fakeResponse(403, BLOCKED));
+  const r = g.fbSnapRun_();
+  eq(r.ok, false);
+  eq(nPicks(g), 1);
+  eq(g.__app.book.sheets.PICKS.rows[1][HEAD_PICKS.indexOf('ทีมเหย้า')], 'Arsenal');
+});
+
+/* ---------- เวลาไทย ---------- */
+
+test('เวลาไทย: วัน/เดือน สลับกันได้ตามคนขอ จึงต้องยึดวันที่จาก ISO ห้ามแกะจากข้อความ', () => {
+  const g = fbNet(bookOf([]), () => fakeResponse(200, pageHtml(PAGE_A)));
+  /* เขาโชว์แบบเดือน/วัน + AM/PM (แบบที่ Jina เห็น) — เดือน 08 วัน 26 */
+  const a = g.fbWhenLocal_('2026-08-26', '08/26/2026 3:30 PM');
+  eq(a.date, '2026-08-26'); eq(a.time, '22:30');
+  /* เขาโชว์แบบวัน/เดือน 24 ชม. (แบบที่เบราว์เซอร์เจ้าของเห็น) — ตัวเลขนำหน้าคือ 25 ไม่ใช่เดือน */
+  const b = g.fbWhenLocal_('2026-08-25', '25/08/2026 18:30');
+  eq(b.date, '2026-08-26', 'บวก 7 แล้วข้ามเที่ยงคืน'); eq(b.time, '01:30');
+});
+
+test('เวลาไทย: อ่านเวลาไม่ออก = ปล่อยว่าง ห้ามเดา', () => {
+  const g = fbNet(bookOf([]), () => fakeResponse(200, pageHtml(PAGE_A)));
+  eq(g.fbWhenLocal_('2026-08-25', 'TBD'), null);
+  eq(g.fbWhenLocal_('', '25/08/2026 18:30'), null, 'ไม่มีวันที่ ISO = ไม่คำนวณ');
+  eq(g.fbWhenLocal_('2026-08-25', '25/08/2026 99:99'), null);
+});
+
+test('เวลาไทย: ปรับตัวเลขได้จาก FB_TZ_SHIFT และ "" ต้องไม่กลายเป็นบวก 0', () => {
+  const g = fbNet(bookOf([]), () => fakeResponse(200, pageHtml(PAGE_A)));
+  eq(g.fbWhenLocal_('2026-08-25', '18:30', 0).time, '18:30');
+  eq(g.fbWhenLocal_('2026-08-25', '18:30', '').time, '01:30', 'ค่าว่าง = ใช้ 7 ตามเดิม');
+  eq(g.fbWhenLocal_('2026-08-25', '18:30', null).time, '01:30');
 });
