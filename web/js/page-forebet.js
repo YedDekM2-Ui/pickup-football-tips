@@ -39,13 +39,14 @@ function predictLine_(p) {
 
 function s_(v) { return String(v === null || v === undefined ? '' : v).trim(); }
 
-/** ตลาดที่มี "เปอร์เซ็นต์ + เรท" คู่กัน — เรทเป็นข้อความตามที่ forebet โชว์ (+155/-208/"-")
-    ห้ามคิดเลขต่อ (กฎข้อ 6) · ไม่มีสักค่า = ไม่มีท่อนนี้ */
-function mktPair_(label, pct, odds) {
-  var a = s_(pct), b = s_(odds), out = label;
-  if (a) out += ' ' + a;
-  if (b) out += ' ' + b;
-  return out === label ? '' : out;
+/** ตลาดที่โชว์เฉพาะ "เปอร์เซ็นต์" เท่านั้น
+    เรทของ forebet เป็นเลขอเมริกัน (-208) เจ้าของสั่งตัดทิ้ง "นอกนั้นไม่เอา"
+    เหตุผล: เลขบนการ์ดเยอะแล้ว ดูผิดทีเดียวเสียเงินจริง
+    ของเดิมยังอยู่ครบในชีต จะเอากลับมาเมื่อไหร่ก็ได้
+    ไม่มีเปอร์เซ็นต์ = ไม่มีท่อนนี้ */
+function mktPct_(label, pct) {
+  var a = s_(pct);
+  return a ? label + ' ' + a : '';
 }
 
 /** บรรทัดตลาดรวบเป็นบรรทัดเดียวตามที่เจ้าของเขียนมา:
@@ -62,17 +63,16 @@ function marketLine_(p) {
     if (!isNaN(one) && one > 0) parts.push('1X2 ' + one + '%');
   }
 
-  t = mktPair_('Over', p['Overเปอร์เซ็นต์'], p['เรทOver']);
+  t = mktPct_('Over', p['Overเปอร์เซ็นต์']);
   if (t) parts.push(t);
-  t = mktPair_('BTTS', p['BTTSเปอร์เซ็นต์'], p['เรทBTTSYes']);
+  t = mktPct_('BTTS', p['BTTSเปอร์เซ็นต์']);
   if (t) parts.push(t);
 
-  var hw = s_(p['HTเดาผล']), hp = s_(p['HTเปอร์เซ็นต์']), ho = s_(p['HTเรท']);
-  if (hw || hp || ho) {
+  var hw = s_(p['HTเดาผล']), hp = s_(p['HTเปอร์เซ็นต์']);
+  if (hw || hp) {
     var ht = 'HT';
     if (hw) ht += ' ' + hw;
     if (hp) ht += ' (' + hp + ')';
-    if (ho) ht += ' ' + ho;
     parts.push(ht);
   }
 

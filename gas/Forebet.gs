@@ -188,17 +188,38 @@ function fbWhenText_(raw) {
    ของเดิมที่เขาโชว์ยังเก็บไว้ทั้งดุ้นในช่อง 'เวลาที่เขาโชว์' เทียบกันได้ตลอด */
 var FB_TZ_SHIFT = 7;
 
-/** เวลาไทยของคู่นี้ = วันที่(ISO จาก microdata) + เวลาที่เขาโชว์ + FB_TZ_SHIFT ชม.
+/** วันของคู่ ต้องมาจาก "ข้อความก้อนเดียวกับเวลา" ก่อนเสมอ
+    ทำไมไม่เอา startDate: มันอยู่คนละชิ้นกับเวลา เวลาเราตัดหน้ามาเป็นก้อน 4000 ตัว
+    ก้อนมันคาบเอา startDate ของคู่ถัดไปมาด้วย -> วันเพี้ยนไป 1 วัน แต่เวลาถูก
+    (ของจริง 26 ส.ค. 69: Admira Praha หน้าเว็ปเขียน 26/08/2026 17:30 แต่การ์ดขึ้น 27/8)
 
-    ทำไมไม่อ่านวันที่จากข้อความที่เขาโชว์: หน้าเดียวกันโชว์คนละแบบตามคนขอ
-      เปิดจากเบราว์เซอร์เจ้าของ -> "25/08/2026 18:30"  (วัน/เดือน · 24 ชม.)
-      ดึงผ่าน Jina             -> "08/26/2026 3:30 PM" (เดือน/วัน · AM/PM)
-    เดาว่าตัวไหนคือเดือนแล้วเดาผิด = ได้ "เดือนที่ 25" ซึ่งมันทดไปเป็นปี 2028 เงียบๆ
-    -> เอาวันที่จาก startDate ที่เป็น ISO ไม่กำกวม เหลือแค่ "เวลา" ที่ต้องแกะ
+    เขาสลับ วัน/เดือน ไปมาได้จริง (วัดมาแล้ว ทั้ง 26/08/2026 และ 08/26/2026)
+    -> เอาเฉพาะแบบที่ "เป็นวันจริงได้" ถ้าเป็นได้ทั้งคู่ ค่อยให้ startDate ชี้ขาด
+    อ่านวันจากข้อความไม่ออก = ถอยกลับไปใช้ startDate เหมือนเดิม */
+function fbTextDate_(text, dateIso) {
+  var iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateIso || ''));
+  var base = iso ? { y: Number(iso[1]), m: Number(iso[2]), d: Number(iso[3]) } : null;
+  var m = /\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/.exec(String(text || ''));
+  if (!m) return base;
 
+  var y = Number(m[3]), a = Number(m[1]), b = Number(m[2]);
+  var cand = [];
+  if (b >= 1 && b <= 12 && a >= 1 && a <= 31) cand.push({ y: y, m: b, d: a });   /* วัน/เดือน */
+  if (a >= 1 && a <= 12 && b >= 1 && b <= 31) cand.push({ y: y, m: a, d: b });   /* เดือน/วัน */
+  if (!cand.length) return base;
+
+  if (cand.length > 1 && base) {
+    for (var i = 0; i < cand.length; i++) {
+      if (cand[i].y === base.y && cand[i].m === base.m && cand[i].d === base.d) return cand[i];
+    }
+  }
+  return cand[0];   /* กำกวมจริงๆ = เอา วัน/เดือน เว็ปยุโรป */
+}
+
+/** เวลาไทยของคู่นี้ = วัน-เวลาที่เขาโชว์ + FB_TZ_SHIFT ชม.
     อ่านไม่ออก = คืน null ปล่อยว่าง ห้ามเดาเวลาขึ้นมาเอง */
 function fbWhenLocal_(dateIso, text, shift) {
-  var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateIso || ''));
+  var d = fbTextDate_(text, dateIso);
   if (!d) return null;
   var m = /(\d{1,2}):(\d{2})\s*([AaPp])?/.exec(String(text || ''));
   if (!m) return null;
@@ -212,7 +233,7 @@ function fbWhenLocal_(dateIso, text, shift) {
             ? FB_TZ_SHIFT : Number(shift);
   if (!isFinite(h)) h = FB_TZ_SHIFT;
 
-  var t = Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]), hh, mm) + h * 3600000;
+  var t = Date.UTC(d.y, d.m - 1, d.d, hh, mm) + h * 3600000;
   var z = new Date(t);
   function p2(n) { return (n < 10 ? '0' : '') + n; }
   return {
@@ -736,6 +757,43 @@ function fbFixLeague_(snap) {
   return fixed;
 }
 
+/** ซ่อม "วันที่ / เวลาเตะ" ของแถวเก่า — ช่องที่ 2 ที่ยอมให้เขียนทับ ต่อจาก 'ลีก'
+    เหตุผล: วันเพี้ยนไป 1 วัน = ดูผิดทั้งใบ (เจ้าของทักจริง 26 ส.ค. 69 คู่ Admira ขึ้นเป็น 27/8)
+    แถวเก่าคำนวณใหม่จากในชีตไม่ได้ เพราะไม่มีช่องเก็บ 'เวลาที่เขาโชว์' -> ต้องรอรอบดึงใหม่มาซ่อมให้
+    กันพลาด: ของใหม่ต้องมีค่า + ต้องไม่ตรงของเดิม + แถวที่มีสกอร์จริงแล้ว = จบไปแล้ว ห้ามแตะ */
+function fbFixWhen_(snap) {
+  var key = fbKey_(snap);
+  var day = fbYmd_(snap && snap['วันที่']);
+  var hm  = fbHm_(snap && snap['เวลาเตะ']);
+  if (!key || (!day && !hm)) return 0;
+  var sh = sheetIfExists_(SHEETS.PICKS);
+  if (!sh) return 0;
+  var vals = sh.getDataRange().getValues();
+  if (vals.length < 2) return 0;
+  var head = vals[0], cd = -1, ct = -1;
+  for (var c = 0; c < head.length; c++) {
+    if (String(head[c]) === 'วันที่') cd = c;
+    if (String(head[c]) === 'เวลาเตะ') ct = c;
+  }
+  if (cd < 0 && ct < 0) return 0;
+  var fixed = 0;
+  for (var r = 1; r < vals.length; r++) {
+    var o = {};
+    for (var h = 0; h < head.length; h++) o[String(head[h])] = vals[r][h];
+    if (fbKey_(o) !== key) continue;
+    if (String(o['สกอร์จริง'] === null || o['สกอร์จริง'] === undefined ? '' : o['สกอร์จริง']).trim()) continue;
+    if (day && cd >= 0 && fbYmd_(o['วันที่']) !== day) {
+      sh.getRange(r + 1, cd + 1, 1, 1).setValues([[day]]);
+      fixed++;
+    }
+    if (hm && ct >= 0 && fbHm_(o['เวลาเตะ']) !== hm) {
+      sh.getRange(r + 1, ct + 1, 1, 1).setValues([[hm]]);
+      fixed++;
+    }
+  }
+  return fixed;
+}
+
 function fbExists_(rows, snap, nowMs) {
   var key = fbKey_(snap);
   if (!key) return true;
@@ -780,6 +838,9 @@ function fbSnapRun_() {
       /* ยกเว้นช่อง 'ลีก' ช่องเดียว — แถวเก่าที่ติดตัวย่อไว้ ให้มันซ่อมตัวเองได้ */
       try { var nf = fbFixLeague_(snap); if (nf) out.fixed.push(kind + ' ลีก=' + snap['ลีกเต็ม']); }
       catch (err) { /* ซ่อมไม่ได้ก็ช่างมัน ห้ามให้รอบนี้ล้ม */ }
+      /* ช่องที่ 2: วัน-เวลาเตะ ที่เคยเพี้ยนไป 1 วัน ให้แถวเก่าซ่อมตัวเองด้วย */
+      try { var nw = fbFixWhen_(snap); if (nw) out.fixed.push(kind + ' วันเวลา=' + snap['วันที่'] + ' ' + snap['เวลาเตะ']); }
+      catch (err2) { /* เหมือนกัน ซ่อมไม่ได้ก็ปล่อย ห้ามให้รอบนี้ล้ม */ }
       continue;
     }
     /* เปอร์เซ็นต์กับสกอร์ที่เดา ไม่ได้อยู่ในกล่องปักหมุด ต้องตามลิงก์ไปเปิดหน้าของคู่เอา
