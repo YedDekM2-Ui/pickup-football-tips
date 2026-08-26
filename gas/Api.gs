@@ -141,18 +141,18 @@ function pickOut_(r, tmap) {
     'ราคา': Number(r['ราคา']) || 0,
     'ดึงเมื่อ': stamp_(r['สร้างเมื่อ']),   /* คู่ปักหมุดต้องบอกได้ว่าภาพนี้ของตอนไหน */
     /* ตลาดจากหน้าของคู่ — เรทกับเปอร์เซ็นต์ส่งเป็น "ข้อความ" ตามที่เขาโชว์ (+150/-208) ห้ามแปลงเป็นตัวเลข */
-    'เรทOver': String(r['เรท Over'] || ''),
-    'เรทBTTSYes': String(r['เรท BTTS YES'] || ''),
-    'HTเดาผล': String(r['HT เดาผล'] || ''),
-    'HTเปอร์เซ็นต์': String(r['HT %'] || ''),
-    'HTเรท': String(r['HT เรท'] || ''),
-    '1X2เปอร์เซ็นต์': String(r['1X2 %'] || ''),
+    'เรทOver': noDate_(r['เรท Over']),
+    'เรทBTTSYes': noDate_(r['เรท BTTS YES']),
+    'HTเดาผล': noDate_(r['HT เดาผล']),
+    'HTเปอร์เซ็นต์': noDate_(r['HT %']),
+    'HTเรท': noDate_(r['HT เรท']),
+    '1X2เปอร์เซ็นต์': noDate_(r['1X2 %']),
     'Overเปอร์เซ็นต์': String(r['Over %'] || ''),
     'BTTSเปอร์เซ็นต์': String(r['BTTS YES %'] || ''),
     'DBเปอร์เซ็นต์': String(r['DB %'] || ''),
-    'DBเดาผล': String(r['DB เดาผล'] || ''),
+    'DBเดาผล': noDate_(r['DB เดาผล']),
     'HTFTเปอร์เซ็นต์': String(r['HT/FT %'] || ''),
-    'HTFTเดาผล': String(r['HT/FT เดาผล'] || '')
+    'HTFTเดาผล': noDate_(r['HT/FT เดาผล'])
   };
 }
 
@@ -211,6 +211,30 @@ function doGet(e) {
     }
     if (p === 'fbprobe') return jsonOut_(fbProbe_());
     return jsonOut_(payloadAll_());
+  } catch (err) {
+    return jsonOut_({ ok: false, error: String(err && err.message ? err.message : err) });
+  }
+}
+
+/* ---------- ทางเขียน: ลงบิลจากหน้าเว็บ ----------
+   ส่งมาแบบ POST body เป็น JSON (content-type ปล่อยเป็น text/plain ฝั่งหน้าเว็บ
+   เบราว์เซอร์จะได้ไม่ต้องยิง preflight ซึ่ง GAS ไม่รองรับ)
+   ด่านกุญแจอันเดียวกับ doGet — ไม่มีกุญแจ = ไม่ให้เขียน */
+function doPost(e) {
+  try {
+    var q = (e && e.parameter) ? e.parameter : {};
+    var body = {};
+    try {
+      if (e && e.postData && e.postData.contents) body = JSON.parse(e.postData.contents) || {};
+    } catch (er) { return jsonOut_({ ok: false, error: 'อ่านข้อมูลที่ส่งมาไม่ออก' }); }
+
+    if (!keyOk_({ k: q.k || body.k || '' })) {
+      return jsonOut_({ ok: false, needKey: true, error: 'ต้องใส่กุญแจ' });
+    }
+    var p = String(q.p || body.p || '');
+    if (p === 'ocr') return jsonOut_(betOcr_(body.image));
+    if (p === 'bet') return jsonOut_(betAdd_(body.bet || {}, { force: !!body.force }));
+    return jsonOut_({ ok: false, error: 'ไม่รู้จักคำสั่ง ' + p });
   } catch (err) {
     return jsonOut_({ ok: false, error: String(err && err.message ? err.message : err) });
   }

@@ -76,3 +76,16 @@ function fetchAll_() {
     .then(function (r) { return r.json(); })
     .catch(function () { return null; });
 }
+
+/** ส่งของขึ้นเซิร์ฟเวอร์ (ลงบิล / อ่านสลิป)
+    ตั้งใจไม่ใส่หัว Content-Type — เบราว์เซอร์จะส่งเป็น text/plain ซึ่งนับเป็น simple request
+    ถ้าใส่ application/json มันจะยิง preflight OPTIONS ก่อน แล้ว GAS ตอบ OPTIONS ไม่ได้ */
+function apiPost_(p, body) {
+  var k = loadKey_() || keyFromUrl_();
+  if (!k) return Promise.resolve({ ok: false, needKey: true, error: 'ต้องใส่กุญแจก่อน' });
+  var payload = { p: p, k: k };
+  for (var f in body) if (Object.prototype.hasOwnProperty.call(body, f)) payload[f] = body[f];
+  return fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) })
+    .then(function (r) { return r.json(); })
+    .catch(function () { return { ok: false, error: 'ส่งไม่ถึงเซิร์ฟเวอร์ — เช็คเน็ตแล้วลองใหม่' }; });
+}
