@@ -388,6 +388,23 @@ test('หน้าจริงของ forebet: อ่านออกครบ�
   eq(p['เปอร์เซ็นต์'], 42, 'ผลเป็น X ต้องหยิบตัวกลาง');
   eq(p['วันที่'], '2026-08-26');
   eq(p['รหัสคู่'], '2528659');
+  eq(p['ลีก'], 'Primera A', 'กล่องนี้เขาส่งชื่อลีกมาเป็นค่าว่าง ต้องตามรหัสคู่ไปหยิบจากตารางใหญ่');
+});
+
+test('ชื่อลีก: กล่องส่งค่าว่างมา ห้ามตกไปใช้ตัวย่อทั้งที่ตารางใหญ่มีชื่อเต็ม', () => {
+  const g = fbEnv(bookOf([]), REAL);
+  const w = g.fbWindow_(REAL, 'POTD');
+  const id = g.fbMatchId_(w.raw);
+  const row = g.fbRowById_(REAL, id);
+
+  eq(g.fbLeague_(w.raw), 'Co1', 'ดูแต่ในกล่อง = ได้แค่ตัวย่อ (นี่คืออาการที่เจ้าของเห็น)');
+  eq(g.fbLeague_(w.raw, row, id), 'Primera A', 'ตามรหัสคู่ไปแถวใหญ่ต้องได้ชื่อเต็ม');
+
+  eq(g.fbLeagueFull_(row, id), 'Primera A', 'ยึดรหัสคู่ที่ขอ');
+  eq(g.fbLeagueFull_(row, '2418131'), 'Brasileiro Serie A',
+     'แถวเดียวกันมี getstag ของคู่อื่นปนอยู่ ต้องหยิบให้ถูกคู่');
+  eq(g.fbLeagueFull_(w.raw, id), '', 'ค่าว่างคือค่าว่าง ห้ามเดา');
+  eq(g.fbLeagueFull_('', id), '');
 });
 
 test('หน้าจริง: จดลงชีตได้ครบ 2 แถว', () => {

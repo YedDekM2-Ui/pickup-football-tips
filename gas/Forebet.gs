@@ -131,13 +131,30 @@ function fbMatchUrl_(raw) {
   return 'https://www.forebet.com' + fbClean_(m[1]);
 }
 
-/** ชื่อลีก — เขาฝังไว้ในพารามิเตอร์ของ getstag(...)
-    ไม่มีมา (บางคู่เขาส่งค่าว่าง) = ใช้ตัวย่อที่หน้าเว็บโชว์จริง เช่น Co1 */
-function fbLeague_(raw) {
+/** ชื่อลีกเต็มจาก getstag(...) — ให้รหัสคู่มาด้วยจะยึดของคู่นั้นเป๊ะๆ
+    (แถวในตารางใหญ่ 1 ก้อนมี getstag ของคู่อื่นปนมาได้ ห้ามหยิบมั่ว) */
+function fbLeagueFull_(raw, id) {
   var s = String(raw || '');
-  var m = /getstag\([^)]*?,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*\)/i.exec(s);
-  if (m && fbClean_(m[2])) return fbClean_(m[2]);
-  if (m && fbClean_(m[1])) return fbClean_(m[1]);
+  var want = String(id || '').replace(/[^0-9]/g, '');
+  var re = /getstag\(\s*this\s*,\s*(\d{4,12})\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*\)/gi;
+  var m;
+  while ((m = re.exec(s))) {
+    if (want && m[1] !== want) continue;
+    var name = fbClean_(m[3]) || fbClean_(m[2]);
+    if (name) return name;         /* ค่าว่างข้ามไป หาตัวถัดไปต่อ */
+  }
+  return '';
+}
+
+/** ชื่อลีก — เขาฝังไว้ในพารามิเตอร์ของ getstag(...)
+    🪤 กล่องปักหมุดบางใบเขาส่งค่าว่างมา `getstag(this,2528659,'','','','co')`
+       ทั้งที่แถวเดียวกันในตารางใหญ่มีครบ `'Colombia','Primera A'`
+       -> ตามรหัสคู่ไปหยิบจากแถวใหญ่ก่อน (วิธีเดียวกับสกอร์/เปอร์เซ็นต์)
+    หมดทุกทางค่อยใช้ตัวย่อที่หน้าเว็บโชว์จริง เช่น Co1 */
+function fbLeague_(raw, row, id) {
+  var full = fbLeagueFull_(raw, id) || fbLeagueFull_(row, id);
+  if (full) return full;
+  var s = String(raw || '');
   var t = /class="[^"]*shortTag[^"]*"[^>]*>\s*([^<]{1,20}?)\s*</i.exec(s);
   if (t) return fbClean_(t[1]);
   var l = /predictions-1x2\/[^"']*["'][^>]*>\s*([^<]{2,40}?)\s*</i.exec(s);
@@ -421,7 +438,7 @@ function fbParseOne_(html, kind) {
   var thai = fbWhenLocal_(src, shown, prop_('FB_TZ_SHIFT'));
   return {
     'ช่อง': kind,
-    'ลีก': fbLeague_(w.raw),
+    'ลีก': fbLeague_(w.raw, row, id),
     'ทีมเหย้า': t.home,
     'ทีมเยือน': t.away,
     'วันที่': thai ? thai.date : src,
