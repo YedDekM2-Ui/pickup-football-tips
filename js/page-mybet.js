@@ -85,7 +85,7 @@ function dosBox_(inner) {
    OCR แค่กรอกให้ ไม่ได้ลงชีตเอง อ่านผิดก็แก้ในช่องได้ก่อนกด
    ค่าที่พิมพ์เก็บไว้ใน BETFORM ไม่ได้อยู่ใน DOM เพราะหน้านี้ถูกวาดใหม่ได้ตลอด (mount_)
    ถ้าเก็บใน DOM อย่างเดียว ของสดมาถึงเมื่อไหร่ที่พิมพ์ไว้หายทันที */
-var BETFORM = { open: false, busy: false, msg: '', v: {} };
+var BETFORM = { open: false, busy: false, msg: '', v: {}, picks: [] };
 
 var BET_FIELDS = [
   { k: 'ลีก',        t: 'text',   ph: 'Champions League Women' },
@@ -108,6 +108,49 @@ var BET_MARKETS = [
   { v: 'CORRECT_SCORE', t: 'สกอร์ตรง' }
 ];
 
+/* ---------- เลือกคู่จากหน้าแรก แทนการนั่งพิมพ์ ----------
+   ลีก/ทีมเหย้า/ทีมเยือน/วันที่/เวลา แอปมันรู้อยู่แล้วจากหน้าแรก ไม่มีเหตุผลให้พิมพ์เอง
+   เลือกคู่ทีเดียว 5 ช่องนี้เต็ม เหลือแค่ ตลาด/ราคา/เงิน ที่มีแต่ในบิลเท่านั้น */
+
+function betPickKey_(p) {
+  return s_(p['เหย้า']) + '|' + s_(p['เยือน']) + '|' + s_(p['วันที่']);
+}
+
+/** คู่ที่เลือกได้ = คู่ปักหมุดขึ้นก่อน แล้วต่อด้วยคู่ในตาราง · คู่ซ้ำเอาตัวแรกพอ */
+function betPickList_(data) {
+  var src = [], out = [], seen = {}, i, p, k;
+  if (data && data.pinned && data.pinned.length) src = src.concat(data.pinned);
+  if (data && data.picks && data.picks.length) src = src.concat(data.picks);
+  for (i = 0; i < src.length; i++) {
+    p = src[i];
+    if (!p || !s_(p['เหย้า']) || !s_(p['เยือน'])) continue;
+    k = betPickKey_(p);
+    if (seen[k]) continue;
+    seen[k] = 1;
+    out.push(p);
+  }
+  return out;
+}
+
+function betPickLabel_(p) {
+  var s = teamTh(p['เหย้า'], p['เหย้าไทย']) + ' VS ' + teamTh(p['เยือน'], p['เยือนไทย']);
+  var t = s_(p['เวลาเตะ']);
+  return t ? (s + ' · ' + t) : s;
+}
+
+/** เลือกคู่แล้วกรอกให้เลย — ทับของเดิมได้ เพราะการกดเลือกคู่ใหม่คือตั้งใจเปลี่ยนคู่ */
+function betFormPick(i) {
+  var p = BETFORM.picks[Number(i)];
+  if (!p) return;
+  BETFORM.v['ลีก'] = s_(p['ลีก']);
+  BETFORM.v['ทีมเหย้า'] = s_(p['เหย้า']);
+  BETFORM.v['ทีมเยือน'] = s_(p['เยือน']);
+  BETFORM.v['วันที่'] = s_(p['วันที่']);
+  BETFORM.v['เวลา'] = s_(p['เวลาเตะ']);
+  BETFORM.msg = 'กรอกคู่ให้แล้ว เหลือ ตลาด/ราคา/เงิน';
+  betFormRedraw_();
+}
+
 function betFormSet(k, v) { BETFORM.v[k] = v; }
 function betFormVal_(k) { return BETFORM.v[k] === undefined ? '' : String(BETFORM.v[k]); }
 
@@ -118,7 +161,8 @@ function betFormField_(f) {
     ' oninput="betFormSet(\'' + f.k + '\', this.value)"></label>';
 }
 
-function betFormHtml() {
+function betFormHtml(data) {
+  BETFORM.picks = betPickList_(data);
   if (!BETFORM.open) {
     return '<div class="bf-bar"><button class="bf-open" onclick="betFormToggle()">＋ ลงบิล</button></div>';
   }
@@ -127,11 +171,24 @@ function betFormHtml() {
     return '<option value="' + m.v + '"' + on + '>' + m.t + '</option>';
   }).join('');
 
+  /* ไม่มีคู่ให้เลือก (ยังไม่ได้ดึง/เตะไปหมดแล้ว) = ไม่ต้องโชว์ช่องนี้ให้รก */
+  var pickBox = '';
+  if (BETFORM.picks.length) {
+    pickBox = '<label class="bf-row"><span class="bf-k">เลือกคู่</span>' +
+      '<select class="bf-i" onchange="betFormPick(this.value)">' +
+      '<option value="">— เลือกคู่จากหน้าแรก —</option>' +
+      BETFORM.picks.map(function (p, i) {
+        return '<option value="' + i + '">' + esc_(betPickLabel_(p)) + '</option>';
+      }).join('') +
+      '</select></label>';
+  }
+
   return '<div class="bf">' +
     '<div class="bf-head">ลงบิลใหม่</div>' +
     '<label class="bf-shot">🖼 เลือกรูปบิลจากอัลบั้ม' +
       '<input type="file" accept="image/jpeg,image/png,image/webp,image/heic" onchange="betFormShot(this)">' +
     '</label>' +
+    pickBox +
     '<label class="bf-row"><span class="bf-k">ตลาด</span>' +
       '<select class="bf-i" onchange="betFormSet(\'ตลาด\', this.value)">' +
       '<option value="">— เลือก —</option>' + opts + '</select></label>' +
@@ -149,7 +206,7 @@ function betFormHtml() {
     ตัดรูปทีละคู่ได้เลย ไม่ต้องมานั่งเล็งเส้นแบ่ง */
 function renderMyBet(data, nowMs) {
   var bets = (data && data.bets ? data.bets : []);
-  var form = betFormHtml();
+  var form = betFormHtml(data);
   if (!bets.length) {
     return form + dosBox_('<div class="slip"><div class="slip-teams">ยังไม่มีบิล</div>' +
       '<div class="slip-kick">กด ＋ ลงบิล แล้วถ่ายรูปสลิปได้เลย</div></div>');
