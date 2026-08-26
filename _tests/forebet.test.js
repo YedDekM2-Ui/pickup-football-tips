@@ -2,6 +2,8 @@
    ข้อที่ต้องพิสูจน์: ดึงไม่ได้ = ของเก่าในชีตต้องอยู่ครบ ห้ามหายห้ามถูกทับ */
 
 const { loadGas, fakeResponse } = require('./gasEnv');
+const fs = require('fs');
+const path = require('path');
 const { FakeSpreadsheetApp } = require('./fakeSheet');
 
 const HEAD_PICKS = ['ID','วันที่','ช่อง','ลีก','ทีมเหย้า','ทีมเยือน','เวลาเตะ',
@@ -589,4 +591,75 @@ test('หน้าเว็บเอาเฉพาะคู่ที่ยั�
   eq(live.length, 2, 'ของเมื่อวานต้องหลุดออก · อ่านเวลาไม่ออกให้เก็บไว้');
   eq(live[0]['ทีมเหย้า'], 'A');
   eq(live[1]['ทีมเหย้า'], 'E');
+});
+
+
+/* ================= 3 ตลาดจากหน้าของคู่เอง (Over / BTTS / HT) =================
+   ไฟล์ตัวอย่างตัดมาจากหน้าจริง 2 หน้าที่เจ้าของยืนยันแล้ว ห้ามแก้ด้วยมือ
+   ค่าที่ควรได้วัดมาจากหน้าจริงทั้งหมด:
+     Admira (2526629): เขาเดา Over -> เรท Over = -208 · เขาเดา No -> Yes = -152 · HT 2 / 12/17/71 / -105
+     Boyaca (2476034): เขาเดา Under -> เรท Over = +155 · เขาเดา No -> Yes = +100 · HT X / 30/38/32 / -108
+   คู่ Boyaca สำคัญ เพราะเป็นเคส "เขาเดาคนละฝั่งกับที่เราอยากได้" ทั้ง 2 ตลาด */
+const MATCH_HTML = fs.readFileSync(
+  path.join(__dirname, 'fixtures', 'forebet-match.html'), 'utf8');
+
+function mktEnv() { return fbEnv(bookOf([]), ''); }
+
+test('เรท Over — เขาเดา Over อยู่แล้ว เอาเลขที่โชว์', () => {
+  eq(mktEnv().fbSideOdds_(mktEnv().fbMarket_(MATCH_HTML, 2526629, 'uo'), 'Over'), '-208');
+});
+
+test('เรท Over — เขาเดา Under ต้องพลิกไปหยิบอีกฝั่งใน haodd ไม่ใช่เลขที่โชว์', () => {
+  const g = mktEnv();
+  const m = g.fbMarket_(MATCH_HTML, 2476034, 'uo');
+  eq(m.pred, 'Under');
+  eq(m.odds, '-227', 'เลขที่โชว์คือของฝั่งที่เขาเดา');
+  eq(g.fbSideOdds_(m, 'Over'), '+155', 'ของเราคือฝั่งที่เหลือ');
+});
+
+test('เรท BTTS เอาแต่ฝั่ง YES — ทั้ง 2 หน้าเขาเดา No จึงต้องพลิกทั้งคู่', () => {
+  const g = mktEnv();
+  eq(g.fbSideOdds_(g.fbMarket_(MATCH_HTML, 2526629, 'gg'), 'Yes'), '-152');
+  eq(g.fbSideOdds_(g.fbMarket_(MATCH_HTML, 2476034, 'gg'), 'Yes'), '+100');
+});
+
+test('HT เอาทุกค่า — ผลที่เดา + เปอร์เซ็นต์ 1/X/2 + เรท', () => {
+  const g = mktEnv();
+  const a = g.fbHtOut_(g.fbMarket_(MATCH_HTML, 2526629, 'ht1'));
+  eq(a.pred, '2'); eq(a.pct, '12/17/71'); eq(a.odds, '-105');
+  const c = g.fbHtOut_(g.fbMarket_(MATCH_HTML, 2476034, 'ht1'));
+  eq(c.pred, 'X'); eq(c.pct, '30/38/32'); eq(c.odds, '-108');
+});
+
+test('ไม่เจอตลาดนั้นในหน้า = คืนว่าง ไม่ throw ไม่เดามั่ว', () => {
+  const g = mktEnv();
+  eq(g.fbMarket_(MATCH_HTML, 2526629, 'htft'), null, 'ตลาดที่ไม่มีจริง');
+  eq(g.fbMarket_(MATCH_HTML, 9999999, 'uo'), null, 'คนละคู่');
+  eq(g.fbSideOdds_(null, 'Over'), '');
+  const h = g.fbHtOut_(null);
+  eq(h.pred + '|' + h.pct + '|' + h.odds, '||');
+});
+
+test('อ่านคำเดาไม่ออก = คืนว่าง ดีกว่าหยิบผิดฝั่ง (กฎข้อ 6)', () => {
+  const g = mktEnv();
+  eq(g.fbSideOdds_({ pred: '', odds: '-208', alt: ['+150','-208'] }, 'Over'), '');
+  eq(g.fbSideOdds_({ pred: 'Under', odds: '-227', alt: [] }, 'Over'), '',
+     'ไม่มีอีกฝั่งให้เทียบ ก็ห้ามเดา');
+});
+
+test('fbFillMarkets_ เติมครบ 5 ช่อง ตามชื่อหัวตารางเป๊ะๆ', () => {
+  const g = mktEnv();
+  const snap = { 'รหัสคู่': 2476034 };
+  g.fbFillMarkets_(snap, MATCH_HTML);
+  eq(snap['เรท Over'], '+155');
+  eq(snap['เรท BTTS YES'], '+100');
+  eq(snap['HT เดาผล'], 'X');
+  eq(snap['HT %'], '30/38/32');
+  eq(snap['HT เรท'], '-108');
+});
+
+test('เปอร์เซ็นต์ HT ต้องไม่ติดกันเป็นก้อนเดียว (12 17 71 ไม่ใช่ 121771)', () => {
+  const g = mktEnv();
+  const m = g.fbMarket_(MATCH_HTML, 2526629, 'ht1');
+  eq(m.probs.slice(0, 3).join(','), '12,17,71');
 });

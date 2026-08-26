@@ -70,6 +70,9 @@ body {
 .pick-pred { color: var(--ink); font-size: 13px; margin-bottom: 8px; }
 .pick-pct { color: var(--gold); font-weight: 700; font-size: 18px; }
 .pick-odds { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+/* 3 ตลาดจากหน้าของคู่ — ตัวเล็กกว่าบรรทัดหลัก ยาวเกินจอให้ตัดขึ้นบรรทัดใหม่ได้ */
+.pick-mkt { color: var(--ink-dim); font-size: 12px; margin-top: 4px;
+            line-height: 1.5; word-break: break-word; }
 /* ใบปักหมุด — ขอบทองบอกว่าเป็นของที่แช่ไว้ ไม่ใช่ของสด */
 .pin { border-color: var(--gold); }
 .pin-cap {

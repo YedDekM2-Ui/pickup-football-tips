@@ -259,6 +259,91 @@ function fbOdds_(row) {
   return (v >= 1.01 && v <= 99.99) ? v : 0;
 }
 
+/* ---------- 3 ตลาดจากหน้าของคู่นั้นเอง ---------- */
+/* เจ้าของสั่ง: "เอาแต่เรท Over · BTTS เอาแต่เรท YES · HT เอาทุกค่า"
+   หน้าของคู่มีตารางแยกตามตลาด แต่ละแถวปักป้ายไว้ที่ปุ่มราคา:
+       getHodd(this,<รหัสคู่>,'uo')  = สูง/ต่ำ 2.5
+       getHodd(this,<รหัสคู่>,'gg')  = ทั้งสองทีมยิง
+       getHodd(this,<รหัสคู่>,'ht1') = ครึ่งแรก 1X2
+   วัดจากหน้าจริง 2 หน้า: ป้ายนี้โผล่หน้าละครั้งเดียวต่อ 1 ตลาด จึงชี้ตรงตัวได้เลย
+   เลขที่ "โชว์อยู่" คือเรทของฝั่งที่เขาเดา (ตรงกันทั้ง 2 หน้า) อีกฝั่งซ่อนใน .haodd */
+var FB_MKT_HEAD = 900;   /* ย้อนหาคำเดา/เปอร์เซ็นต์ — วัดแล้วไกลสุด 463 ตัวอักษร */
+var FB_MKT_TAIL = 300;   /* เอาแค่ของแถวนี้ — วัดแล้ว haodd อยู่ที่ +60..64 ส่วนแถวถัดไป +1000 ขึ้นไป */
+
+/** แกะ 1 ตลาด คืน { pred, probs, odds, alt } · ไม่เจอป้าย = null */
+function fbMarket_(html, id, market) {
+  var s = String(html || ''), key = String(id || '');
+  if (!key) return null;
+  var at = s.indexOf("getHodd(this," + key + ",'" + market + "')");
+  if (at < 0) return null;
+  var head = s.slice(Math.max(0, at - FB_MKT_HEAD), at);
+  var tail = s.slice(at, at + FB_MKT_TAIL);
+
+  var pred = '', fi = head.lastIndexOf('class="forepr');
+  if (fi >= 0) {
+    var pm = /<span>([\s\S]{0,60}?)<\/span>/i.exec(head.slice(fi));
+    if (pm) pred = fbClean_(fbStrip_(pm[1]));
+  }
+
+  /* fbStrip_ เปลี่ยนแท็กเป็น "ช่องว่าง" เลขจึงไม่ติดกัน (12 17 71 ไม่ใช่ 121771) */
+  var probs = [], ci = head.lastIndexOf('fprc');
+  if (ci >= 0) {
+    var blk = head.slice(ci), e = blk.indexOf('</div>');
+    probs = fbStrip_(e >= 0 ? blk.slice(0, e) : blk).match(/\d{1,3}/g) || [];
+  }
+
+  var om = /^[^>]*>\s*([^<]{0,12}?)\s*<\/span>/.exec(tail);
+  var odds = om ? fbClean_(om[1]) : '';
+
+  var alt = [], hi = tail.indexOf('haodd');
+  if (hi >= 0) {
+    var hb = tail.slice(hi), he = hb.indexOf('</div>');
+    if (he >= 0) hb = hb.slice(0, he);
+    var re = /<span>([\s\S]{0,20}?)<\/span>/gi, x;
+    while ((x = re.exec(hb))) { var v = fbClean_(fbStrip_(x[1])); if (v) alt.push(v); }
+  }
+  return { pred: pred, probs: probs, odds: odds, alt: alt };
+}
+
+/** เรทของ "ฝั่งที่เราอยากได้" (want = คำที่เขาใช้เรียกฝั่งนั้น เช่น Over / Yes)
+    เขาเดาฝั่งเดียวกับเรา = เลขที่โชว์คือของเรา
+    เขาเดาอีกฝั่ง       = ของเราคือตัวที่เหลือใน haodd หลังตัดเลขที่โชว์ออก
+    ห้ามยึด "ตำแหน่ง" ใน haodd เพราะยังไม่ได้วัดว่ามันเรียงคงที่จริง
+    อ่านคำเดาไม่ออก / ไม่มีอีกฝั่งให้เทียบ = คืนว่าง ดีกว่าเดาผิดฝั่ง (กฎข้อ 6) */
+function fbSideOdds_(mkt, want) {
+  if (!mkt) return '';
+  var pred = String(mkt.pred || '').toLowerCase();
+  if (!pred) return '';
+  if (pred === String(want || '').toLowerCase()) return String(mkt.odds || '');
+  var alt = (mkt.alt || []).slice(), hit = alt.indexOf(String(mkt.odds || ''));
+  if (hit >= 0) alt.splice(hit, 1);
+  return alt.length === 1 ? alt[0] : '';
+}
+
+/** ครึ่งแรก — เจ้าของสั่ง "เอาทุกค่า" = ผลที่เดา + เปอร์เซ็นต์ 1/X/2 + เรท
+    เปอร์เซ็นต์ไม่ครบ 3 ตัว = ปล่อยว่างทั้งช่อง ไม่ตัดมาครึ่งๆ */
+function fbHtOut_(mkt) {
+  var out = { pred: '', pct: '', odds: '' };
+  if (!mkt) return out;
+  out.pred = String(mkt.pred || '');
+  out.odds = String(mkt.odds || '');
+  var p = mkt.probs || [];
+  if (p.length >= 3) out.pct = p[0] + '/' + p[1] + '/' + p[2];
+  return out;
+}
+
+/** เติม 3 ตลาดลง snap — ไม่มีตลาดไหนก็ปล่อยช่องนั้นว่าง ห้ามทำของเดิมพัง */
+function fbFillMarkets_(snap, html) {
+  var id = snap['รหัสคู่'];
+  snap['เรท Over'] = fbSideOdds_(fbMarket_(html, id, 'uo'), 'Over');
+  snap['เรท BTTS YES'] = fbSideOdds_(fbMarket_(html, id, 'gg'), 'Yes');
+  var ht = fbHtOut_(fbMarket_(html, id, 'ht1'));
+  snap['HT เดาผล'] = ht.pred;
+  snap['HT %'] = ht.pct;
+  snap['HT เรท'] = ht.odds;
+  return snap;
+}
+
 /** อ่าน 1 กล่องให้จบ — อ่านชื่อทีมไม่ได้ = คืน null (ถือว่าไม่ได้ของ)
     ที่เหลืออ่านไม่ได้ = ปล่อยว่าง ยังนับว่าได้ของ */
 function fbParseOne_(html, kind) {
@@ -379,7 +464,9 @@ function fbFetchMatch_(url) {
     อ่านไม่ได้ = ปล่อยของเดิม ห้ามล้มทั้งงาน (กฎข้อ 1) */
 function fbEnrich_(snap) {
   if (!snap) return snap;
-  if (snap['เปอร์เซ็นต์'] && snap['เดาสกอร์']) return snap;   /* ได้จากหน้าแรกแล้ว ไม่ต้องเปิดซ้ำ */
+  /* 3 ตลาดท้าย (Over/BTTS/HT) มีที่หน้าของคู่เท่านั้น หน้าแรกไม่มี
+     จึงต้องเปิดหน้าคู่เสมอ ถึงจะข้ามได้ก็ต้องมีครบทั้ง 3 อย่าง */
+  if (snap['เปอร์เซ็นต์'] && snap['เดาสกอร์'] && snap['HT เรท']) return snap;
 
   var url = snap['ลิงก์'];
   if (!url) { snap['เปิดหน้าคู่'] = 'ไม่มีลิงก์'; return snap; }
@@ -390,6 +477,10 @@ function fbEnrich_(snap) {
     snap['เปิดหน้าคู่'] = 'เปิดไม่ได้ (' + got.code + ')';
     return snap;
   }
+
+  /* ต้องเติมก่อนด่าน fbRowById_ — ป้ายของตลาดฝังรหัสคู่ไว้ในตัวมันเอง
+     จึงเป็นของคู่นี้แน่ ไม่ต้องรอด่านที่เอาไว้กันหยิบแถวผิดคู่ */
+  fbFillMarkets_(snap, got.body);
 
   var row = fbRowById_(got.body, snap['รหัสคู่']);
   if (!row) { snap['เปิดหน้าคู่'] = 'ไม่เจอแถวของคู่นี้'; return snap; }
@@ -441,7 +532,12 @@ function fbAppend_(snap, stamp) {
     'ราคา': snap['ราคา'],
     'สกอร์จริง': '',
     'ถูกผิด': '',
-    'สร้างเมื่อ': stamp
+    'สร้างเมื่อ': stamp,
+    'เรท Over': snap['เรท Over'],
+    'เรท BTTS YES': snap['เรท BTTS YES'],
+    'HT เดาผล': snap['HT เดาผล'],
+    'HT %': snap['HT %'],
+    'HT เรท': snap['HT เรท']
   };
   var row = [];
   for (var i = 0; i < HEADERS.PICKS.length; i++) row.push(vals[HEADERS.PICKS[i]] === undefined ? '' : vals[HEADERS.PICKS[i]]);

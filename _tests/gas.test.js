@@ -73,12 +73,49 @@ test('sheetId_ ไม่ได้ตั้งค่า = ด่าออกม�
 
 test('หัวตารางทั้ง 3 ชีตตรงตามที่ล็อกไว้ในแผน', () => {
   const g = env({});
-  eq(g.HEADERS.PICKS.length, 14);
+  eq(g.HEADERS.PICKS.length, 19);   /* 14 เดิม + 5 ช่องตลาด (Over/BTTS/HT) */
+  eq(g.HEADERS.PICKS[14], 'เรท Over');
+  eq(g.HEADERS.PICKS[18], 'HT เรท');
   eq(g.HEADERS.BETS.length, 25);
   eq(g.HEADERS.TEAMS.length, 2);
   eq(g.HEADERS.BETS[0], 'ID');
   eq(g.HEADERS.BETS[1], 'Parent_ID');
   eq(g.HEADERS.BETS[2], 'Bill_Type');
+});
+
+/* ชีตจริงเกิดมาตอนหัวตารางมี 14 ช่อง พอเพิ่มช่องใหม่ในโค้ด ชีตเก่าไม่รู้เรื่องด้วย
+   ค่าที่เขียนลงไปจะอ่านกลับไม่ได้เลย (readObjects_ ตั้งชื่อคีย์จากแถว 1) */
+const HEAD_OLD_PICKS = ['ID','วันที่','ช่อง','ลีก','ทีมเหย้า','ทีมเยือน','เวลาเตะ',
+  'เดาผล','เดาสกอร์','เปอร์เซ็นต์','ราคา','สกอร์จริง','ถูกผิด','สร้างเมื่อ'];
+
+test('ชีตเก่าที่หัวตารางยังไม่ครบ ต้องถูกเติมหัวที่ขาด "ต่อท้าย"', () => {
+  const g = env({ PICKS: [HEAD_OLD_PICKS.slice(), HEAD_OLD_PICKS.map(() => 'x')] });
+  g.sheetEnsure_('PICKS', g.HEADERS.PICKS);
+  const head = g.__book().sheets['PICKS'].rows[0];
+  eq(head.length, 19);
+  eq(head.slice(0, 14).join('|'), HEAD_OLD_PICKS.join('|'), 'ของเดิมห้ามสลับ/หาย');
+  eq(head.slice(14).join('|'), 'เรท Over|เรท BTTS YES|HT เดาผล|HT %|HT เรท');
+  eq(g.__book().sheets['PICKS'].rows.length, 2, 'แถวข้อมูลเดิมต้องอยู่ครบ');
+});
+
+test('หัวที่เติมทีหลัง ต้องถูกตั้ง @ ด้วย ไม่งั้นเรท +150 กลายเป็นเลข 150', () => {
+  const g = env({ PICKS: [HEAD_OLD_PICKS.slice()] });
+  const sh = g.sheetEnsure_('PICKS', g.HEADERS.PICKS);
+  const row = g.HEADERS.PICKS.map(() => '');
+  row[g.HEADERS.PICKS.indexOf('เรท Over')] = '+150';
+  row[g.HEADERS.PICKS.indexOf('HT เรท')] = '-105';
+  sh.appendRow(row);
+  const out = g.readObjects_('PICKS')[0];
+  eq(out['เรท Over'], '+150');
+  eq(out['HT เรท'], '-105');
+});
+
+test('เรียกซ้ำ = หัวตารางต้องไม่งอกเพิ่ม (ครบแล้วไม่ต้องเติม)', () => {
+  const g = env({ PICKS: [HEAD_OLD_PICKS.slice()] });
+  g.sheetEnsure_('PICKS', g.HEADERS.PICKS);
+  g.sheetEnsure_('PICKS', g.HEADERS.PICKS);
+  g.sheetEnsure_('PICKS', g.HEADERS.PICKS);
+  eq(g.__book().sheets['PICKS'].rows[0].length, 19, 'ห้ามต่อท้ายซ้ำเป็น 24');
 });
 
 function apiEnv(book, props) {
