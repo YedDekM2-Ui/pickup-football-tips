@@ -108,6 +108,23 @@ function ledgerStats_(rows) {
   };
 }
 
+/** ชีตกลืนข้อความเป็น Date ได้ (เช่น "3-1" -> 1 มี.ค. / "02:18" -> 30 ธ.ค. 1899)
+    ค่าที่โดนกลืนแล้ว "ย้อนกลับไม่ได้" (1 มี.ค. เป็นได้ทั้ง 3-1 และ 1-3) จึงปล่อยว่าง
+    ห้ามเดาให้ — กฎข้อ 6 · รอบดึงถัดไปมันจะเติมของจริงกลับมาเอง */
+function noDate_(v) {
+  if (v instanceof Date) return '';
+  return String(v === null || v === undefined ? '' : v);
+}
+
+/** เวลาที่ลงแถว — ถ้าชีตกลืนเป็น Date ก็แปลงกลับเป็นข้อความเวลาไทยให้หน้าเว็บอ่านออก */
+function stamp_(v) {
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return '';
+    return Utilities.formatDate(v, TZ, "yyyy-MM-dd'T'HH:mm:ss") + '+07:00';
+  }
+  return String(v === null || v === undefined ? '' : v);
+}
+
 function pickOut_(r, tmap) {
   return {
     'id': String(r['ID'] || ''),
@@ -115,18 +132,27 @@ function pickOut_(r, tmap) {
     'ลีก': String(r['ลีก'] || ''),
     'เหย้า': String(r['ทีมเหย้า'] || ''), 'เหย้าไทย': th_(tmap, r['ทีมเหย้า']),
     'เยือน': String(r['ทีมเยือน'] || ''), 'เยือนไทย': th_(tmap, r['ทีมเยือน']),
-    'เวลาเตะ': String(r['เวลาเตะ'] || ''),
+    /* วัน/เวลา ต้องผ่านตัวแปลงเสมอ ไม่งั้นแถวที่ชีตกลืนเป็น Date จะโชว์ "30 ธ.ค. 42" */
+    'วันที่': fbYmd_(r['วันที่']),
+    'เวลาเตะ': fbHm_(r['เวลาเตะ']),
     'เดาผล': String(r['เดาผล'] || ''),
-    'เดาสกอร์': String(r['เดาสกอร์'] || ''),
+    'เดาสกอร์': noDate_(r['เดาสกอร์']),
     'เปอร์เซ็นต์': Number(r['เปอร์เซ็นต์']) || 0,
     'ราคา': Number(r['ราคา']) || 0,
-    'ดึงเมื่อ': String(r['สร้างเมื่อ'] || ''),   /* คู่ปักหมุดต้องบอกได้ว่าภาพนี้ของตอนไหน */
-    /* 3 ตลาดจากหน้าของคู่ — เรทส่งเป็น "ข้อความ" ตามที่เขาโชว์ (+150/-208) ห้ามแปลงเป็นตัวเลข */
+    'ดึงเมื่อ': stamp_(r['สร้างเมื่อ']),   /* คู่ปักหมุดต้องบอกได้ว่าภาพนี้ของตอนไหน */
+    /* ตลาดจากหน้าของคู่ — เรทกับเปอร์เซ็นต์ส่งเป็น "ข้อความ" ตามที่เขาโชว์ (+150/-208) ห้ามแปลงเป็นตัวเลข */
     'เรทOver': String(r['เรท Over'] || ''),
     'เรทBTTSYes': String(r['เรท BTTS YES'] || ''),
     'HTเดาผล': String(r['HT เดาผล'] || ''),
     'HTเปอร์เซ็นต์': String(r['HT %'] || ''),
-    'HTเรท': String(r['HT เรท'] || '')
+    'HTเรท': String(r['HT เรท'] || ''),
+    '1X2เปอร์เซ็นต์': String(r['1X2 %'] || ''),
+    'Overเปอร์เซ็นต์': String(r['Over %'] || ''),
+    'BTTSเปอร์เซ็นต์': String(r['BTTS YES %'] || ''),
+    'DBเปอร์เซ็นต์': String(r['DB %'] || ''),
+    'DBเดาผล': String(r['DB เดาผล'] || ''),
+    'HTFTเปอร์เซ็นต์': String(r['HT/FT %'] || ''),
+    'HTFTเดาผล': String(r['HT/FT เดาผล'] || '')
   };
 }
 
@@ -167,13 +193,21 @@ function doGet(e) {
   try {
     var q = (e && e.parameter) ? e.parameter : {};
     var p = q.p ? String(q.p) : 'all';
-    if (p === 'ping') return jsonOut_({ ok: true, at: nowIso_() });
+    /* ping = ทางเดียวที่ไม่ต้องใช้กุญแจ จึงคายได้แค่ของที่ไม่ใช่ความลับ
+       พ่วง "กล่องดำ" ของรอบดึงล่าสุดมาด้วย (รหัส HTTP / ไปทางไหน / ได้กี่คู่ / พลาดเพราะอะไร)
+       ไม่มีชื่อคู่ ไม่มีข้อมูลในชีต ไม่มีกุญแจ — มีไว้ให้ไล่ปัญหาได้โดยไม่ต้องขอกุญแจจากเจ้าของ
+       และให้มันออกไปดึงเองได้ด้วย ถ้าถึงคิวแล้ว: ของที่ดึงมาเป็นของสาธารณะจาก forebet ล้วนๆ
+       ตัวหน่วง (2 นาทีเมื่อล้ม / 10 นาทีเมื่อสำเร็จ) เป็นตัวกันคนกดรัวอยู่แล้ว จึงเปิดทางนี้ได้ */
+    if (p === 'ping') {
+      try { fbAutoSnap_(readObjects_(SHEETS.PICKS), Date.now()); } catch (err) { /* ping ต้องตอบได้เสมอ */ }
+      var alog = '';
+      try { alog = PropertiesService.getScriptProperties().getProperty('AUTH_LOG') || ''; } catch (err) { alog = ''; }
+      return jsonOut_({ ok: true, at: nowIso_(), กดอนุญาตล่าสุด: alog, ดึงล่าสุด: fbLastReport_() });
+    }
     if (!keyOk_(q)) return jsonOut_({ ok: false, needKey: true, error: 'ต้องใส่กุญแจ' });
     /* 2 ทางนี้ต้องอยู่หลังด่านกุญแจ — มันยิงเน็ตออกและเขียนชีต ไม่ใช่ทางอ่านเฉยๆ */
     if (p === 'snap') {
-      var snap = fbSnapRun_();
-      snap.trigger = fbEnsureTrigger_();   /* ติดไม่ได้ก็คืนข้อความมา ห้ามกลืนรายงาน snap */
-      return jsonOut_(snap);
+      return jsonOut_(fbSnapRun_());
     }
     if (p === 'fbprobe') return jsonOut_(fbProbe_());
     return jsonOut_(payloadAll_());

@@ -32,23 +32,42 @@ function predictLine_(p) {
   var w = wdlText_(p);
   if (w) parts.push(w);
   var sc = String(p['เดาสกอร์'] || '').trim();
-  if (sc) parts.push('เดาสกอร์ ' + sc);
+  if (sc) parts.push('ทาย (' + sc + ')');
   if (!parts.length) return '';
   return '<div class="pick-pred">' + esc_(parts.join(' · ')) + '</div>';
 }
 
-/** 3 ตลาดที่มาจากหน้าของคู่เอง — เจ้าของเรียกด้วยคำพวกนี้ จึงคงคำเดิมไว้
-    เรทเป็น "ข้อความตามที่ forebet โชว์" (+150 / -208) ห้ามคิดเลขต่อ (กฎข้อ 6)
-    ช่องไหนว่างก็ข้ามไป ไม่มีสักช่อง = ไม่มีบรรทัดนี้เลย */
+function s_(v) { return String(v === null || v === undefined ? '' : v).trim(); }
+
+/** ตลาดที่มี "เปอร์เซ็นต์ + เรท" คู่กัน — เรทเป็นข้อความตามที่ forebet โชว์ (+155/-208/"-")
+    ห้ามคิดเลขต่อ (กฎข้อ 6) · ไม่มีสักค่า = ไม่มีท่อนนี้ */
+function mktPair_(label, pct, odds) {
+  var a = s_(pct), b = s_(odds), out = label;
+  if (a) out += ' ' + a;
+  if (b) out += ' ' + b;
+  return out === label ? '' : out;
+}
+
+/** บรรทัดตลาดรวบเป็นบรรทัดเดียวตามที่เจ้าของเขียนมา:
+      1X2 (42/38/20) · Over 77 · BTTS 58 - · HT 1 (41/36/23) · DB 80/1X · HT/FT 17(1/1)
+    ช่องไหนไม่มีก็หายไปทั้งท่อน ห้ามโชว์ป้ายเปล่าๆ ให้คนอ่านเดาเอง */
 function marketLine_(p) {
-  var parts = [];
-  var ov = String(p['เรทOver'] || '').trim();
-  if (ov) parts.push('Over ' + ov);
-  var bt = String(p['เรทBTTSYes'] || '').trim();
-  if (bt) parts.push('BTTS Yes ' + bt);
-  var hw = String(p['HTเดาผล'] || '').trim();
-  var hp = String(p['HTเปอร์เซ็นต์'] || '').trim();
-  var ho = String(p['HTเรท'] || '').trim();
+  var parts = [], t;
+
+  var x3 = s_(p['1X2เปอร์เซ็นต์']);
+  if (x3) parts.push('1X2 (' + x3 + ')');
+  else {
+    /* ยังไม่ได้เปิดหน้าคู่ = มีแค่ตัวเดียวจากตารางใหญ่ โชว์เท่าที่มี */
+    var one = Number(p['เปอร์เซ็นต์']);
+    if (!isNaN(one) && one > 0) parts.push('1X2 ' + one + '%');
+  }
+
+  t = mktPair_('Over', p['Overเปอร์เซ็นต์'], p['เรทOver']);
+  if (t) parts.push(t);
+  t = mktPair_('BTTS', p['BTTSเปอร์เซ็นต์'], p['เรทBTTSYes']);
+  if (t) parts.push(t);
+
+  var hw = s_(p['HTเดาผล']), hp = s_(p['HTเปอร์เซ็นต์']), ho = s_(p['HTเรท']);
   if (hw || hp || ho) {
     var ht = 'HT';
     if (hw) ht += ' ' + hw;
@@ -56,46 +75,50 @@ function marketLine_(p) {
     if (ho) ht += ' ' + ho;
     parts.push(ht);
   }
+
+  var dp = s_(p['DBเปอร์เซ็นต์']), dw = s_(p['DBเดาผล']);
+  if (dp || dw) parts.push('DB ' + (dp && dw ? dp + '/' + dw : dp || dw));
+
+  var fp = s_(p['HTFTเปอร์เซ็นต์']), fw = s_(p['HTFTเดาผล']);
+  if (fp || fw) parts.push('HT/FT ' + (fp && fw ? fp + '(' + fw + ')' : fp || fw));
+
   if (!parts.length) return '';
   return '<div class="pick-mkt">' + esc_(parts.join(' · ')) + '</div>';
 }
 
-/** ไส้ในของใบ — แยกออกมาเพราะใบปักหมุดใช้ไส้เดียวกัน ต่างแค่กรอบกับป้าย */
-function pickBody_(p, nowMs) {
+/** ไส้ในของใบ — แยกออกมาเพราะใบปักหมุดใช้ไส้เดียวกัน ต่างแค่กรอบกับป้าย
+    เรียงตามที่เจ้าของสั่ง: ลีก / วัน-เวลาเตะ / คู่ / คำเดา / ตลาด
+    ไม่มีบรรทัดเปอร์เซ็นต์ลอยกับราคาแล้ว — เปอร์เซ็นต์ไปอยู่ในท่อน 1X2
+    และราคาของ forebet เป็นแบบอเมริกัน เราไม่แปลง จึงเป็น 0.00 เสมอ ไม่มีประโยชน์ */
+function pickBody_(p) {
   var home = esc_(teamTh(p['เหย้า'], p['เหย้าไทย']));
   var away = esc_(teamTh(p['เยือน'], p['เยือนไทย']));
-  var pct = Number(p['เปอร์เซ็นต์']);
-  var when = String(p['เวลาเตะ'] || '').trim();
-  var cd = when ? countdownText(p['เวลาเตะ'], 'รอเตะ', nowMs) : '';
+  var lg = s_(p['ลีก']);
+  var kick = kickText(p['วันที่'], p['เวลาเตะ']);
   return '' +
-    '<div class="row"><span class="muted">' + esc_(p['ลีก']) + '</span>' +
-      '<span class="muted">' + (when ? esc_(thDate(when)) + ' ' + esc_(thTime(when)) : '') + '</span></div>' +
+    (lg ? '<div class="muted">' + esc_(lg) + '</div>' : '') +
+    (kick ? '<div class="muted">' + esc_(kick) + '</div>' : '') +
     '<div class="big">' + home + ' <span class="muted">VS</span> ' + away + '</div>' +
     predictLine_(p) +
-    marketLine_(p) +
-    '<div class="row">' +
-      '<span class="pick-pct">' + (isNaN(pct) ? '' : pct + '%') + '</span>' +
-      '<span class="pick-odds">' + esc_(fmtOdds(p['ราคา'])) + '</span>' +
-    '</div>' +
-    (cd ? '<div class="muted">' + esc_(cd) + '</div>' : '');
+    marketLine_(p);
 }
 
-function pickCard(p, nowMs) {
-  return '<div class="card pick">' + pickBody_(p, nowMs) + '</div>';
+function pickCard(p) {
+  return '<div class="card pick">' + pickBody_(p) + '</div>';
 }
 
 /** ชื่อช่องบน Forebet — ไม่รู้จักช่องไหน ก็โชว์รหัสดิบไปตรงๆ ดีกว่าเงียบ */
 var PIN_LABEL = { FEATURED: 'FEATURED MATCH', POTD: 'PICK OF THE DAY' };
 
 /** ใบปักหมุด: ภาพนิ่งของตอนที่ไปดึงมา ไม่ใช่ของสด จึงต้องบอกเวลาที่ดึงเสมอ */
-function pinCard(p, nowMs) {
+function pinCard(p) {
   var kind = String(p['ช่อง'] || '').trim().toUpperCase();
   var got = String(p['ดึงเมื่อ'] || '').trim();
   return '' +
     '<div class="card pick pin">' +
       '<div class="pin-cap">' + esc_(PIN_LABEL[kind] || kind) + '</div>' +
-      pickBody_(p, nowMs) +
-      (got ? '<div class="pin-when">ดึงมาเมื่อ ' + esc_(thDate(got)) + ' ' + esc_(thTime(got)) + '</div>' : '') +
+      pickBody_(p) +
+      (got ? '<div class="pin-when">ล่าสุด ' + esc_(thDate(got)) + ' ' + esc_(thTime(got)) + '</div>' : '') +
     '</div>';
 }
 
@@ -114,8 +137,8 @@ function renderForebet(data, nowMs) {
   picks = picks.slice(0, MAX_CARDS);
 
   var head = '<div class="muted">ข้อมูลรอบ ' + esc_(thTime(data && data.at)) + '</div>';
-  var pin = pinned.map(function (p) { return pinCard(p, nowMs); }).join('');
-  var body = picks.map(function (p) { return pickCard(p, nowMs); }).join('');
+  var pin = pinned.map(function (p) { return pinCard(p); }).join('');
+  var body = picks.map(function (p) { return pickCard(p); }).join('');
   if (!pin && !body) {
     body = '<div class="card"><div class="big">ยังไม่มีคู่ของรอบนี้</div>' +
       '<div class="muted">รอบถัดไปอีกไม่นาน หรือกรอกเองได้เลย</div></div>';

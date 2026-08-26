@@ -47,39 +47,41 @@ test('esc_ กันโค้ดหลุดเข้า HTML', () => {
   eq(f.esc_(null), '');
 });
 
-test('pickCard โชว์ครบ ทีม/เวลา/เปอร์เซ็นต์/ราคา และนับถอยหลัง', () => {
-  const now = Date.parse('2026-08-25T18:33:00+07:00');
-  const html = f.pickCard(f.MOCK.picks[0], now);
+test('pickCard โชว์ครบ ลีก/วันเวลาเตะ/คู่ ตามหน้าตาที่เจ้าของสั่ง', () => {
+  const html = f.pickCard(f.MOCK.picks[0]);
   ok(html.indexOf('อินเตอร์') >= 0, 'ต้องมีชื่อไทยทีมเหย้า');
   ok(html.indexOf('มิลาน') >= 0, 'ต้องมีชื่อไทยทีมเยือน');
-  ok(html.indexOf('21:45') >= 0, 'ต้องมีเวลาเตะ');
-  ok(html.indexOf('56%') >= 0, 'ต้องมีเปอร์เซ็นต์');
-  ok(html.indexOf('1.95') >= 0, 'ต้องมีราคา');
-  ok(html.indexOf('อีก 3 ชม. 12 น.') >= 0, 'ต้องมีนับถอยหลัง');
+  ok(html.indexOf('25/8/2026  21:45') >= 0, 'วันเวลาเตะ วัน/เดือน/ปีค.ศ. + เวลา');
   ok(html.indexOf('VS') >= 0, 'คู่บอลใช้คำว่า VS');
   eq(html.indexOf('พบ'), -1, 'ไม่ใช้คำว่า พบ แล้ว');
 });
 
-test('pickCard โชว์ 1X2 กับสกอร์ที่เดา', () => {
-  const now = Date.parse('2026-08-25T18:33:00+07:00');
-  const h1 = f.pickCard(f.MOCK.picks[0], now);          // เดาผล 1 = เหย้า
-  ok(h1.indexOf('เต็ง อินเตอร์') >= 0, '1 = เต็งเจ้าบ้าน');
-  ok(h1.indexOf('เดาสกอร์ 2-1') >= 0, 'ต้องมีสกอร์ที่เดา');
+test('การ์ดไม่มีบรรทัดเปอร์เซ็นต์ลอย/ราคา/นับถอยหลังแล้ว', () => {
+  const html = f.pickCard(f.MOCK.picks[0]);
+  ok(html.indexOf('1X2 56%') >= 0, 'ยังไม่ได้เปิดหน้าคู่ = มีตัวเดียว โชว์เท่าที่มี');
+  eq(html.indexOf('1.95'), -1, 'ราคาแบบอเมริกันเราไม่แปลง = ห้ามโผล่');
+  eq(html.indexOf('0.00'), -1, 'ห้ามมีราคาศูนย์');
+  eq(html.indexOf('อีก '), -1, 'ไม่มีบรรทัดนับถอยหลังแล้ว');
+});
 
-  const h2 = f.pickCard(f.MOCK.picks[1], now);          // เดาผล X = เสมอ
+test('pickCard โชว์ 1X2 กับสกอร์ที่เดา แบบ ทาย (2-1)', () => {
+  const h1 = f.pickCard(f.MOCK.picks[0]);              // เดาผล 1 = เหย้า
+  ok(h1.indexOf('เต็ง อินเตอร์ · ทาย (2-1)') >= 0, '1 = เต็งเจ้าบ้าน + สกอร์ในวงเล็บ');
+
+  const h2 = f.pickCard(f.MOCK.picks[1]);              // เดาผล X = เสมอ
   ok(h2.indexOf('เสมอ') >= 0, 'X = เสมอ');
-  ok(h2.indexOf('เดาสกอร์ 1-1') >= 0, 'ต้องมีสกอร์ที่เดา');
+  ok(h2.indexOf('ทาย (1-1)') >= 0, 'ต้องมีสกอร์ที่เดา');
 
   const away = Object.assign({}, f.MOCK.picks[0], { 'เดาผล': '2' });
-  ok(f.pickCard(away, now).indexOf('เต็ง มิลาน') >= 0, '2 = เต็งทีมเยือน');
+  ok(f.pickCard(away).indexOf('เต็ง มิลาน') >= 0, '2 = เต็งทีมเยือน');
 });
 
 test('ไม่มี 1X2/สกอร์ที่เดา = ไม่ขึ้นบรรทัดเปล่า', () => {
-  const now = Date.parse('2026-08-25T18:33:00+07:00');
   const bare = Object.assign({}, f.MOCK.picks[0], { 'เดาผล': '', 'เดาสกอร์': '' });
-  const html = f.pickCard(bare, now);
+  const html = f.pickCard(bare);
   eq(html.indexOf('pick-pred'), -1, 'ไม่มีข้อมูลก็ไม่ต้องมีบรรทัด');
-  eq(html.indexOf('เดาสกอร์'), -1, 'ห้ามมีป้ายลอย');
+  eq(html.indexOf('ทาย ('), -1, 'ห้ามมีวงเล็บเปล่า');
+  eq(html.indexOf('เต็ง'), -1, 'ห้ามมีป้ายลอย');
 });
 
 test('renderForebet เรียงเปอร์เซ็นต์มากไปน้อย และไม่เกิน 4 ใบ', () => {
@@ -89,8 +91,8 @@ test('renderForebet เรียงเปอร์เซ็นต์มากไ
   }
   const html = f.renderForebet(many, Date.now());
   eq((html.match(/class="card pick"/g) || []).length, 4);
-  ok(html.indexOf('80%') >= 0, 'ใบเปอร์เซ็นต์สูงสุดต้องติดมา');
-  ok(html.indexOf('>0%<') === -1, 'ใบเปอร์เซ็นต์ต่ำสุดต้องถูกตัด');
+  ok(html.indexOf('1X2 80%') >= 0, 'ใบเปอร์เซ็นต์สูงสุดต้องติดมา');
+  ok(html.indexOf('1X2 0%') === -1, 'ใบเปอร์เซ็นต์ต่ำสุดต้องถูกตัด');
   const iHi = html.indexOf('80%'), iLo = html.indexOf('50%');
   ok(iHi < iLo, 'ใบเปอร์เซ็นต์สูงต้องอยู่บนกว่า');
 });
@@ -105,21 +107,34 @@ test('renderForebet มีปุ่มกรอกเองเสมอ แล�
   ok(f.renderForebet({ picks: [], bets: [], ledger: {} }, Date.now()).indexOf('กรอกเอง') >= 0);
 });
 
-test('pinCard บอกว่าเป็นช่องไหน และดึงมาเมื่อไหร่', () => {
-  const html = f.pinCard(f.MOCK.pinned[0], Date.now());
+test('pinCard บอกว่าเป็นช่องไหน และดึงมาล่าสุดเมื่อไหร่', () => {
+  const html = f.pinCard(f.MOCK.pinned[0]);
   ok(html.indexOf('FEATURED MATCH') >= 0, 'ต้องมีป้ายช่อง');
   ok(html.indexOf('อาร์เซนอล') >= 0, 'ต้องมีชื่อทีมไทย');
   ok(html.indexOf('เต็ง อาร์เซนอล') >= 0, 'ต้องมี 1X2');
-  ok(html.indexOf('เดาสกอร์ 2-0') >= 0, 'ต้องมีสกอร์ที่เดา');
-  ok(html.indexOf('ดึงมาเมื่อ') >= 0, 'ภาพนิ่งต้องบอกเวลาที่ดึง');
+  ok(html.indexOf('ทาย (2-0)') >= 0, 'ต้องมีสกอร์ที่เดา');
+  ok(html.indexOf('27/8/2026  00:00') >= 0, 'ต้องมีวันเวลาเตะ');
+  ok(html.indexOf('ล่าสุด') >= 0, 'ภาพนิ่งต้องบอกเวลาที่ดึง');
   ok(html.indexOf('12:00') >= 0, 'ต้องมีเวลาที่ดึงจริง');
-  eq(f.pinCard(f.MOCK.pinned[1], Date.now()).indexOf('PICK OF THE DAY') >= 0, true);
+  eq(f.pinCard(f.MOCK.pinned[1]).indexOf('PICK OF THE DAY') >= 0, true);
 });
 
-test('ไม่รู้เวลาเตะ = ไม่โชว์บรรทัดนับถอยหลังมั่ว', () => {
-  const html = f.pinCard(f.MOCK.pinned[0], Date.now());
+test('ไม่รู้วันเวลาเตะ = ไม่มีบรรทัดวันเวลาโผล่มามั่ว', () => {
+  const html = f.pinCard(f.MOCK.pinned[1]);         // ใบนี้ไม่มีวันเวลาเตะ
+  eq(html.indexOf('2026'), -1, 'ไม่มีวันเตะก็ห้ามเดาปีให้เอง');
   eq(html.indexOf('รอเตะ'), -1, 'ไม่มีเวลาเตะก็ห้ามเดา');
   eq(html.indexOf('อีก '), -1, 'ห้ามนับถอยหลังจากเวลาว่าง');
+  ok(html.indexOf('ล่าสุด') >= 0, 'บรรทัดล่าสุดคนละเรื่องกับเวลาเตะ ต้องยังอยู่');
+});
+
+test('kickText — รู้ไม่ครบก็โชว์เท่าที่รู้ ห้ามเดาให้เอง', () => {
+  eq(f.kickText('2026-08-27', '00:00'), '27/8/2026  00:00');
+  eq(f.kickText('2026-12-05', '19:30'), '5/12/2026  19:30');
+  eq(f.kickText('2026-08-27', ''), '27/8/2026');
+  eq(f.kickText('', '00:00'), '00:00');
+  eq(f.kickText('', ''), '');
+  eq(f.kickText(null, undefined), '');
+  eq(f.kickText('30 ธ.ค. 42', '02:18'), '02:18', 'วันที่อ่านไม่ออก = ทิ้ง ไม่เอาไปโชว์');
 });
 
 test('renderForebet ปักหมุดไว้บนสุด และไม่โผล่ซ้ำในลิสต์ปกติ', () => {
@@ -555,33 +570,49 @@ test('หน้า 3 หัวแบบแอปหุ้น ป้ายอั�
    เจ้าของสั่ง: "เอาแต่เรท Over · BTTS เอาแต่เรท YES · HT เอาทุกค่า"
    เรทต้องขึ้นหน้าเว็บ "ตามที่ forebet โชว์" (+155 / -208) ห้ามคิดเลขต่อ (กฎข้อ 6) */
 
-test('marketLine_ มีครบ = โชว์ครบทั้ง 3 ตลาด และเรทเป็นตัวหนังสือตามที่เขาโชว์', () => {
-  const h = f.marketLine_({ 'เรทOver': '-208', 'เรทBTTSYes': '-152',
-    'HTเดาผล': '2', 'HTเปอร์เซ็นต์': '12/17/71', 'HTเรท': '-105' });
-  ok(h.indexOf('Over -208') >= 0, 'ต้องมีเรท Over ดิบๆ');
-  ok(h.indexOf('BTTS Yes -152') >= 0, 'ต้องมีเรท BTTS ฝั่ง Yes');
+test('marketLine_ มีครบ = 6 ตลาดอยู่บรรทัดเดียว เรทเป็นตัวหนังสือตามที่เขาโชว์', () => {
+  const h = f.marketLine_(f.MOCK.pinned[0]);
+  ok(h.indexOf('1X2 (42/38/20)') >= 0, '1X2 ต้องครบ 3 ตัว');
+  ok(h.indexOf('Over 77 -208') >= 0, 'Over = เปอร์เซ็นต์ + เรทดิบๆ');
+  ok(h.indexOf('BTTS 58 -152') >= 0, 'BTTS ฝั่ง Yes');
   ok(h.indexOf('HT 2 (12/17/71) -105') >= 0, 'HT ต้องครบทุกค่า');
+  ok(h.indexOf('DB 80/1X') >= 0, 'ดับเบิลชานซ์');
+  ok(h.indexOf('HT/FT 17(1/1)') >= 0, 'ครึ่ง/จบ');
+  eq((h.match(/pick-mkt/g) || []).length, 1, 'ต้องเป็นบรรทัดเดียว');
   ok(h.indexOf('2.08') < 0 && h.indexOf('1.48') < 0, 'ห้ามแปลงเรทเป็นทศนิยมเอง');
+});
+
+test('marketLine_ ไม่มี 1X2 ครบ 3 ตัว = ตกมาใช้เปอร์เซ็นต์ตัวเดียวจากตารางใหญ่', () => {
+  ok(f.marketLine_({ 'เปอร์เซ็นต์': 56 }).indexOf('1X2 56%') >= 0);
+  eq(f.marketLine_({ 'เปอร์เซ็นต์': 0 }), '', 'ศูนย์ = ยังไม่รู้ ไม่ใช่ค่าจริง');
+  ok(f.marketLine_({ 'เปอร์เซ็นต์': 56, '1X2เปอร์เซ็นต์': '42/38/20' }).indexOf('56%') < 0,
+     'มีครบ 3 ตัวแล้วห้ามโชว์ตัวเดียวซ้ำ');
 });
 
 test('marketLine_ ไม่มีสักช่อง = ไม่มีบรรทัดนี้เลย (การ์ดเก่าต้องหน้าตาเหมือนเดิม)', () => {
   eq(f.marketLine_({}), '');
-  eq(f.marketLine_({ 'เรทOver': '', 'เรทBTTSYes': '', 'HTเดาผล': '', 'HTเปอร์เซ็นต์': '', 'HTเรท': '' }), '');
+  eq(f.marketLine_({ 'เรทOver': '', 'เรทBTTSYes': '', 'HTเดาผล': '', 'HTเปอร์เซ็นต์': '', 'HTเรท': '',
+    '1X2เปอร์เซ็นต์': '', 'Overเปอร์เซ็นต์': '', 'BTTSเปอร์เซ็นต์': '',
+    'DBเปอร์เซ็นต์': '', 'DBเดาผล': '', 'HTFTเปอร์เซ็นต์': '', 'HTFTเดาผล': '' }), '');
   eq(f.marketLine_({ 'เรทOver': '   ' }), '', 'ช่องว่างล้วนก็ถือว่าไม่มี');
 });
 
 test('marketLine_ มีบางช่อง = โชว์เฉพาะที่มี ไม่โชว์คำเปล่าๆ', () => {
-  const h = f.marketLine_({ 'เรทOver': '+155', 'เรทBTTSYes': '',
+  const h = f.marketLine_({ 'เรทOver': '+155', 'เรทBTTSYes': '', 'BTTSเปอร์เซ็นต์': '',
     'HTเดาผล': 'X', 'HTเปอร์เซ็นต์': '30/38/32', 'HTเรท': '' });
   ok(h.indexOf('Over +155') >= 0);
-  ok(h.indexOf('BTTS') < 0, 'ไม่มีเรท BTTS ก็ห้ามโชว์คำว่า BTTS');
+  ok(h.indexOf('BTTS') < 0, 'ไม่มีค่า BTTS ก็ห้ามโชว์คำว่า BTTS');
   ok(h.indexOf('HT X (30/38/32)') >= 0, 'HT ไม่มีเรทก็ยังโชว์ผล+เปอร์เซ็นต์ได้');
+  ok(h.indexOf('DB') < 0 && h.indexOf('HT/FT') < 0, 'ช่องใหม่ไม่มีค่า = ไม่ต้องมีป้าย');
 });
 
-test('renderForebet เอาเรท 3 ตลาดขึ้นการ์ดปักหมุดจริง', () => {
+test('renderForebet เอาทุกตลาดขึ้นการ์ดปักหมุดจริง', () => {
   const html = f.renderForebet(f.MOCK, Date.now());
-  ok(html.indexOf('Over -208') >= 0, 'ใบ FEATURED ต้องเห็นเรท Over');
-  ok(html.indexOf('BTTS Yes -152') >= 0, 'ใบ FEATURED ต้องเห็นเรท BTTS Yes');
+  ok(html.indexOf('1X2 (42/38/20)') >= 0, 'ใบ FEATURED ต้องเห็น 1X2 ครบ 3 ตัว');
+  ok(html.indexOf('Over 77 -208') >= 0, 'ใบ FEATURED ต้องเห็น Over');
+  ok(html.indexOf('BTTS 58 -152') >= 0, 'ใบ FEATURED ต้องเห็น BTTS');
   ok(html.indexOf('HT 2 (12/17/71) -105') >= 0, 'ใบ FEATURED ต้องเห็น HT ครบ');
+  ok(html.indexOf('DB 80/1X') >= 0, 'ใบ FEATURED ต้องเห็นดับเบิลชานซ์');
+  ok(html.indexOf('HT/FT 17(1/1)') >= 0, 'ใบ FEATURED ต้องเห็นครึ่ง/จบ');
   ok(html.indexOf('Over +155') >= 0, 'ใบ POTD ต้องเห็นเรท Over ของมันเอง');
 });

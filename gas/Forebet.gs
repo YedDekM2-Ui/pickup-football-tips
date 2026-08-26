@@ -248,6 +248,16 @@ function fbPct_(row, wdl) {
   return (n >= 1 && n <= 100) ? n : 0;
 }
 
+/** เปอร์เซ็นต์ทั้งชุด 1/X/2 -> "42/38/20" (เจ้าของสั่งให้โชว์ครบ ไม่ใช่ตัวเดียว)
+    ไม่ครบ 3 ตัว = ปล่อยว่างทั้งช่อง ห้ามตัดมาครึ่งๆ ให้คนอ่านเดาเอง */
+function fbPct3_(row) {
+  var m = /class="[^"]*fprc[^"]*"[^>]*>([\s\S]{0,200}?)<\/div>/i.exec(String(row || ''));
+  if (!m) return '';
+  var nums = fbStrip_(m[1]).match(/\d{1,3}/g) || [];
+  if (nums.length < 3) return '';
+  return nums[0] + '/' + nums[1] + '/' + nums[2];
+}
+
 /** ราคา — ของเขาเป็นแบบอเมริกันได้ (-118) กฎข้อ 6 ห้ามแปลง ไม่ใช่ทศนิยมก็ปล่อย 0
     และต้องอ่านจากช่องราคาเท่านั้น (เลข 2.74 ในแถวคือ "ค่าเฉลี่ยประตู" หน้าตาเหมือนราคามาก) */
 function fbOdds_(row) {
@@ -332,15 +342,67 @@ function fbHtOut_(mkt) {
   return out;
 }
 
-/** เติม 3 ตลาดลง snap — ไม่มีตลาดไหนก็ปล่อยช่องนั้นว่าง ห้ามทำของเดิมพัง */
+/** ตลาด 2 ทาง (uo / gg) เรียง [ฝั่งลบ, ฝั่งบวก] เสมอ — วัดจากหัวตารางจริง:
+    "Under/Over 2.5" กับ "No Yes" · ไม่ครบ 2 ตัว = ไม่รู้ว่าตัวไหนของใคร ปล่อยว่าง */
+function fbSidePct_(mkt, idx) {
+  if (!mkt) return '';
+  var p = mkt.probs || [];
+  return p.length === 2 ? String(p[idx]) : '';
+}
+
+/** ดับเบิลชานซ์ (dbc) — หัวตารางคือ "Prob. % 1X/2X/12 Pred"
+    เขาให้เปอร์เซ็นต์ตัวเดียวคู่กับคำเดา 1 คำ · บางหน้าคำเดาเขียนติดกันแบบ "21"
+    จดตามที่เห็น ห้ามแปลงเป็น 12/2X เอง (กฎข้อ 6 ห้ามเดา) */
+function fbDbOut_(mkt) {
+  var out = { pct: '', pred: '' };
+  if (!mkt) return out;
+  var p = mkt.probs || [];
+  if (p.length >= 1) out.pct = String(p[0]);
+  out.pred = String(mkt.pred || '');
+  return out;
+}
+
+/** ครึ่งแรก/เต็มเวลา (ht) — หัวตารางคือ "HТ/FT Probability % Pred HT FT"
+    แถวนี้มีคำเดา 2 ตัวติดกัน: ครึ่งแรกอยู่ในกล่อง prht แล้วตามด้วยเต็มเวลา
+    fbMarket_ ย้อนหา forepr "ตัวท้าย" จึงได้แต่เต็มเวลา — ครึ่งแรกต้องอ่านเองที่นี่
+    ได้ไม่ครบ 2 ตัว = ปล่อยว่าง ไม่โชว์ครึ่งเดียวให้เข้าใจผิดว่าเป็นทั้งคู่ */
+function fbHtFt_(html, id) {
+  var out = { pct: '', ht: '', ft: '' };
+  var mkt = fbMarket_(html, id, 'ht');
+  if (!mkt) return out;
+  var p = mkt.probs || [];
+  if (p.length >= 1) out.pct = String(p[0]);
+  out.ft = String(mkt.pred || '');
+  var s = String(html || ''), at = s.indexOf("getHodd(this," + String(id || '') + ",'ht')");
+  if (at < 0) return out;
+  var head = s.slice(Math.max(0, at - FB_MKT_HEAD), at);
+  var hi = head.lastIndexOf('prht');
+  if (hi >= 0) {
+    var m = /class="[^"]*forepr[^"]*"[^>]*>([\s\S]{0,60}?)<\/span>/i.exec(head.slice(hi));
+    if (m) out.ht = fbClean_(fbStrip_(m[1]));
+  }
+  return out;
+}
+
+/** เติมตลาดจากหน้าของคู่ลง snap — ไม่มีตลาดไหนก็ปล่อยช่องนั้นว่าง ห้ามทำของเดิมพัง */
 function fbFillMarkets_(snap, html) {
   var id = snap['รหัสคู่'];
-  snap['เรท Over'] = fbSideOdds_(fbMarket_(html, id, 'uo'), 'Over');
-  snap['เรท BTTS YES'] = fbSideOdds_(fbMarket_(html, id, 'gg'), 'Yes');
+  var uo = fbMarket_(html, id, 'uo');
+  snap['เรท Over'] = fbSideOdds_(uo, 'Over');
+  snap['Over %'] = fbSidePct_(uo, 1);
+  var gg = fbMarket_(html, id, 'gg');
+  snap['เรท BTTS YES'] = fbSideOdds_(gg, 'Yes');
+  snap['BTTS YES %'] = fbSidePct_(gg, 1);
   var ht = fbHtOut_(fbMarket_(html, id, 'ht1'));
   snap['HT เดาผล'] = ht.pred;
   snap['HT %'] = ht.pct;
   snap['HT เรท'] = ht.odds;
+  var db = fbDbOut_(fbMarket_(html, id, 'dbc'));
+  snap['DB %'] = db.pct;
+  snap['DB เดาผล'] = db.pred;
+  var hf = fbHtFt_(html, id);
+  snap['HT/FT %'] = hf.pct;
+  snap['HT/FT เดาผล'] = (hf.ht && hf.ft) ? (hf.ht + '/' + hf.ft) : '';
   return snap;
 }
 
@@ -368,6 +430,7 @@ function fbParseOne_(html, kind) {
     'เดาผล': wdl,
     'เดาสกอร์': fbScore_(row),
     'เปอร์เซ็นต์': fbPct_(row, wdl),
+    '1X2 %': fbPct3_(row),
     'ราคา': fbOdds_(row),
     'รหัสคู่': id,
     'ลิงก์': fbMatchUrl_(w.raw),
@@ -386,6 +449,12 @@ function fbFetch_(url, via) {
   if (via) {
     target = via + url;
     head['X-Return-Format'] = 'html';   /* ขาดบรรทัดนี้ = ได้ markdown อ่านไม่ออก */
+    /* ทางอ้อมแบบไม่มีบัตร เขาจำกัดจำนวนครั้ง "ต่อ IP" ซึ่ง IP ของ Google ใช้ร่วมกันทั้งโลก
+       ไม่มีบัตรจึงมีสิทธิ์โดนปฏิเสธ (429) เป็นพักๆ โดยที่ของเราไม่ได้ผิดอะไรเลย
+       มีบัตรเมื่อไหร่ก็ใส่ที่ Script Property ชื่อ JINA_KEY — ไม่ใส่ก็ทำงานได้เหมือนเดิม
+       (ห้ามเขียนบัตรลงไฟล์ ที่นี่อ่านจาก Property อย่างเดียว) */
+    var jk = prop_('JINA_KEY');
+    if (jk) head['Authorization'] = 'Bearer ' + jk;
   }
   var res = UrlFetchApp.fetch(target, {
     method: 'get',
@@ -416,27 +485,42 @@ function fbProxy_() {
 
 /** ไล่ยิงทีละทางจนกว่าจะได้ 200 ที่เป็นหน้าจริง — ทุกทางพังก็คืนอันสุดท้ายไปเป็นหลักฐาน */
 function fbTryWays_(ways) {
-  var last = { url: '', via: '', code: 0, body: '' };
+  var last = { url: '', via: '', code: 0, body: '', trail: '', why: '' };
+  /* จดผลของ "ทุกทาง" ไม่ใช่แค่ทางสุดท้าย — ของเดิมทับกันจนเหลือทางท้ายแถวทางเดียว
+     รายงานจึงชี้ไปที่ "ยิงตรง" ทุกครั้ง ทั้งที่ต้นเหตุจริงอยู่ที่ทางอ้อมที่ลองไปก่อนหน้า
+     รูปแบบสั้นๆ: อ้อม:429,ตรง:ล้ม — พอให้รู้ว่าใครปิดประตูใส่เรา */
+  var trail = [];
   for (var k = 0; k < ways.length; k++) {
+    var tag = ways[k].via ? 'อ้อม' : 'ตรง';
     try {
       var r = fbFetch_(ways[k].url, ways[k].via);
-      last = { url: ways[k].url, via: ways[k].via, code: r.code, body: r.body || '' };
-      if (r.code === 200 && fbLooksLikePage_(last.body)) return last;
+      var body = r.body || '';
+      var real = fbLooksLikePage_(body);
+      trail.push(tag + ':' + r.code + (r.code === 200 && !real ? '(ไม่ใช่หน้า)' : ''));
+      last = { url: ways[k].url, via: ways[k].via, code: r.code, body: body,
+               trail: trail.join(','), why: '' };
+      if (r.code === 200 && real) return last;
     } catch (err) {
-      last = { url: ways[k].url, via: ways[k].via, code: -1,
-               body: String(err && err.message ? err.message : err) };
+      var msg = String(err && err.message ? err.message : err);
+      trail.push(tag + ':ล้ม');
+      last = { url: ways[k].url, via: ways[k].via, code: -1, body: msg,
+               trail: trail.join(','), why: msg.slice(0, 120) };
     }
   }
+  last.trail = trail.join(',');
   return last;
 }
 
 function fbFetchAny_() {
   var urls = prop_('FOREBET_URL') ? [prop_('FOREBET_URL')] : FB_URLS;
   var proxy = fbProxy_();
-  /* ยิงตรงก่อนเพราะเร็วกว่า ไม่ผ่านค่อยอ้อม — ทางอ้อมคือทางที่วัดแล้วว่าได้ */
+  /* อ้อมก่อน แล้วค่อยยิงตรง — กลับทางจากของเดิมเพราะวัดจริงแล้วว่า IP ของ Google
+     โดน Cloudflare ปิดประตู 403 "ทุกครั้ง" ยิงตรงก่อนจึงไม่ใช่ทางลัด แต่เป็นการทิ้งเวลาฟรี
+     2 นัดต่อรอบ ซึ่งไปเบียดเวลาของหน้าที่ยังต้องเปิดต่ออีก 2 หน้า
+     ยิงตรงยังเก็บไว้ท้ายแถว เผื่อวันหนึ่งเขาเลิกกั้น */
   var ways = [], i;
-  for (i = 0; i < urls.length; i++) ways.push({ url: urls[i], via: '' });
   if (proxy) for (i = 0; i < urls.length; i++) ways.push({ url: urls[i], via: proxy });
+  for (i = 0; i < urls.length; i++) ways.push({ url: urls[i], via: '' });
   return fbTryWays_(ways);
 }
 
@@ -446,8 +530,9 @@ function fbFetchMatch_(url) {
   var u = String(url || '');
   if (!/^https:\/\/www\.forebet\.com\//.test(u)) return { code: 0, body: '', url: u, via: '' };
   try { u = encodeURI(u); } catch (err) { /* เข้ารหัสไม่ได้ก็ส่งของเดิม */ }
-  var proxy = fbProxy_(), ways = [{ url: u, via: '' }];
-  if (proxy) ways.push({ url: u, via: proxy });
+  var proxy = fbProxy_(), ways = [];
+  if (proxy) ways.push({ url: u, via: proxy });   /* อ้อมก่อน เหตุผลเดียวกับหน้าแรก */
+  ways.push({ url: u, via: '' });
   return fbTryWays_(ways);
 }
 
@@ -466,7 +551,7 @@ function fbEnrich_(snap) {
   if (!snap) return snap;
   /* 3 ตลาดท้าย (Over/BTTS/HT) มีที่หน้าของคู่เท่านั้น หน้าแรกไม่มี
      จึงต้องเปิดหน้าคู่เสมอ ถึงจะข้ามได้ก็ต้องมีครบทั้ง 3 อย่าง */
-  if (snap['เปอร์เซ็นต์'] && snap['เดาสกอร์'] && snap['HT เรท']) return snap;
+  if (snap['เปอร์เซ็นต์'] && snap['เดาสกอร์'] && snap['HT เรท'] && snap['HT/FT %']) return snap;
 
   var url = snap['ลิงก์'];
   if (!url) { snap['เปิดหน้าคู่'] = 'ไม่มีลิงก์'; return snap; }
@@ -495,6 +580,7 @@ function fbEnrich_(snap) {
   if (!snap['เดาผล'] && wdl) snap['เดาผล'] = wdl;
   if (!snap['เดาสกอร์']) snap['เดาสกอร์'] = fbScore_(row);
   if (!snap['เปอร์เซ็นต์']) snap['เปอร์เซ็นต์'] = fbPct_(row, wdl);
+  if (!snap['1X2 %']) snap['1X2 %'] = fbPct3_(row);
   if (!snap['ราคา']) snap['ราคา'] = fbOdds_(row);
   snap['เปิดหน้าคู่'] = 'ได้';
   return snap;
@@ -537,7 +623,14 @@ function fbAppend_(snap, stamp) {
     'เรท BTTS YES': snap['เรท BTTS YES'],
     'HT เดาผล': snap['HT เดาผล'],
     'HT %': snap['HT %'],
-    'HT เรท': snap['HT เรท']
+    'HT เรท': snap['HT เรท'],
+    '1X2 %': snap['1X2 %'],
+    'Over %': snap['Over %'],
+    'BTTS YES %': snap['BTTS YES %'],
+    'DB %': snap['DB %'],
+    'DB เดาผล': snap['DB เดาผล'],
+    'HT/FT %': snap['HT/FT %'],
+    'HT/FT เดาผล': snap['HT/FT เดาผล']
   };
   var row = [];
   for (var i = 0; i < HEADERS.PICKS.length; i++) row.push(vals[HEADERS.PICKS[i]] === undefined ? '' : vals[HEADERS.PICKS[i]]);
@@ -616,13 +709,14 @@ function fbExists_(rows, snap, nowMs) {
 function fbSnapRun_() {
   var got = fbFetchAny_();
   var out = { ok: false, code: got.code, url: got.url, len: (got.body || '').length,
+              trail: got.trail || '', why: got.why || '',
               added: [], skipped: [], missed: [] };
   out.via = got.via ? 'ผ่าน ' + got.via : 'ยิงตรง';
   /* ตรงนี้ตัดสินด้วย HTTP อย่างเดียวพอ — "หน้าใช่ไหม" เป็นเรื่องของ fbFetchAny_ ตอนเลือกทาง
      ถ้าเอามาตัดสินซ้ำตรงนี้ วันที่เขาแก้หน้าเว็บจะรายงานว่า "ดึงไม่ได้" ทั้งที่ดึงได้แต่แกะไม่ออก */
   if (got.code !== 200 || out.len < 1000) {
     out.error = 'ดึงหน้าเว็บไม่ได้ (' + got.code + ' · ' + out.via + ')';
-    return out;
+    return fbSaveReport_(out);
   }
 
   var rows = readObjects_(SHEETS.PICKS);
@@ -653,28 +747,7 @@ function fbSnapRun_() {
     }
   }
   out.ok = true;
-  return out;
-}
-
-/** ตัวที่ trigger เรียก — ห้ามโยน error ออก ไม่งั้น Google ส่งเมลเตือนรัวๆ */
-function fbSnapTick() {
-  try { fbSnapRun_(); } catch (err) { Logger.log('fbSnapTick: ' + err); }
-}
-
-/** ติด trigger ให้ถ้าทำได้ — ทำไม่ได้ก็ห้ามล้มทั้งงาน
-    (deployment นี้ไม่ได้ขอสิทธิ์ script.scriptapp ไว้ เรียกแล้วมัน throw
-     ถ้าปล่อยให้ throw มันจะกลืนรายงานของ fbSnapRun_ ที่สำเร็จไปแล้วทั้งก้อน) */
-function fbEnsureTrigger_() {
-  try {
-    var all = ScriptApp.getProjectTriggers();
-    for (var i = 0; i < all.length; i++) {
-      if (all[i].getHandlerFunction && all[i].getHandlerFunction() === 'fbSnapTick') return 'มีอยู่แล้ว';
-    }
-    ScriptApp.newTrigger('fbSnapTick').timeBased().everyHours(6).create();
-    return 'ติดตั้งแล้ว';
-  } catch (err) {
-    return 'ติดไม่ได้ (ไม่ได้ขอสิทธิ์ trigger) — ไม่เป็นไร หน้าเว็บดึงเองเมื่อของเก่าเกิน ' + FB_STALE_HOURS + ' ชม.';
-  }
+  return fbSaveReport_(out);
 }
 
 /* ---------- ดึงเองเมื่อของเก่า (ไม่พึ่ง trigger) ---------- */
@@ -713,6 +786,50 @@ function fbMarkTry_(iso) {
   catch (err) { /* จดเวลาไม่ได้ก็ไม่เป็นไร แค่เสียตัวหน่วง */ }
 }
 
+/* ---------- กล่องดำ: จดว่ารอบล่าสุดเกิดอะไรขึ้น ---------- */
+/* ทำไมต้องมี: รายงานของ fbSnapRun_ เดิมถูก "คายทิ้ง" ทุกครั้งที่ทางอ่านข้อมูลเรียกมัน
+   พอเจ้าของบอกว่า "ไม่มีคู่เลย" จึงไม่มีใครรู้ว่าล้มตรงไหน — ดึงหน้าไม่ได้ / ดึงได้แต่แกะไม่ออก / คู่ซ้ำ
+   จดไว้เป็น "ตัวเลขกับสาเหตุ" ล้วนๆ ไม่มีกุญแจ ไม่มีข้อมูลในชีต ไม่มีชื่อคู่
+   แล้วเปิดให้ดูที่ ?p=ping ซึ่งเป็นทางที่ไม่ต้องใช้กุญแจ (กฎข้อ 3 จึงไม่ถูกละเมิด) */
+function fbSaveReport_(out) {
+  try {
+    var rep = {
+      at: nowIso_(),
+      ok: !!(out && out.ok),
+      code: out ? out.code : 0,
+      via: out ? String(out.via || '') : '',
+      len: out ? out.len : 0,
+      added: (out && out.added) ? out.added.length : 0,
+      trail: out ? String(out.trail || '') : '',
+      why: out ? String(out.why || '') : '',
+      skipped: (out && out.skipped) ? out.skipped.join(',') : '',
+      missed: (out && out.missed) ? out.missed.join(',') : '',
+      error: (out && out.error) ? String(out.error) : ''
+    };
+    PropertiesService.getScriptProperties().setProperty('FB_LAST_REPORT', JSON.stringify(rep));
+  } catch (err) { /* จดไม่ได้ ห้ามทำให้งานหลักล้ม */ }
+  return out;
+}
+
+function fbLastReport_() {
+  try { return JSON.parse(prop_('FB_LAST_REPORT') || 'null'); }
+  catch (err) { return null; }
+}
+
+/* รอบที่ล้ม ห้ามกินคิวยาวเท่ารอบที่สำเร็จ
+   ของเดิมจดเวลา "ก่อน" วิ่ง แล้วใช้ 10 นาทีเท่ากันหมด แปลว่าพลาดครั้งเดียว = เงียบไป 10 นาทีเต็ม
+   ทั้งที่เหตุที่พลาดส่วนใหญ่เป็นของชั่วคราว (โดนปฏิเสธเป็นพักๆ) เปิดใหม่อีกทีก็ผ่านแล้ว */
+var FB_FAIL_MIN = 2;
+
+function fbTryWait_() {
+  var m = Number(prop_('FB_TRY_WAIT'));
+  return (isNaN(m) || m <= 0) ? FB_RETRY_MIN : m;
+}
+function fbMarkWait_(min) {
+  try { PropertiesService.getScriptProperties().setProperty('FB_TRY_WAIT', String(min)); }
+  catch (err) { /* ปล่อย */ }
+}
+
 /** เรียกจากทางอ่านข้อมูล (?p=all)
     คืน true ถ้ามีของใหม่เข้าชีต — คนเรียกต้องอ่านชีตซ้ำ
     ห้าม throw เด็ดขาด หน้าเว็บต้องขึ้นได้เสมอ ถึง forebet จะล่มก็ตาม */
@@ -721,9 +838,13 @@ function fbAutoSnap_(pickRows, nowMs) {
     var now = nowMs || Date.now();
     if (!fbStale_(pickRows, now)) return false;
     var last = fbLastTry_();
-    if (last && now - last < FB_RETRY_MIN * 60000) return false;   /* เพิ่งลองไป ยังไม่ถึงคิว */
+    if (last && now - last < fbTryWait_() * 60000) return false;   /* เพิ่งลองไป ยังไม่ถึงคิว */
+    /* จดก่อนวิ่ง = กันคนกดรัวระหว่างรอบก่อนหน้ายังไม่จบ แต่จดเป็นคิวสั้นไว้ก่อน
+       ถ้ารอบนี้ดึงหน้าได้จริงค่อยขยับเป็นคิวเต็ม */
     fbMarkTry_(new Date(now).toISOString());
+    fbMarkWait_(FB_FAIL_MIN);
     var r = fbSnapRun_();
+    if (r && r.ok) fbMarkWait_(FB_RETRY_MIN);   /* ได้หน้ามาแล้ว = ไม่ต้องรีบกลับไปกวนเขา */
     return !!(r && r.added && r.added.length);
   } catch (err) {
     return false;

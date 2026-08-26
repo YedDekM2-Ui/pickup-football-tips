@@ -35,6 +35,29 @@ function sheetHeadSync_(sh, name, headers) {
   return sh;
 }
 
+/** บังคับคอลัมน์ที่ประกาศไว้ใน TEXT_COLS ให้เป็น "ข้อความ" กับชีตที่มีอยู่แล้วด้วย
+    ของเดิมทำให้แค่ตอนสร้างชีต/ตอนเติมหัวใหม่ คอลัมน์เก่าจึงไม่เคยถูกบังคับเลย
+    ผลคือ "02:18" กลายเป็นเวลา และ "3-1" กลายเป็นวันที่ 1 มี.ค. — ค่าที่อ่านกลับมาเพี้ยนถาวร
+    ทำครั้งเดียวต่อชุดคอลัมน์ (จำด้วย Script Property) เพราะ setNumberFormat ช้า
+    พังตรงไหนก็ปล่อยผ่าน — จัดรูปแบบเป็นของแถม ห้ามทำให้เขียนแถวไม่ได้ */
+function sheetTextFix_(sh, name, headers) {
+  try {
+    var texts = TEXT_COLS[name] || [];
+    if (!texts.length) return sh;
+    var stamp = texts.join('|'), key = 'FMT_' + name, props = null;
+    try {
+      props = PropertiesService.getScriptProperties();
+      if (props.getProperty(key) === stamp) return sh;
+    } catch (err) { props = null; }
+    for (var i = 0; i < texts.length; i++) {
+      var col = headers.indexOf(texts[i]) + 1;
+      if (col > 0) sh.getRange(1, col, 2000, 1).setNumberFormat('@');
+    }
+    if (props) { try { props.setProperty(key, stamp); } catch (err) { /* จำไม่ได้ก็แค่ทำซ้ำรอบหน้า */ } }
+  } catch (err) { /* ชีตไม่ยอมให้จัดรูปแบบ = ปล่อย ของสำคัญคือแถว */ }
+  return sh;
+}
+
 function sheetEnsure_(name, headers) {
   var bk = book_();
   var sh = bk.getSheetByName(name);
@@ -48,7 +71,8 @@ function sheetEnsure_(name, headers) {
     }
     return sh;
   }
-  return sheetHeadSync_(sh, name, headers);
+  sheetHeadSync_(sh, name, headers);
+  return sheetTextFix_(sh, name, headers);
 }
 
 function readObjects_(name) {

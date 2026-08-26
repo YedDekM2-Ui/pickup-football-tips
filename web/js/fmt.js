@@ -60,6 +60,19 @@ function thTime(iso) {
   return pad2_(d.getUTCHours()) + ':' + pad2_(d.getUTCMinutes());
 }
 
+/** วัน-เวลาเตะแบบที่เจ้าของสั่ง: 27/8/2026  00:00
+    ตรงนี้เป็นปี ค.ศ. (ไม่ใช่ พ.ศ. แบบ thDate) เพราะเจ้าของเขียนแบบนี้มาเอง
+    ค่าที่ส่งมาเป็นเวลาไทยอยู่แล้ว (ฝั่ง GAS บวก +7 ให้ตอนดึง) ห้ามบวกซ้ำที่นี่
+    รู้ไม่ครบ = โชว์เท่าที่รู้ ห้ามเดาวันที่ให้เอง */
+function kickText(ymd, hm) {
+  var d = String(ymd === null || ymd === undefined ? '' : ymd).trim();
+  var t = String(hm === null || hm === undefined ? '' : hm).trim();
+  var m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(d);
+  var day = m ? (Number(m[3]) + '/' + Number(m[2]) + '/' + m[1]) : '';
+  if (day && t) return day + '  ' + t;
+  return day || t;
+}
+
 /** สถานะมาก่อนเวลาเสมอ — จบแล้วก็คือจบ ไม่ว่านาฬิกาจะว่าอะไร */
 function countdownText(iso, status, nowMs) {
   if (status === 'จบ') return 'จบการแข่งขัน';

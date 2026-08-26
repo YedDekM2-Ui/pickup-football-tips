@@ -227,21 +227,14 @@ function fbEnvP(book, body, code) {
 }
 const T = (s) => Date.parse(s);
 
-test('ติด trigger ไม่ได้ = คืนข้อความบอกเหตุ ห้าม throw', () => {
-  const g = fbEnv(bookOf([]), '');            /* stub มาตรฐาน: newTrigger โยน error */
-  const msg = g.fbEnsureTrigger_();
-  eq(typeof msg, 'string');
-  ok(msg.indexOf('ติดไม่ได้') === 0, 'ต้องบอกว่าติดไม่ได้ ไม่ใช่เงียบหรือพัง');
-});
-
-test('trigger ติดไม่ได้ ต้องไม่กลืนรายงานของ snap ที่สำเร็จไปแล้ว', () => {
-  /* นี่คือบั๊กจริงที่เจ้าของเจอ: doGet ทำ snap สำเร็จ แล้วบรรทัดถัดไป throw ทิ้งทั้งก้อน */
+/* snap ที่สำเร็จต้องรายงานครบ — ของเดิมมีบรรทัดติด trigger ต่อท้ายแล้ว throw กลืนทั้งก้อน
+   ตอนนี้ตัดท่อน trigger ทิ้งแล้ว (ไม่ได้ใช้ + ลากสิทธิ์ script.scriptapp มาขอเปล่าๆ)
+   เทสต์นี้จึงเหลือหน้าที่เดียว: ยืนยันว่า snap คายของครบและลงชีตจริง */
+test('snap สำเร็จ ต้องรายงานของที่ได้ครบและลงชีต', () => {
   const g = fbEnv(bookOf([]), pageHtml(PAGE_A));
   const snap = g.fbSnapRun_();
-  snap.trigger = g.fbEnsureTrigger_();
   eq(snap.ok, true);
   eq(snap.added.length, 2, 'ของที่ดึงมาได้ต้องรายงานครบ');
-  ok(String(snap.trigger).length > 0);
   eq(nPicks(g), 2);
 });
 
@@ -312,7 +305,11 @@ test('ของเก่า + โดน 403 = คืน false ไม่เขี
   eq(nPicks(g), 1, 'ของเก่าต้องอยู่ครบ');
 });
 
-test('ดึงพลาดแล้วห้ามยิงรัว — ภายใน 10 นาทีต้องไม่ยิงซ้ำ', () => {
+/* รอบที่ "ล้ม" ต้องกลับมาลองใหม่เร็วกว่ารอบที่สำเร็จ
+   เหตุที่ล้มส่วนใหญ่เป็นของชั่วคราว (โดนปฏิเสธเป็นพักๆ) ถ้าพักเท่ากับรอบสำเร็จ
+   เจ้าของจะเปิดแอปเจอ "ไม่มีคู่" ยาว 10 นาทีเต็ม ทั้งที่เปิดใหม่อีกทีก็ได้แล้ว
+   แต่ก็ยังต้องมีคิวกันคนกดรัว ไม่ใช่ยิงใหม่ทุกครั้งที่กด */
+test('ดึงพลาด = พักสั้นแล้วลองใหม่ ไม่ใช่เงียบยาวเท่ารอบที่สำเร็จ', () => {
   const g = fbEnvP(bookOf([]), 'blocked', 403);
   const t0 = T('2026-08-25T12:00:00+07:00');
   /* นับเป็น "มียิงเพิ่มหรือเปล่า" — 1 รอบดึงมันลองหลาย URL ไม่ใช่ครั้งเดียว */
@@ -320,11 +317,24 @@ test('ดึงพลาดแล้วห้ามยิงรัว — ภา
   const after1 = g.__box.n;
   ok(after1 > 0, 'รอบแรกต้องออกไปดึงจริง');
 
-  g.fbAutoSnap_([], t0 + 5 * 60000);         /* ผ่านไป 5 นาที */
-  eq(g.__box.n, after1, 'ยังไม่ถึงคิว ห้ามยิงซ้ำ');
+  g.fbAutoSnap_([], t0 + 1 * 60000);         /* ผ่านไป 1 นาที */
+  eq(g.__box.n, after1, 'กดรัวๆ ห้ามยิงซ้ำ');
 
-  g.fbAutoSnap_([], t0 + 11 * 60000);        /* ผ่านไป 11 นาที */
-  ok(g.__box.n > after1, 'พ้น 10 นาทีแล้วลองใหม่ได้');
+  g.fbAutoSnap_([], t0 + 3 * 60000);         /* ผ่านไป 3 นาที */
+  ok(g.__box.n > after1, 'พ้นคิวสั้นแล้วต้องกลับไปลองใหม่');
+});
+
+test('รอบที่สำเร็จ = พักเต็ม 10 นาที ห้ามกลับไปกวนเขาเร็วกว่านั้น', () => {
+  const g = fbEnvP(bookOf([]), pageHtml(PAGE_A));
+  const t0 = T('2026-08-25T12:00:00+07:00');
+  eq(g.fbAutoSnap_([], t0), true);
+  const after1 = g.__box.n;
+  /* ส่ง [] ทุกครั้ง = บังคับให้ผ่านด่าน "ของเก่าหรือยัง" มาถึงด่านคิวเสมอ
+     จะได้วัดเรื่องคิวอย่างเดียว ไม่ปนกับเรื่องอายุของภาพนิ่ง */
+  g.fbAutoSnap_([], t0 + 3 * 60000);
+  eq(g.__box.n, after1, 'สำเร็จแล้วห้ามใช้คิวสั้นของรอบที่ล้ม');
+  g.fbAutoSnap_([], t0 + 11 * 60000);
+  ok(g.__box.n > after1, 'พ้น 10 นาทีแล้วดึงใหม่ได้');
 });
 
 test('ทางอ่านข้อมูลดึงเองได้จริง — ของเก่า/ยังไม่มี แล้วคู่ปักหมุดโผล่ในรอบเดียว', () => {
@@ -466,13 +476,16 @@ test('ตอนอ้อมต้องขอ html ด้วย ไม่งั�
   eq(viaCall.url, 'https://r.jina.ai/https://www.forebet.com/en', 'ต่อ url ตรงๆ ห้ามใส่ช่องว่าง/encode ทับ');
 });
 
-test('ยิงตรงผ่านอยู่แล้ว = ห้ามไปกวน Jina ให้เปลืองเวลา', () => {
+/* กลับทางจากของเดิม: วัดจริงแล้ว IP ของ Google โดน Cloudflare ปิดประตู 403 "ทุกครั้ง"
+   ยิงตรงก่อนจึงไม่ใช่ทางลัด แต่เป็นการทิ้งเวลาฟรี 2 นัดต่อรอบ ซึ่งไปเบียดเวลาของหน้าคู่ที่ยังต้องเปิดต่อ
+   อ้อมได้แล้วต้องจบ ห้ามยิงตรงตามหลังให้เสียเวลาอีก */
+test('อ้อมได้แล้ว = ห้ามยิงตรงตามหลังให้เปลืองเวลา', () => {
   const good = pageHtml(PAGE_A);
   const g = fbNet(bookOf([]), () => fakeResponse(200, good));
   const r = g.fbSnapRun_();
   eq(r.ok, true);
-  eq(r.via, 'ยิงตรง');
-  eq(g.__calls.filter(c => c.url.indexOf('r.jina.ai') >= 0).length, 0);
+  eq(r.via, 'ผ่าน https://r.jina.ai/');
+  eq(g.__calls.filter(c => c.url.indexOf('r.jina.ai') < 0).length, 0, 'ห้ามมียิงตรงเลยสักครั้ง');
 });
 
 test('หน้าที่ได้มาไม่ใช่หน้า forebet (โดนกั้นแต่ตอบ 200) = ต้องไม่หยุดแค่นั้น ไปลองทางอ้อมต่อ', () => {
@@ -662,4 +675,190 @@ test('เปอร์เซ็นต์ HT ต้องไม่ติดกั�
   const g = mktEnv();
   const m = g.fbMarket_(MATCH_HTML, 2526629, 'ht1');
   eq(m.probs.slice(0, 3).join(','), '12,17,71');
+});
+
+
+/* ========= ตลาดชุดใหม่ที่เจ้าของสั่ง: 1X2 ครบ 3 ตัว · Over% · BTTS% · DB · HT/FT =========
+   ไฟล์ตัวอย่างตัดมาจากหน้าจริงของคู่ 2504066 (Duisburg U19 - Borussia Dortmund U19)
+   ค่าที่ควรได้วัดจากหน้าจริงทั้งชุด ห้ามแก้ตัวเลขให้เข้ากับโค้ด:
+     ตารางใหญ่ 23/17/60 เดา 2 สกอร์ 1-3 · uo 23/77 เดา Over · gg 18/82 เดา Yes
+     ht1 4/10/85 เดา 2 · dbc 83% เดา "21" (เขาเขียนติดกันแบบนี้จริง) · ht 51% เดา 2/2
+   หน้านี้ไม่มีเรทจากเจ้ามือเลย (โชว์ "-") จึงเป็นเคสพิสูจน์ว่า "ไม่มีเรทก็ต้องได้เปอร์เซ็นต์" */
+const MATCH2_HTML = fs.readFileSync(
+  path.join(__dirname, 'fixtures', 'forebet-match2.html'), 'utf8');
+
+test('1X2 เอาครบ 3 ตัว 1/X/2 ไม่ใช่ตัวเดียว', () => {
+  const g = mktEnv();
+  eq(g.fbPct3_(g.fbRowById_(MATCH2_HTML, 2504066)), '23/17/60');
+});
+
+test('1X2 อ่านได้ไม่ครบ 3 ตัว = ปล่อยว่างทั้งช่อง ห้ามโชว์ครึ่งๆ', () => {
+  const g = mktEnv();
+  eq(g.fbPct3_('<div class="fprc"><span class="fpr">42</span></div>'), '');
+  eq(g.fbPct3_(''), '');
+  eq(g.fbPct3_(null), '');
+});
+
+test('Over% / BTTS% เอาฝั่งบวกเสมอ ไม่ว่าเขาจะเดาฝั่งไหน', () => {
+  const g = mktEnv();
+  eq(g.fbSidePct_(g.fbMarket_(MATCH2_HTML, 2504066, 'uo'), 1), '77', 'Over');
+  eq(g.fbSidePct_(g.fbMarket_(MATCH2_HTML, 2504066, 'gg'), 1), '82', 'Yes');
+  /* เคสเขาเดาคนละฝั่ง (คู่นี้เดา Under 71/29 และเดา No 68/32)
+     เปอร์เซ็นต์ที่เอาขึ้นการ์ดต้องเป็นฝั่งบวกเสมอ = 29 กับ 32 ไม่ใช่ 71/68 ของฝั่งที่เขาเดา */
+  eq(g.fbSidePct_(g.fbMarket_(MATCH_HTML, 2476034, 'uo'), 1), '29');
+  eq(g.fbSidePct_(g.fbMarket_(MATCH_HTML, 2476034, 'gg'), 1), '32');
+});
+
+test('Over% / BTTS% ได้ไม่ครบ 2 ฝั่ง = ไม่รู้ว่าตัวไหนของใคร ปล่อยว่าง', () => {
+  const g = mktEnv();
+  eq(g.fbSidePct_({ probs: ['77'] }, 1), '');
+  eq(g.fbSidePct_({ probs: ['1','2','3'] }, 1), '');
+  eq(g.fbSidePct_(null, 1), '');
+});
+
+test('ดับเบิลชานซ์ — จดคำเดาตามที่เห็น ห้ามแปลงเป็น 12/2X เอง', () => {
+  const g = mktEnv();
+  const db = g.fbDbOut_(g.fbMarket_(MATCH2_HTML, 2504066, 'dbc'));
+  eq(db.pct, '83');
+  eq(db.pred, '21', 'หน้าจริงเขียนติดกันแบบนี้ — กฎข้อ 6 ห้ามเดาแทนเขา');
+  const none = g.fbDbOut_(null);
+  eq(none.pct + '|' + none.pred, '|');
+});
+
+test('HT/FT — ต้องได้คำเดา 2 ตัว ครึ่งแรกกับเต็มเวลา ไม่ใช่ตัวท้ายตัวเดียว', () => {
+  const g = mktEnv();
+  const hf = g.fbHtFt_(MATCH2_HTML, 2504066);
+  eq(hf.pct, '51');
+  eq(hf.ht, '2', 'ครึ่งแรกอยู่ในกล่อง prht — fbMarket_ ปกติจะข้ามไปหยิบตัวท้าย');
+  eq(hf.ft, '2');
+});
+
+test('HT/FT ไม่มีในหน้า = ว่างทั้งชุด ไม่ throw', () => {
+  const g = mktEnv();
+  const hf = g.fbHtFt_(MATCH_HTML, 2476034);
+  eq(hf.pct + '|' + hf.ht + '|' + hf.ft, '||');
+});
+
+test('fbFillMarkets_ เติมครบ 12 ช่องจากหน้าจริง (หน้านี้ไม่มีเรทเลย ก็ยังต้องได้เปอร์เซ็นต์)', () => {
+  const g = mktEnv();
+  const snap = { 'รหัสคู่': 2504066 };
+  g.fbFillMarkets_(snap, MATCH2_HTML);
+  eq(snap['Over %'], '77');
+  eq(snap['BTTS YES %'], '82');
+  eq(snap['HT เดาผล'], '2');
+  eq(snap['HT %'], '4/10/85');
+  eq(snap['DB %'], '83');
+  eq(snap['DB เดาผล'], '21');
+  eq(snap['HT/FT %'], '51');
+  eq(snap['HT/FT เดาผล'], '2/2');
+});
+
+test('หน้าที่ไม่มี DB/HTFT = ช่องใหม่ว่าง แต่ของเดิม 5 ช่องต้องไม่พัง', () => {
+  const g = mktEnv();
+  const snap = { 'รหัสคู่': 2476034 };
+  g.fbFillMarkets_(snap, MATCH_HTML);
+  eq(snap['เรท Over'], '+155');
+  eq(snap['HT %'], '30/38/32');
+  eq(snap['DB %'], '');
+  eq(snap['DB เดาผล'], '');
+  eq(snap['HT/FT เดาผล'], '');
+});
+
+/* ---------- กล่องดำ: รอบดึงล่าสุดต้องทิ้งร่องรอยไว้ ---------- */
+/* ทำไมต้องมี: เจ้าของเจอ "ไม่มีคู่ของรอบนี้" แล้วไล่ต่อไม่ได้เลย เพราะรายงานของ fbSnapRun_
+   ถูกคายทิ้งทุกครั้ง ต้องมีที่จดว่าล้มตรงไหน ไม่งั้นแก้บั๊กด้วยการเดาอย่างเดียว */
+test('ดึงพลาด = ต้องจดกล่องดำไว้ พร้อมรหัสกับสาเหตุ', () => {
+  const g = fbEnvP(bookOf([]), 'blocked', 403);
+  g.fbSnapRun_();
+  const rep = g.fbLastReport_();
+  ok(rep, 'ต้องมีกล่องดำ');
+  eq(rep.ok, false);
+  eq(rep.code, 403);
+  eq(rep.added, 0);
+  ok(String(rep.error).length > 0, 'ต้องบอกสาเหตุ ไม่ใช่เงียบ');
+});
+
+test('ดึงสำเร็จ = กล่องดำต้องบอกว่าได้กี่คู่ ไปทางไหน', () => {
+  const g = fbEnvP(bookOf([]), pageHtml(PAGE_A));
+  g.fbSnapRun_();
+  const rep = g.fbLastReport_();
+  eq(rep.ok, true);
+  eq(rep.added, 2);
+  ok(rep.len > 1000);
+  ok(String(rep.via).length > 0);
+});
+
+test('กล่องดำห้ามมีชื่อคู่หรือของในชีตติดไปด้วย (มันเปิดดูได้โดยไม่ต้องใช้กุญแจ)', () => {
+  const g = fbEnvP(bookOf([]), pageHtml(PAGE_A));
+  g.fbSnapRun_();
+  const raw = g.PropertiesService.getScriptProperties().getProperty('FB_LAST_REPORT');
+  ok(raw.indexOf('Arsenal') < 0, 'ห้ามมีชื่อทีม');
+  ok(raw.indexOf('FB-') < 0, 'ห้ามมีรหัสแถวในชีต');
+});
+
+test('คู่ซ้ำทั้ง 2 ช่อง = กล่องดำต้องบอกว่า "ข้าม" ไม่ใช่บอกว่าพัง', () => {
+  const g = fbEnvP(bookOf([]), pageHtml(PAGE_A));
+  g.fbSnapRun_();                 /* รอบแรกลงของ */
+  g.fbSnapRun_();                 /* รอบสองเจอของเดิม */
+  const rep = g.fbLastReport_();
+  eq(rep.ok, true);
+  eq(rep.added, 0);
+  ok(rep.skipped.indexOf('FEATURED') >= 0 && rep.skipped.indexOf('POTD') >= 0);
+});
+
+/* ---------- บัตรผ่านของทางอ้อม ---------- */
+/* ทางอ้อมแบบไม่มีบัตรจำกัดจำนวนครั้ง "ต่อ IP" และ IP ของ Google ใช้ร่วมกันทั้งโลก
+   วันไหนโดนปฏิเสธเป็นพักๆ จะได้มีทางแก้โดยไม่ต้องแก้โค้ด — ใส่บัตรที่ Script Property */
+test('มี JINA_KEY = แนบบัตรไปด้วย', () => {
+  const good = pageHtml(PAGE_A);
+  const g = fbNet(bookOf([]), () => fakeResponse(200, good), { JINA_KEY: 'jk-test' });
+  g.fbSnapRun_();
+  const c = g.__calls.filter(x => x.url.indexOf('https://r.jina.ai/') === 0)[0];
+  eq(String(c.opt.headers['Authorization']), 'Bearer jk-test');
+});
+
+test('ไม่มี JINA_KEY = ห้ามแนบหัวบัตรเปล่าๆ ไป', () => {
+  const good = pageHtml(PAGE_A);
+  const g = fbNet(bookOf([]), () => fakeResponse(200, good));
+  g.fbSnapRun_();
+  const c = g.__calls.filter(x => x.url.indexOf('https://r.jina.ai/') === 0)[0];
+  eq(c.opt.headers['Authorization'], undefined);
+});
+
+/* ---------- ทางไหนตอบอะไร ต้องจดครบทุกทาง ----------
+   ของเดิมจดแต่ทางสุดท้าย รายงานเลยชี้ "ยิงตรง" ทุกครั้ง หาต้นเหตุจริงไม่เจอ
+   ต้องใช้กล่องคุณสมบัติแบบเขียนได้ (ของ fbNet เขียนไม่ได้ กล่องดำจะหาย) */
+function fbEnvF(book, fetchFn) {
+  const app = new FakeSpreadsheetApp(book);
+  const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
+    SpreadsheetApp: app,
+    Utilities: { formatDate: () => '2026-08-25T18:00:00' },
+    UrlFetchApp: { fetch: (url, opt) => fetchFn(url, opt) }
+  });
+  g.PropertiesService.getScriptProperties().setProperty('SHEET_ID', 'S');
+  g.__app = app;
+  return g;
+}
+
+test('รายงานต้องบอกว่าแต่ละทางตอบอะไร ไม่ใช่แค่ทางสุดท้าย', () => {
+  const g = fbEnvF(bookOf([]), () => fakeResponse(429, 'rate limited'));
+  g.fbSnapRun_();
+  eq(g.fbLastReport_().trail, 'อ้อม:429,อ้อม:429,ตรง:429,ตรง:429');
+});
+
+test('ทางอ้อมล้มกลางคัน = ต้องจดว่าล้ม พร้อมเหตุผลสั้นๆ', () => {
+  const g = fbEnvF(bookOf([]), (url) => {
+    if (url.indexOf('r.jina.ai') >= 0) throw new Error('Address unavailable');
+    return fakeResponse(403, BLOCKED);
+  });
+  g.fbSnapRun_();
+  const rep = g.fbLastReport_();
+  eq(rep.trail, 'อ้อม:ล้ม,อ้อม:ล้ม,ตรง:403,ตรง:403');
+  eq(rep.code, 403);
+});
+
+test('ได้ 200 แต่ไม่ใช่หน้าจริง = ต้องบอกว่าไม่ใช่หน้า ไม่ใช่บอกว่าสำเร็จ', () => {
+  const g = fbEnvF(bookOf([]), () => fakeResponse(200, 'x'.repeat(2000)));
+  g.fbSnapRun_();
+  ok(g.fbLastReport_().trail.indexOf('(ไม่ใช่หน้า)') >= 0, 'ต้องติดป้ายว่าไม่ใช่หน้า');
 });
