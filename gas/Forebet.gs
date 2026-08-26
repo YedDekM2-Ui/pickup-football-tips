@@ -439,6 +439,8 @@ function fbParseOne_(html, kind) {
   return {
     'ช่อง': kind,
     'ลีก': fbLeague_(w.raw, row, id),
+    /* ชื่อเต็มล้วนๆ (ว่างได้) — ตัวซ่อมแถวเก่าใช้ตัวนี้เท่านั้น ห้ามใช้ 'ลีก' ที่อาจเป็นตัวย่อ */
+    'ลีกเต็ม': fbLeagueFull_(w.raw, id) || fbLeagueFull_(row, id),
     'ทีมเหย้า': t.home,
     'ทีมเยือน': t.away,
     'วันที่': thai ? thai.date : src,
@@ -706,6 +708,34 @@ function fbKey_(o) {
     -> คู่เดิมที่ยังไม่เตะ ห้ามลงซ้ำเด็ดขาด · ส่วนคู่ที่เตะจบไปแล้วนานๆ
        เจอกันใหม่รอบหน้า ยังลงได้ ไม่ถูกด่านนี้บล็อกทิ้ง
     อ่านชื่อทีมไม่ออก = ถือว่าซ้ำ (ไม่ลง) ดีกว่าลงขยะ */
+/** ซ่อมช่อง "ลีก" ของแถวที่ลงชีตไปแล้ว — แก้ช่องเดียว ห้ามแตะคอลัมน์อื่น
+    ทำไมยอมแตะแถวเก่า: ชื่อลีกไม่ใช่คำทำนายที่ต้องแช่เป็นภาพนิ่ง มันคือชื่อของคู่นั้นเอง
+    ตอนที่กล่องปักหมุดส่งค่าว่างมา เราเลยได้ตัวย่อ `Co1` ติดชีตไป ทั้งที่ตารางใหญ่มี `Primera A`
+    ด่านกันพัง: ชื่อใหม่ต้องมาจาก getstag ของตารางใหญ่ (ช่อง 'ลีกเต็ม') เท่านั้น
+                ถ้ารอบนี้อ่านได้แค่ตัวย่อ = ไม่แตะ ของเดิมดีกว่าเสมอ */
+function fbFixLeague_(snap) {
+  var full = String((snap && snap['ลีกเต็ม']) || '').trim();
+  var key = fbKey_(snap);
+  if (!full || !key) return 0;
+  var sh = sheetIfExists_(SHEETS.PICKS);
+  if (!sh) return 0;
+  var vals = sh.getDataRange().getValues();
+  if (vals.length < 2) return 0;
+  var head = vals[0], col = -1;
+  for (var c = 0; c < head.length; c++) if (String(head[c]) === 'ลีก') col = c;
+  if (col < 0) return 0;
+  var fixed = 0;
+  for (var r = 1; r < vals.length; r++) {
+    var o = {};
+    for (var h = 0; h < head.length; h++) o[String(head[h])] = vals[r][h];
+    if (fbKey_(o) !== key) continue;
+    if (String(o['ลีก'] === null || o['ลีก'] === undefined ? '' : o['ลีก']).trim() === full) continue;
+    sh.getRange(r + 1, col + 1, 1, 1).setValues([[full]]);
+    fixed++;
+  }
+  return fixed;
+}
+
 function fbExists_(rows, snap, nowMs) {
   var key = fbKey_(snap);
   if (!key) return true;
@@ -727,7 +757,7 @@ function fbSnapRun_() {
   var got = fbFetchAny_();
   var out = { ok: false, code: got.code, url: got.url, len: (got.body || '').length,
               trail: got.trail || '', why: got.why || '',
-              added: [], skipped: [], missed: [] };
+              added: [], skipped: [], fixed: [], missed: [] };
   out.via = got.via ? 'ผ่าน ' + got.via : 'ยิงตรง';
   /* ตรงนี้ตัดสินด้วย HTTP อย่างเดียวพอ — "หน้าใช่ไหม" เป็นเรื่องของ fbFetchAny_ ตอนเลือกทาง
      ถ้าเอามาตัดสินซ้ำตรงนี้ วันที่เขาแก้หน้าเว็บจะรายงานว่า "ดึงไม่ได้" ทั้งที่ดึงได้แต่แกะไม่ออก */
@@ -747,6 +777,9 @@ function fbSnapRun_() {
        และตรวจก่อนเปิดหน้าคู่ด้วย จะได้ไม่เสียเวลายิงเน็ตฟรีๆ กับคู่ที่มีอยู่แล้ว */
     if (fbExists_(rows, snap)) {
       out.skipped.push(kind);            /* คู่เดิม = ปล่อยของเก่าไว้ ห้ามเขียนทับ */
+      /* ยกเว้นช่อง 'ลีก' ช่องเดียว — แถวเก่าที่ติดตัวย่อไว้ ให้มันซ่อมตัวเองได้ */
+      try { var nf = fbFixLeague_(snap); if (nf) out.fixed.push(kind + ' ลีก=' + snap['ลีกเต็ม']); }
+      catch (err) { /* ซ่อมไม่ได้ก็ช่างมัน ห้ามให้รอบนี้ล้ม */ }
       continue;
     }
     /* เปอร์เซ็นต์กับสกอร์ที่เดา ไม่ได้อยู่ในกล่องปักหมุด ต้องตามลิงก์ไปเปิดหน้าของคู่เอา

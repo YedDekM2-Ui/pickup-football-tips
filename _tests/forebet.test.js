@@ -407,6 +407,40 @@ test('ชื่อลีก: กล่องส่งค่าว่างมา
   eq(g.fbLeagueFull_('', id), '');
 });
 
+test('แถวเก่าที่ติดตัวย่อ Co1 ต้องซ่อมตัวเองได้ — แก้ช่องลีกช่องเดียว ไม่เพิ่มแถว', () => {
+  const old = pickRow({ 'ID': 'FB-POTD-1', 'ช่อง': 'POTD', 'ลีก': 'Co1',
+    'ทีมเหย้า': 'Cúcuta Deportivo', 'ทีมเยือน': 'Alianza Petrolera',
+    'วันที่': '2026-08-26', 'เวลาเตะ': '06:18', 'เดาผล': 'X', 'เดาสกอร์': '1-1' });
+  const g = fbEnv(bookOf([old]), REAL);
+
+  const r = g.fbSnapRun_();
+  ok(r.skipped.indexOf('POTD') >= 0, 'คู่เดิมต้องยังนับเป็น "ข้าม" เหมือนเดิม');
+  eq(nPicks(g), 2, 'ห้ามเพิ่มแถวคู่เดิม (เพิ่มได้แค่ FEATURED ที่ยังไม่มี)');
+  ok(r.fixed.length === 1 && /Primera A/.test(r.fixed[0]), 'รายงานต้องบอกว่าซ่อมอะไรไป');
+
+  const row = g.readObjects_('PICKS').filter(x => x['ทีมเหย้า'] === 'Cúcuta Deportivo')[0];
+  eq(row['ลีก'], 'Primera A', 'ตัวย่อต้องกลายเป็นชื่อเต็ม');
+  eq(row['ID'], 'FB-POTD-1', 'ช่องอื่นห้ามขยับ');
+  eq(row['เดาสกอร์'], '1-1', 'ภาพนิ่งของเดิมต้องอยู่ครบ');
+  eq(row['เวลาเตะ'], '06:18');
+});
+
+test('ซ่อมลีก: รอบนี้อ่านได้แค่ตัวย่อ = ห้ามแตะของเดิม', () => {
+  const old = pickRow({ 'ช่อง': 'POTD', 'ลีก': 'Primera A',
+    'ทีมเหย้า': 'Cúcuta Deportivo', 'ทีมเยือน': 'Alianza Petrolera' });
+  const g = fbEnv(bookOf([old]), REAL);
+  const base = { 'ทีมเหย้า': 'Cúcuta Deportivo', 'ทีมเยือน': 'Alianza Petrolera' };
+
+  eq(g.fbFixLeague_(Object.assign({ 'ลีก': 'Co1' }, base)), 0, 'ไม่มีชื่อเต็ม = ไม่ซ่อม');
+  eq(g.fbFixLeague_(Object.assign({ 'ลีกเต็ม': '' }, base)), 0);
+  eq(g.fbFixLeague_({ 'ลีกเต็ม': 'Primera A' }), 0, 'ไม่รู้ว่าคู่ไหน = ไม่ซ่อม');
+  eq(g.fbFixLeague_(Object.assign({ 'ลีกเต็ม': 'Primera A' }, base)), 0, 'ตรงอยู่แล้ว = ไม่ต้องเขียนซ้ำ');
+  eq(g.readObjects_('PICKS')[0]['ลีก'], 'Primera A');
+
+  eq(g.fbFixLeague_({ 'ลีกเต็ม': 'Serie A', 'ทีมเหย้า': 'ไม่มีคู่นี้', 'ทีมเยือน': 'ในชีต' }), 0,
+     'ไม่เจอคู่ในชีต = ไม่แตะอะไรเลย');
+});
+
 test('หน้าจริง: จดลงชีตได้ครบ 2 แถว', () => {
   const g = fbEnv(bookOf([]), REAL);
   const r = g.fbSnapRun_();
