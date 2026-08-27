@@ -24,7 +24,7 @@ function bet(o) {
 }
 
 /** env — props ตั้งเองได้ · จดทุกครั้งที่บอทยิงออกไปที่ __sent */
-function env(props, bets) {
+function env(props, bets, extra) {
   const p = Object.assign({ SHEET_ID: 'S' }, props || {});
   const sent = [];
   const book = { BETS: [HEAD_BETS].concat((bets || []).map(b => HEAD_BETS.map(h => b[h]))) };
@@ -44,7 +44,9 @@ function env(props, bets) {
       Utilities: { formatDate: () => '2026-08-27T10:00:00' },
       CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
       ContentService: { MimeType: { JSON: 'json' },
-        createTextOutput: (t) => ({ _t: t, setMimeType() { return this; }, getContent() { return this._t; } }) }
+        createTextOutput: (t) => ({ _t: t, setMimeType() { return this; }, getContent() { return this._t; } })
+      },
+      ...(extra || {})
     });
   g.__sent = sent;
   return g;
@@ -94,11 +96,11 @@ test('ถอดไม่ออก = null ไม่เดา', () => {
   eq(g.tgParseScore_(''), null);
 });
 
-test('พิมพ์มั่ว = ตอบเมนู ไม่เงียบ', () => {
+test('พิมพ์มั่ว = บอกว่าไม่เข้าใจ ไม่เงียบ', () => {
   const g = env({ TG_TOKEN: 'T', TG_CHAT: '111' });
   const out = g.tgHandle_(msg(111, 'อยากได้เงิน'));
   eq(out.indexOf('ไม่เข้าใจ'), 0, 'ต้องบอกก่อนว่าไม่เข้าใจ');
-  ok(out.indexOf('/สรุป') > 0, 'แล้วต่อด้วยเมนู');
+  ok(out.indexOf('/help') > 0, 'แล้วชี้ทางไปดูเมนู');
 });
 
 /* ---------- คำสั่งอ่านข้อมูล ---------- */
@@ -309,4 +311,82 @@ test('setchat: ห้องกลุ่ม (เลขติดลบ) ตั้�
   const g = env({ TG_TOKEN: 'tok' });
   ok(g.tgSetChat_('-1001234567890').ok);
   eq(g.tgChat_(), '-1001234567890');
+});
+
+
+/* ---------- ด่านกันเด้งซ้ำ (update_id) ---------- */
+
+/** แคชจริงในหน่วยความจำ — ของเดิมในไฟล์นี้ get() คืน null ตลอด ด่านเลยไม่เคยทำงาน */
+function memCache() {
+  const box = {};
+  return { CacheService: { getScriptCache: () => ({
+    get: (k) => (k in box ? box[k] : null),
+    put: (k, v) => { box[k] = String(v); }
+  }) } };
+}
+
+test('เทเลแกรมยิงข้อความเดิมซ้ำ = ตอบครั้งเดียว', () => {
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '111' }, [], memCache());
+  const u = { update_id: 77, message: { chat: { id: 111 }, text: '/id' } };
+  ok(g.tgHandle_(u).indexOf('111') >= 0, 'ครั้งแรกต้องตอบ');
+  eq(g.tgHandle_(u), '', 'ครั้งที่สองต้องเงียบ');
+  eq(g.tgHandle_(u), '', 'ยิงอีกกี่รอบก็ต้องเงียบ');
+  eq(g.__sent.length, 1, 'ต้องส่งออกไปแค่ครั้งเดียว');
+});
+
+test('คนละ update_id = ตอบทั้งคู่ ไม่ใช่กันมั่ว', () => {
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '111' }, [], memCache());
+  g.tgHandle_({ update_id: 1, message: { chat: { id: 111 }, text: '/id' } });
+  g.tgHandle_({ update_id: 2, message: { chat: { id: 111 }, text: '/id' } });
+  eq(g.__sent.length, 2);
+});
+
+test('แคชล่ม = ยังตอบได้ ไม่ใช่บอทใบ้', () => {
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '111' }, [],
+    { CacheService: { getScriptCache: () => { throw new Error('แคชล่ม'); } } });
+  ok(g.tgHandle_({ update_id: 9, message: { chat: { id: 111 }, text: '/id' } }).indexOf('111') >= 0);
+});
+
+test('พิมพ์มั่ว = ตอบสั้น ไม่กางเมนูทั้งใบใส่หน้า', () => {
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '111' }, [], memCache());
+  const out = g.tgHandle_({ update_id: 5, message: { chat: { id: 111 }, text: 'อิอิ' } });
+  ok(out.indexOf('/help') >= 0, 'ต้องบอกทางไปดูเมนู');
+  ok(out.indexOf('/สรุป') < 0, 'ห้ามกางเมนูทั้งใบ');
+  ok(out.length < 60, 'ต้องสั้น');
+});
+
+test('/help ยังกางเมนูเต็มใบเหมือนเดิม', () => {
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '111' }, [], memCache());
+  ok(g.tgHandle_({ update_id: 6, message: { chat: { id: 111 }, text: '/help' } }).indexOf('/สรุป') >= 0);
+});
+
+/* ---------- setchat ตั้งซ้ำ ---------- */
+
+test('ตั้งเลขห้องเดิมซ้ำ = ไม่ทักซ้ำ (แท็บมือถือรีเฟรชเองก็ไม่เด้ง)', () => {
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '111111' });
+  const r = g.tgSetChat_('111111');
+  eq(r.ok, true);
+  eq(g.__sent.length, 0, 'ห้ามส่งข้อความทดสอบซ้ำ');
+});
+
+test('ตั้งเลขห้องใหม่ = ทักหนึ่งครั้ง', () => {
+  const g = env({ TG_TOKEN: 'T' });
+  eq(g.tgSetChat_('222222').ok, true);
+  eq(g.__sent.length, 1);
+});
+
+/* ---------- สวิตช์ปิดบอท ---------- */
+
+test('ปิดบอท = ถอน webhook ทิ้ง พร้อมล้างคิวค้าง', () => {
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '111' });
+  const r = g.tgOffHook_();
+  eq(r.ok, true);
+  eq(r['ปิดแล้ว'], true);
+  ok(g.__sent[0].url.indexOf('deleteWebhook') >= 0, 'ต้องเรียก deleteWebhook');
+  eq(g.__sent[0].body.drop_pending_updates, true, 'ต้องล้างคิวด้วย ไม่งั้นเปิดกลับมาของเก่าเด้งตาม');
+});
+
+test('ยังไม่ตั้งโทเคน = ปิดไม่ได้ บอกเหตุ ไม่เงียบ', () => {
+  const g = env({});
+  eq(g.tgOffHook_().ok, false);
 });

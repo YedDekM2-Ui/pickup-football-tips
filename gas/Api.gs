@@ -227,6 +227,7 @@ function doGet(e) {
     if (p === 'setchat') return jsonOut_(tgSetChat_(String(q.id || '')));
   if (p === 'hook') return jsonOut_(tgSetHook_(String(q.url || '')));
     if (p === 'hookinfo') return jsonOut_(tgHookInfo_());
+    if (p === 'hookoff') return jsonOut_(tgOffHook_());   /* สวิตช์ปิดบอท กดจากมือถือได้ */
     /* เปิดหน้าเว็บ = ถือโอกาสไล่คิดผลบิลที่เตะจบแล้ว (มีตัวหน่วง 10 นาทีในตัว)
        โปรเจกต์นี้ไม่มี trigger โดยตั้งใจ งานอัตโนมัติจึงเกาะรอบเปิดหน้าเว็บแทน
        พังตรงนี้ห้ามลามไปทำให้หน้าเว็บไม่ขึ้น */

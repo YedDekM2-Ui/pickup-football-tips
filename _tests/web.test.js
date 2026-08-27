@@ -432,7 +432,13 @@ test('เปิดด้วย ?k= แล้วจำไว้ ครั้ง�
 test('ไม่มีกุญแจเลย = ไม่ต้องยิงเน็ตให้เปลืองรอ', () => {
   let called = 0;
   const a = kenv('', { fetch: () => { called++; return Promise.resolve({ json: () => ({}) }); } });
-  return a.fetchAll_().then((r) => { eq(r, null); eq(called, 0, 'ไม่ควรยิง'); });
+  return a.fetchAll_().then((r) => {
+    eq(called, 0, 'ไม่ควรยิง');
+    /* ไม่มีกุญแจต้องบอกตรงๆ ไม่ใช่คืน null เฉยๆ เพราะ null จะไหลไปโผล่ป้าย DEMO
+       ทำให้ดูเหมือนแอปพัง ทั้งที่แค่ยังไม่ได้ใส่กุญแจ (เจอจริง 27 ส.ค. 69) */
+    eq(r.needKey, true);
+    eq(r.ok, false);
+  });
 });
 
 test('มีกุญแจ = แนบไปกับคำขอ', () => {
@@ -619,4 +625,20 @@ test('renderForebet เอาทุกตลาดขึ้นการ์ดป
   ok(html.indexOf('HT/FT 17(1/1)') >= 0, 'ใบ FEATURED ต้องเห็นครึ่ง/จบ');
   ok(html.indexOf('@') < 0, 'ทั้งหน้าห้ามมีเรทหลุดออกมา');
   ok(html.indexOf('-208') < 0 && html.indexOf('+155') < 0, 'เรทดิบก็ห้ามหลุด');
+});
+
+/* ---------- แผ่นใส่กุญแจ ---------- */
+
+test('ยังไม่มีกุญแจ = โชว์แผ่นใส่กุญแจ ไม่ใช่หน้าข้อมูลตัวอย่าง', () => {
+  const w = loadWeb(['web/js/fmt.js','web/js/mock.js','web/js/api.js',
+    'web/js/page-forebet.js','web/js/page-mybet.js','web/js/page-ledger.js','web/js/app.js']);
+  const html = w.renderPage('forebet', w.MOCK, Date.now(), 'ต้องใส่กุญแจ');
+  ok(html.indexOf('keyin') >= 0, 'ต้องมีช่องให้พิมพ์กุญแจ');
+  ok(html.indexOf('type="password"') >= 0, 'กุญแจห้ามโชว์เป็นตัวหนังสือบนจอ');
+});
+
+test('มีกุญแจแล้ว = วาดหน้าปกติ ไม่ค้างที่แผ่นใส่กุญแจ', () => {
+  const w = loadWeb(['web/js/fmt.js','web/js/mock.js','web/js/api.js',
+    'web/js/page-forebet.js','web/js/page-mybet.js','web/js/page-ledger.js','web/js/app.js']);
+  ok(w.renderPage('forebet', w.MOCK, Date.now(), 'สด').indexOf('keyin') < 0);
 });

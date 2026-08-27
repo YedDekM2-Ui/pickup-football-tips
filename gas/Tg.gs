@@ -73,6 +73,16 @@ function tgSetHook_(execUrl) {
   return { ok: r.ok, error: r.error || '', 'ผูกแล้ว': r.ok === true };
 }
 
+/** สวิตช์ปิดบอท — ถอน webhook ทิ้ง เทเลแกรมจะเลิกยิงมาหาเราทันที
+    ทำเป็นลิงก์เพราะเจ้าของอยู่บนมือถือ หน้า Script Properties กดยาก
+    เปิดใหม่ = ยิง ?p=hook&url=... เหมือนเดิม ไม่ต้องตั้งอะไรใหม่
+    drop_pending_updates = ล้างคิวที่ค้างอยู่ด้วย ไม่งั้นเปิดกลับมาแล้วของเก่าเด้งตาม */
+function tgOffHook_() {
+  if (!tgTok_()) return { ok: false, error: 'ยังไม่ได้ตั้ง TG_TOKEN ที่ Script Properties' };
+  var r = tgApi_('deleteWebhook', { drop_pending_updates: true });
+  return { ok: r.ok, error: r.error || '', 'ปิดแล้ว': r.ok === true };
+}
+
 /** สภาพ webhook ตอนนี้ — ตัด url ทิ้งก่อนคาย เพราะมีกุญแจอยู่ในนั้น */
 function tgHookInfo_() {
   var r = tgApi_('getWebhookInfo', {});
@@ -183,9 +193,26 @@ function tgDoScore_(cmd) {
 
 /* ---------- ตัวรับสาย ----------
    คืนค่าเป็น "ข้อความที่ตอบไปแล้ว" เอาไว้ให้เทสต์ดู · คืน '' = เงียบ ไม่ตอบใคร */
+/* ---------- ด่านกันเด้งซ้ำ ----------
+   เทเลแกรมยิงข้อความเดิมซ้ำได้เรื่อยๆ ถ้ามันไม่แน่ใจว่าเราได้รับ (ตอบช้า/เน็ตสะดุด)
+   ทุกข้อความมีเลข update_id ประจำตัว — เห็นเลขเดิมซ้ำ = ทิ้งเงียบ ไม่ตอบซ้ำ
+   จำไว้ 6 ชม. ในแคช (ไม่ใช้ชีต เพราะของแบบนี้ควรหมดอายุเอง)
+   บทเรียนเดียวกับ PIKTAX v171 — ตอนนั้นข้อความเด้งซ้อนเพราะไม่มีด่านนี้ */
+function tgFresh_(uid) {
+  if (uid === null || uid === undefined || uid === '') return true;
+  try {
+    var c = CacheService.getScriptCache();
+    var k = 'tgu:' + uid;
+    if (c.get(k)) return false;
+    c.put(k, '1', 21600);
+    return true;
+  } catch (e) { return true; }        /* แคชพัง = ปล่อยผ่าน ดีกว่าบอทใบ้ */
+}
+
 function tgHandle_(update, nowMs) {
   var msg = (update && update.message) || null;
   if (!msg) return '';
+  if (!tgFresh_(update && update.update_id)) return '';
   var chat = String((msg.chat && msg.chat.id) || '');
   var text = String(msg.text || '').trim();
   if (!chat) return '';
@@ -217,7 +244,9 @@ function tgHandle_(update, nowMs) {
   } else {
     var cmd = tgParseScore_(text);
     if (cmd) out = tgDoScore_(cmd);
-    else out = 'ไม่เข้าใจ\n\n' + TG_MENU_;
+    /* ตั้งใจตอบสั้น ไม่กางเมนูทั้งใบ — พิมพ์ผิดทีนึงแล้วเมนูเด้งเต็มจอ เจ้าของรำคาญ
+       อยากดูเมนูค่อยพิมพ์ /help เอง */
+    else out = 'ไม่เข้าใจ — พิมพ์ /help ดูคำสั่ง';
   }
   tgSend_(chat, out);
   return out;
@@ -244,6 +273,11 @@ function tgSetChat_(id) {
   var s = String(id || '').trim();
   if (!/^-?\d{5,}$/.test(s)) {
     return { ok: false, error: 'เลขห้องไม่ถูกแบบ ต้องเป็นตัวเลขล้วน (ห้องกลุ่มมีขีดนำหน้าได้)' };
+  }
+  /* ตั้งเลขเดิมซ้ำ = ไม่ต้องทักอีก
+     ลิงก์นี้ไปนอนอยู่ในเบราว์เซอร์มือถือ พอแท็บมันรีเฟรชเองข้อความก็เด้งทุกที */
+  if (tgChat_() === s) {
+    return { ok: true, 'ตั้งแล้ว': true, 'ข้อความทดสอบ': 'ตั้งเลขนี้ไว้อยู่แล้ว ไม่ได้ทักซ้ำ' };
   }
   PropertiesService.getScriptProperties().setProperty('TG_CHAT', s);
   var r = tgSend_(s, 'ตั้งเจ้าของเรียบร้อย ห้องนี้คุยกับบอทได้แล้ว\n\n' + TG_MENU_);
