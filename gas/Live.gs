@@ -67,6 +67,13 @@ function lsSameTeam_(a, b) {
   return false;
 }
 
+/** สกอร์จากฟีด — ไม่มี/ไม่ใช่เลข = '' ไม่ใช่ 0 ("0-0" กับ "ยังไม่มีสกอร์" คนละเรื่อง) */
+function lsScoreNum_(v) {
+  if (v === null || v === undefined || v === '') return '';
+  var n = Number(v);
+  return (isNaN(n) || n < 0 || Math.floor(n) !== n) ? '' : n;
+}
+
 /** ดึงคู่ทั้งวันจากฟีด — คืน [] ถ้าพัง (ห้าม throw ออกไปทำรอบดึงล่ม) */
 function lsFetchDay_(ymd) {
   var out = [];
@@ -83,7 +90,12 @@ function lsFetchDay_(ymd) {
         var a = (ev.T2 && ev.T2[0]) ? ev.T2[0].Nm : '';
         var esd = String(ev.Esd || '');
         if (!h || !a || esd.length !== 14) continue;
-        out.push({ h: h, a: a, esd: esd, c: String(stages[s].Cnm || '') });
+        /* สกอร์กับสถานะติดมาด้วยในฟีดเดียวกัน — เอามาใช้ตอนคิดผลบิล (Settle.gs)
+           Tr1/Tr2 = สกอร์ · Eps = 'FT' จบแล้ว / 'HT' พักครึ่ง / '67' นาทีที่ 67
+           ยังไม่จบ = เก็บมาเฉยๆ ไม่มีใครเอาไปคิดผล */
+        out.push({ h: h, a: a, esd: esd, c: String(stages[s].Cnm || ''),
+                   hs: lsScoreNum_(ev.Tr1), as: lsScoreNum_(ev.Tr2),
+                   st: String(ev.Eps || '') });
       }
     }
   } catch (err) { return []; }
@@ -154,4 +166,26 @@ function lsPool_(ymdIso) {
     out = out.concat(LS_CACHE_[d]);
   }
   return out;
+}
+
+/* ---------- สกอร์จบเกม (ให้ Settle.gs เอาไปคิดผลบิล) ----------
+   เข้มกว่าเวลาเตะอีกชั้น เพราะคิดผิด = ตัวเลขเงินในสมุดผิด แก้ทีหลังไม่รู้ตัว
+   เงื่อนไขครบทุกข้อถึงจะคืนสกอร์:
+     1. ตรงทั้งสองทีม (ตรงข้างเดียวไม่เอา ต่างจาก lsWhenThai_ ที่ยอมได้)
+     2. เจอคู่เดียวใน 3 วันนั้น
+     3. Eps = 'FT' เท่านั้น — ยังเตะอยู่/พักครึ่ง/เลื่อน/ยกเลิก = ไม่คิด
+        ต่อเวลา (AET) ก็ไม่คิด เพราะราคาที่แทงเป็นราคา 90 นาที ฟีดให้สกอร์รวมต่อเวลามา */
+function lsScoreOf_(home, away, ymdIso, pool) {
+  var rows = pool || lsPool_(ymdIso), qw = lsIsW_(home) || lsIsW_(away);
+  var hit = null, n = 0, i, r;
+  for (i = 0; i < rows.length; i++) {
+    r = rows[i];
+    if (qw !== (lsIsW_(r.h) || lsIsW_(r.a) || lsIsW_(r.c))) continue;
+    if (!lsSameTeam_(home, r.h) || !lsSameTeam_(away, r.a)) continue;
+    hit = r; n++;
+  }
+  if (n !== 1) return null;
+  if (String(hit.st || '').toUpperCase() !== 'FT') return null;
+  if (hit.hs === '' || hit.as === '') return null;
+  return { hs: hit.hs, as: hit.as };
 }

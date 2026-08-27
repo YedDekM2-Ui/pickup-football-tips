@@ -120,7 +120,9 @@ test('เรียกซ้ำ = หัวตารางต้องไม่�
 
 function apiEnv(book, props) {
   const P = Object.assign({ SHEET_ID: 'S' }, props || {});
-  return loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
+  return loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Live.gs',
+                  'gas/Settle.gs', 'gas/Api.gs'], {
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
     SpreadsheetApp: new FakeSpreadsheetApp(book),
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in P ? P[k] : null) }) },
     Utilities: { formatDate: () => '2026-08-25T18:00:00' },

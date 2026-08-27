@@ -211,6 +211,18 @@ function doGet(e) {
       return jsonOut_(fbSnapRun_());
     }
     if (p === 'fbprobe') return jsonOut_(fbProbe_());
+    /* ---------- คิดผลบิล ----------
+       score = ใส่สกอร์เอง (ทางหลัก เจ้าของพิมพ์เองได้เสมอ ไม่ต้องรอฟีด)
+       settle = สั่งให้มันไล่หาสกอร์จบเกมเองรอบเดียว (ทางเสริม)
+       ทั้ง 2 ทางอยู่หลังด่านกุญแจ เพราะมันเขียนตัวเลขเงินลงชีต */
+    if (p === 'score') {
+      return jsonOut_(stlWrite_(q.id, q.h, q.a, { force: String(q.force || '') === '1' }));
+    }
+    if (p === 'settle') return jsonOut_(stlAutoRun_());
+    /* เปิดหน้าเว็บ = ถือโอกาสไล่คิดผลบิลที่เตะจบแล้ว (มีตัวหน่วง 10 นาทีในตัว)
+       โปรเจกต์นี้ไม่มี trigger โดยตั้งใจ งานอัตโนมัติจึงเกาะรอบเปิดหน้าเว็บแทน
+       พังตรงนี้ห้ามลามไปทำให้หน้าเว็บไม่ขึ้น */
+    try { stlAutoTick_(); } catch (err) { /* คิดผลไม่ได้ก็แค่ยังไม่คิด */ }
     return jsonOut_(payloadAll_());
   } catch (err) {
     return jsonOut_({ ok: false, error: String(err && err.message ? err.message : err) });
