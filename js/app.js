@@ -18,8 +18,24 @@ function renderNav(active) {
   return '<nav class="nav">' + items.join('') + '</nav>';
 }
 
+/** แผ่นใส่กุญแจ — โผล่เมื่อเครื่องนี้ยังไม่มีกุญแจ
+    ทำไมต้องมี: แอปที่ยิงจากหน้าโฮมเก็บ localStorage คนละถังกับเบราว์เซอร์
+    คั่นหน้าที่บันทึกไว้ก่อนหน้านี้ไม่มี ?k= ติดไป เปิดมาจะว่างเปล่าตลอด
+    มีช่องนี้แล้วพิมพ์กุญแจใส่ตรงนี้ได้เลย ไม่ต้องลบคั่นหน้าทำใหม่ (เคสเดียวกับ TimeTrack) */
+function renderNeedKey() {
+  return '<div class="card keybox">' +
+         '<div class="big">ยังไม่มีกุญแจ</div>' +
+         '<div class="muted">เครื่องนี้ยังไม่ได้ใส่กุญแจ เลยยังดึงของจริงไม่ได้</div>' +
+         '<input id="keyin" class="keyin" type="password" inputmode="text" ' +
+         'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" ' +
+         'placeholder="วางกุญแจตรงนี้">' +
+         '<button id="keygo" class="btn">ใส่กุญแจ</button>' +
+         '</div>';
+}
+
 /** เลือกตัวปั้นหน้าตาม route — ฟังก์ชันพวกนี้มาจาก page-*.js */
-function renderPage(route, data, nowMs) {
+function renderPage(route, data, nowMs, source) {
+  if (source === 'ต้องใส่กุญแจ') return renderNeedKey();
   if (route === 'mybet') return renderMyBet(data, nowMs);
   if (route === 'ledger') return renderLedger(data);
   return renderForebet(data, nowMs);
@@ -33,8 +49,24 @@ function mount_() {
   var route = routeOf(location.hash);
   document.body.className = 'page-' + route;
   document.getElementById('note').innerHTML = statusPill(STATE.source, STATE.at);
-  document.getElementById('app').innerHTML = renderPage(route, STATE.data, Date.now());
+  document.getElementById('app').innerHTML = renderPage(route, STATE.data, Date.now(), STATE.source);
   document.getElementById('nav').innerHTML = renderNav(route);
+  bindKeyForm_();
+}
+
+/** ผูกปุ่มใส่กุญแจ — เก็บลงเครื่องแล้วโหลดใหม่รอบเดียว ง่ายกว่าไล่วาดเอง */
+function bindKeyForm_() {
+  var go = document.getElementById('keygo');
+  var inp = document.getElementById('keyin');
+  if (!go || !inp) return;
+  var submit = function () {
+    var v = String(inp.value || '').trim();
+    if (!v) return;
+    saveKey_(v);
+    location.reload();
+  };
+  go.addEventListener('click', submit);
+  inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') submit(); });
 }
 
 /** ขึ้นจอจากแคชก่อน ไม่รอเน็ต แล้วค่อยทับด้วยของสดเมื่อมันมาถึง */

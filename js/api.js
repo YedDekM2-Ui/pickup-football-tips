@@ -16,13 +16,14 @@ function keyFromUrl_() {
 function saveKey_(k) { try { localStorage.setItem(KEY_STORE, k); } catch (e) {} }
 function loadKey_() { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
 
-/** เปิดด้วยลิงก์ที่มีกุญแจ = จำไว้ แล้วลบออกจากแถบที่อยู่ทันที กันติดไปกับการแชร์ลิงก์ */
+/** เปิดด้วยลิงก์ที่มีกุญแจ = จำไว้ในเครื่อง
+    ตั้งใจ "ไม่" ลบ ?k= ออกจากแถบที่อยู่แล้ว — แอปที่ยิงจากหน้าโฮมเก็บ localStorage
+    คนละถังกับเบราว์เซอร์ ถ้าลบทิ้ง คั่นหน้าที่บันทึกทีหลังจะไม่มีกุญแจติดไปด้วย
+    แล้วแอปหน้าโฮมจะขึ้นตัวอย่างตลอด (เจอจริง 27 ส.ค. 69 · เคสเดียวกับ TimeTrack)
+    แลกกับ: ห้ามแชร์ลิงก์นี้ให้ใคร เพราะกุญแจติดไปกับลิงก์ */
 function bootKey_() {
   var k = keyFromUrl_();
-  if (k) {
-    saveKey_(k);
-    try { history.replaceState(null, '', location.pathname + (location.hash || '')); } catch (e) {}
-  }
+  if (k) saveKey_(k);
   return k || loadKey_();
 }
 
@@ -71,7 +72,9 @@ function statusPill(source, atMs) {
 
 function fetchAll_() {
   var k = loadKey_() || keyFromUrl_();
-  if (!API_URL || !k) return Promise.resolve(null);
+  /* ไม่มีกุญแจ = บอกตรงๆ ว่าต้องใส่กุญแจ ห้ามคืน null เฉยๆ
+     เพราะ null จะไหลไปโผล่ป้าย DEMO ทำให้ดูเหมือนแอปพัง ทั้งที่แค่ยังไม่ได้ใส่กุญแจ */
+  if (!API_URL || !k) return Promise.resolve({ ok: false, needKey: true, error: 'เครื่องนี้ยังไม่มีกุญแจ' });
   return fetch(API_URL + '?p=all&k=' + encodeURIComponent(k), { method: 'GET' })
     .then(function (r) { return r.json(); })
     .catch(function () { return null; });
