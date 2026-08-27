@@ -80,3 +80,35 @@ body.page-mybet { background: #000; }
 .bf-save { flex: 1 1 auto; background: #12331d; color: #33ff66; border: 1px solid #33ff66; }
 .bf-save[disabled] { opacity: .5; }
 .bf-close { background: #000; color: #33ff66; border: 1px solid #1c7a3a; }
+
+/* ---------- ช่องใส่สกอร์จบเกม (อยู่ท้ายใบบิลที่ยังไม่มีผล) ----------
+   ช่องเลขใหญ่พอกดด้วยนิ้วโป้ง · 16px เหมือน .bf-i ไม่งั้น iOS ซูมเข้าเอง */
+.sc-open {
+  width: 100%; margin-top: 10px;
+  background: #000; color: #6fe3ff;
+  border: 1px dashed #2a6a80; border-radius: 8px;
+  padding: 10px; cursor: pointer;
+  font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace;
+  font-size: 13px; letter-spacing: .06em;
+}
+.sc-box {
+  margin-top: 10px; padding: 12px;
+  border: 1px solid #2a6a80; border-radius: 8px;
+  font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace;
+}
+.sc-row { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.sc-in {
+  width: 72px; text-align: center;
+  background: #04140a; color: #33ff66;
+  border: 1px solid #1c7a3a; border-radius: 6px;
+  padding: 10px; font-size: 16px; font-family: inherit;
+}
+.sc-dash { opacity: .6; }
+.sc-msg { margin-top: 10px; font-size: 13px; color: #ffd34d; text-align: center; }
+.sc-btns { display: flex; gap: 8px; margin-top: 12px; }
+.sc-ok, .sc-cancel {
+  flex: 1 1 auto; padding: 10px; border-radius: 8px; cursor: pointer;
+  font-family: inherit; font-size: 14px; font-weight: 700;
+}
+.sc-ok { background: #12331d; color: #33ff66; border: 1px solid #33ff66; }
+.sc-cancel { background: #000; color: #33ff66; border: 1px solid #1c7a3a; }
