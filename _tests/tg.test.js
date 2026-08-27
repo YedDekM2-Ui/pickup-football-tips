@@ -254,3 +254,59 @@ test('?p=tg ข้างในพัง ก็ยังต้องตอบ 200
   g.tgHandle_ = () => { throw new Error('พังกลางทาง'); };
   eq(post_(g, { p: 'tg', s: 'ถูก' }, msg(111, '/สรุป')).ok, true);
 });
+
+test('?p=me บอกชื่อบอท ไม่คายโทเคน', () => {
+  const g = env({ TG_TOKEN: 'โทเคนลับ' });
+  g.UrlFetchApp.fetch = () => fakeResponse(200, JSON.stringify({
+    ok: true, result: { username: 'pickup_tips_bot', first_name: 'Pickup' }
+  }));
+  const r = g.tgMe_();
+  eq(r['ชื่อบอท'], '@pickup_tips_bot');
+  eq(r['ลิงก์เปิดแชท'], 'https://t.me/pickup_tips_bot');
+  ok(JSON.stringify(r).indexOf('โทเคนลับ') < 0, 'ห้ามมีโทเคนในคำตอบ');
+});
+
+test('?p=me ไม่มีโทเคน = บอกเหตุผล ไม่พัง', () => {
+  const g = env({});
+  const r = g.tgMe_();
+  ok(!r.ok);
+  ok(String(r.error).indexOf('TG_TOKEN') >= 0);
+  eq(g.__sent.length, 0);
+});
+
+/* ---------- ตั้งเจ้าของผ่านลิงก์ (?p=setchat) ---------- */
+
+test('setchat: เลขถูก = เขียน TG_CHAT + ทักไปทดสอบ', () => {
+  const g = env({ TG_TOKEN: 'tok' });
+  const r = g.tgSetChat_('123456789');
+  ok(r.ok, 'ต้องสำเร็จ');
+  eq(g.tgChat_(), '123456789');
+  eq(g.__sent.length, 1);
+  eq(String(g.__sent[0].body.chat_id), '123456789');
+});
+
+test('setchat: เลขมั่ว = ไม่เขียนอะไรเลย ไม่ยิงออก', () => {
+  const g = env({ TG_TOKEN: 'tok', TG_CHAT: '999999999' });
+  ['', 'abc', '12', 'ห้องผม', '12 34'].forEach((bad) => {
+    const r = g.tgSetChat_(bad);
+    ok(!r.ok, 'ต้องไม่ผ่าน: ' + bad);
+  });
+  eq(g.tgChat_(), '999999999');   // ของเดิมต้องไม่ถูกทับ
+  eq(g.__sent.length, 0);
+});
+
+test('setchat: ทักไม่เข้า = บอกให้ไปกด Start ก่อน', () => {
+  const g = env({ TG_TOKEN: 'tok' });
+  g.UrlFetchApp.fetch = () => fakeResponse(403, JSON.stringify(
+    { ok: false, description: 'Forbidden: bot was blocked by the user' }));
+  const r = g.tgSetChat_('123456789');
+  ok(!r.ok);
+  eq(r['ตั้งแล้ว'], true);
+  ok(String(r.error).indexOf('Start') >= 0, 'ต้องบอกทางแก้');
+});
+
+test('setchat: ห้องกลุ่ม (เลขติดลบ) ตั้งได้', () => {
+  const g = env({ TG_TOKEN: 'tok' });
+  ok(g.tgSetChat_('-1001234567890').ok);
+  eq(g.tgChat_(), '-1001234567890');
+});

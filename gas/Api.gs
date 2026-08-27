@@ -223,7 +223,9 @@ function doGet(e) {
        ต้องส่งที่อยู่ exec มาเอง (?url=...) เพราะ ScriptApp.getService().getUrl()
        ขอ scope script.scriptapp ซึ่งโปรเจกต์นี้ไม่ใส่โดยตั้งใจ
        ทั้ง 2 ทางไม่คายที่อยู่ webhook กลับมา เพราะในนั้นมีกุญแจ TG_HOOK_KEY ติดอยู่ */
-    if (p === 'hook') return jsonOut_(tgSetHook_(String(q.url || '')));
+    if (p === 'me') return jsonOut_(tgMe_());
+    if (p === 'setchat') return jsonOut_(tgSetChat_(String(q.id || '')));
+  if (p === 'hook') return jsonOut_(tgSetHook_(String(q.url || '')));
     if (p === 'hookinfo') return jsonOut_(tgHookInfo_());
     /* เปิดหน้าเว็บ = ถือโอกาสไล่คิดผลบิลที่เตะจบแล้ว (มีตัวหน่วง 10 นาทีในตัว)
        โปรเจกต์นี้ไม่มี trigger โดยตั้งใจ งานอัตโนมัติจึงเกาะรอบเปิดหน้าเว็บแทน
