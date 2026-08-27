@@ -42,6 +42,37 @@ function subLine_(s) {
   '</div>';
 }
 
+/* ---------- ใส่สกอร์จบเกม ----------
+   ตัวไล่คิดผลอัตโนมัติมันหาสกอร์เองได้ แต่ "หาไม่เจอ" เกิดได้เสมอ (ชื่อทีมไม่ตรงฟีด /
+   ลีกเล็กไม่มีในฟีด) ถ้าไม่มีทางพิมพ์เอง บิลจะค้างรอผลตลอดกาลแบบเดิม
+   ดังนั้นทางพิมพ์เองคือทางหลัก ตัวอัตโนมัติเป็นแค่ตัวช่วย
+   หมายเหตุกฎข้อ 10: รหัสบิลอยู่ใน onclick เท่านั้น ไม่มีวันขึ้นเป็นตัวหนังสือบนจอ */
+var SCOREFORM = { id: '', h: '', a: '', busy: false, msg: '' };
+
+function scoreBox_(b) {
+  if (String(b['ผล'] || '') !== '') return '';       /* มีผลแล้ว ไม่ต้องถามซ้ำ */
+  var id = String(b['ID'] || '');
+  if (!id) return '';
+  if (SCOREFORM.id !== id) {
+    return '<button class="sc-open" onclick="scoreOpen(\'' + esc_(id) + '\')">ใส่สกอร์จบเกม</button>';
+  }
+  return '<div class="sc-box">' +
+      '<div class="sc-row">' +
+        '<input class="sc-in" type="tel" inputmode="numeric" value="' + esc_(SCOREFORM.h) + '"' +
+          ' oninput="scoreSet(\'h\', this.value)">' +
+        '<span class="sc-dash">-</span>' +
+        '<input class="sc-in" type="tel" inputmode="numeric" value="' + esc_(SCOREFORM.a) + '"' +
+          ' oninput="scoreSet(\'a\', this.value)">' +
+      '</div>' +
+      (SCOREFORM.msg ? '<div class="sc-msg">' + esc_(SCOREFORM.msg) + '</div>' : '') +
+      '<div class="sc-btns">' +
+        '<button class="sc-ok" onclick="scoreSave()">' +
+          (SCOREFORM.busy ? 'กำลังลง…' : 'ลงผล') + '</button>' +
+        '<button class="sc-cancel" onclick="scoreClose()">ยกเลิก</button>' +
+      '</div>' +
+    '</div>';
+}
+
 function betSlip(b, nowMs) {
   var home = esc_(teamTh(b['เหย้า'], b['เหย้าไทย']));
   var away = esc_(teamTh(b['เยือน'], b['เยือนไทย']));
@@ -72,6 +103,7 @@ function betSlip(b, nowMs) {
       '</div>' +
       subs +
       sum +
+      scoreBox_(b) +
     '</div>';
 }
 
@@ -273,5 +305,44 @@ function betFormSave() {
         betFormRedraw_();
       });
     } else { betFormRedraw_(); }
+  });
+}
+
+
+/* ---------- ปุ่มใส่สกอร์ ----------
+   ส่วนนี้แตะ DOM กับเน็ต เลยไม่มีเทสต์ (เหมือน betFormSave) */
+function scoreOpen(id) {
+  SCOREFORM = { id: String(id || ''), h: '', a: '', busy: false, msg: '' };
+  betFormRedraw_();
+}
+function scoreClose() {
+  SCOREFORM = { id: '', h: '', a: '', busy: false, msg: '' };
+  betFormRedraw_();
+}
+function scoreSet(k, v) { SCOREFORM[k] = String(v || '').replace(/[^0-9]/g, ''); }
+
+function scoreSave() {
+  if (SCOREFORM.busy) return;
+  if (SCOREFORM.h === '' || SCOREFORM.a === '') {
+    SCOREFORM.msg = 'ใส่สกอร์ทั้งสองฝั่งก่อน'; betFormRedraw_(); return;
+  }
+  SCOREFORM.busy = true; SCOREFORM.msg = 'กำลังลง…'; betFormRedraw_();
+  apiPost_('score', { id: SCOREFORM.id, h: SCOREFORM.h, a: SCOREFORM.a }).then(function (r) {
+    SCOREFORM.busy = false;
+    if (!r || !r.ok) { SCOREFORM.msg = (r && r.error) || 'ลงผลไม่สำเร็จ'; betFormRedraw_(); return; }
+    if (!r['ลง']) {
+      SCOREFORM.msg = 'ลงไม่ได้ — ' + ((r['ข้าม'] || []).join(' · ') || 'คิดผลจากบิลนี้ไม่ได้');
+      betFormRedraw_(); return;
+    }
+    scoreClose();
+    if (typeof fetchAll_ === 'function') {
+      fetchAll_().then(function (fresh) {
+        if (fresh && fresh.ok === true) {
+          saveCache(fresh);
+          if (typeof STATE !== 'undefined') { STATE.data = fresh; STATE.source = 'สด'; STATE.at = Date.now(); }
+        }
+        betFormRedraw_();
+      });
+    }
   });
 }

@@ -125,3 +125,72 @@ test('renderMyBet ส่งคู่จากหน้าแรกเข้า�
   ok(html.indexOf('Czarni Sosnowiec W VS OH Leuven W') >= 0);
   reset();
 });
+
+/* ---------- ช่องใส่สกอร์จบเกม (เฟส 6 ขาหน้าเว็บ) ----------
+   ตัวไล่คิดผลอัตโนมัติหาสกอร์ไม่เจอได้เสมอ (ลีกเล็ก/ชื่อทีมไม่ตรงฟีด)
+   ถ้าไม่มีทางพิมพ์เอง บิลค้าง "รอเตะ" ตลอดกาล — ช่องนี้คือทางหลัก */
+
+const B_WAIT = { 'ID': 'B7', 'ผล': '', 'ลีก': 'Premier League',
+  'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'ทีมที่เลือก': 'Arsenal', 'คู่แข่ง': 'Leeds',
+  'ตลาด': 'AH', 'แฮนดิแคป': '-0.5', 'ราคา': '1.78', 'เงิน': '300',
+  'วันที่': '2026-08-27', 'เวลาเตะ': '21:30', 'สถานะ': 'รอเตะ' };
+
+function scoreReset() { w.SCOREFORM.id = ''; w.SCOREFORM.h = ''; w.SCOREFORM.a = '';
+  w.SCOREFORM.busy = false; w.SCOREFORM.msg = ''; }
+
+test('บิลที่ยังไม่มีผล ต้องมีปุ่มให้ใส่สกอร์', () => {
+  scoreReset();
+  const h = w.scoreBox_(B_WAIT);
+  ok(/ใส่สกอร์จบเกม/.test(h), 'ต้องมีปุ่ม');
+  ok(/scoreOpen\('B7'\)/.test(h), 'ปุ่มต้องพกรหัสบิลไปด้วย');
+});
+
+test('บิลที่มีผลแล้ว ห้ามมีช่องใส่สกอร์ — กันแก้ทับของที่คิดเงินไปแล้ว', () => {
+  scoreReset();
+  eq(w.scoreBox_(Object.assign({}, B_WAIT, { 'ผล': 'WIN_FULL' })), '', 'ต้องว่าง');
+});
+
+test('บิลไม่มีรหัส ไม่ต้องถามสกอร์ — ยิงไปก็ไม่รู้จะลงแถวไหน', () => {
+  scoreReset();
+  eq(w.scoreBox_(Object.assign({}, B_WAIT, { 'ID': '' })), '', 'ต้องว่าง');
+});
+
+test('กฎข้อ 10: รหัสบิลห้ามโผล่เป็นตัวหนังสือบนจอ (อยู่ได้แค่ใน onclick)', () => {
+  scoreReset();
+  const seen = w.scoreBox_(B_WAIT).replace(/<[^>]*>/g, '');   /* ถอดแท็กทิ้ง เหลือที่ตาเห็น */
+  ok(seen.indexOf('B7') < 0, 'ตัวหนังสือที่เห็นบนจอต้องไม่มีรหัสบิล');
+});
+
+test('เปิดช่องแล้ว ปุ่มหาย กลายเป็นช่องกรอก 2 ช่อง', () => {
+  scoreReset(); w.SCOREFORM.id = 'B7';
+  const h = w.scoreBox_(B_WAIT);
+  eq((h.match(/class="sc-in"/g) || []).length, 2, 'ช่องเลข 2 ช่อง เหย้า-เยือน');
+  ok(/ลงผล/.test(h) && /ยกเลิก/.test(h), 'มีปุ่มลงผลกับยกเลิก');
+  ok(!/ใส่สกอร์จบเกม/.test(h), 'ปุ่มเปิดต้องหายไปแล้ว');
+});
+
+test('เปิดค้างที่บิลอื่นอยู่ บิลนี้ยังเป็นปุ่มเหมือนเดิม — ห้ามเปิดพร้อมกันหลายใบ', () => {
+  scoreReset(); w.SCOREFORM.id = 'B9';
+  ok(/ใส่สกอร์จบเกม/.test(w.scoreBox_(B_WAIT)), 'บิล B7 ยังเป็นปุ่ม');
+});
+
+test('scoreSet: พิมพ์อะไรที่ไม่ใช่เลขต้องโดนคัดทิ้ง', () => {
+  scoreReset(); w.SCOREFORM.id = 'B7';
+  w.scoreSet('h', '2ก'); eq(w.SCOREFORM.h, '2', 'เหลือแต่เลข');
+  w.scoreSet('a', '-1'); eq(w.SCOREFORM.a, '1', 'ติดลบไม่ได้ สกอร์ติดลบไม่มีในโลก');
+  w.scoreSet('h', '');   eq(w.SCOREFORM.h, '', 'ลบทิ้งได้');
+});
+
+test('กำลังลง: ปุ่มเปลี่ยนคำ + ข้อความเตือนขึ้นบนใบ', () => {
+  scoreReset(); w.SCOREFORM.id = 'B7'; w.SCOREFORM.busy = true; w.SCOREFORM.msg = 'ลงไม่ได้ — คิดผลไม่ได้';
+  const h = w.scoreBox_(B_WAIT);
+  ok(/กำลังลง/.test(h), 'ปุ่มบอกว่ากำลังลง');
+  ok(/ลงไม่ได้/.test(h), 'เหตุผลที่ลงไม่ได้ต้องขึ้นให้เห็น');
+});
+
+test('ใบบิลที่ยังไม่มีผล ต้องมีช่องใส่สกอร์ต่อท้าย', () => {
+  scoreReset();
+  const h = w.betSlip(B_WAIT, Date.parse('2026-08-27T23:00:00+07:00'));
+  ok(/sc-open/.test(h), 'ใบบิลต้องพ่วงปุ่มมาด้วย');
+  ok(h.indexOf('sc-open') > h.indexOf('slip-teams'), 'ปุ่มอยู่ท้ายใบ ไม่ใช่หัวใบ');
+});

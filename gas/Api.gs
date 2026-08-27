@@ -219,6 +219,12 @@ function doGet(e) {
       return jsonOut_(stlWrite_(q.id, q.h, q.a, { force: String(q.force || '') === '1' }));
     }
     if (p === 'settle') return jsonOut_(stlAutoRun_());
+    /* ---------- ผูก/ตรวจ webhook เทเลแกรม ----------
+       ต้องส่งที่อยู่ exec มาเอง (?url=...) เพราะ ScriptApp.getService().getUrl()
+       ขอ scope script.scriptapp ซึ่งโปรเจกต์นี้ไม่ใส่โดยตั้งใจ
+       ทั้ง 2 ทางไม่คายที่อยู่ webhook กลับมา เพราะในนั้นมีกุญแจ TG_HOOK_KEY ติดอยู่ */
+    if (p === 'hook') return jsonOut_(tgSetHook_(String(q.url || '')));
+    if (p === 'hookinfo') return jsonOut_(tgHookInfo_());
     /* เปิดหน้าเว็บ = ถือโอกาสไล่คิดผลบิลที่เตะจบแล้ว (มีตัวหน่วง 10 นาทีในตัว)
        โปรเจกต์นี้ไม่มี trigger โดยตั้งใจ งานอัตโนมัติจึงเกาะรอบเปิดหน้าเว็บแทน
        พังตรงนี้ห้ามลามไปทำให้หน้าเว็บไม่ขึ้น */
@@ -241,12 +247,26 @@ function doPost(e) {
       if (e && e.postData && e.postData.contents) body = JSON.parse(e.postData.contents) || {};
     } catch (er) { return jsonOut_({ ok: false, error: 'อ่านข้อมูลที่ส่งมาไม่ออก' }); }
 
+    /* ---------- สายเข้าจากเทเลแกรม ----------
+       ต้องอยู่ก่อนด่าน APP_KEY เพราะที่อยู่ webhook ไปนอนอยู่บนเซิร์ฟเวอร์เทเลแกรม
+       เอากุญแจหน้าเว็บไปฝากไว้ที่นั่นไม่ได้ — มันมีกุญแจของตัวเอง TG_HOOK_KEY
+       ยังไม่ตั้งกุญแจ = ปิดตาย (บทเรียน ADMIN_KEY ของ PIKTAX)
+       ตอบ 200 เสมอ ไม่งั้นเทเลแกรมยิงซ้ำจนข้อความเด้งซ้อน */
+    if (String(q.p || body.p || '') === 'tg') {
+      var hk = prop_('TG_HOOK_KEY');
+      if (!hk || String(q.s || '') !== hk) return jsonOut_({ ok: false });
+      try { tgHandle_(body); } catch (er2) { /* พังก็ต้องตอบ 200 */ }
+      return jsonOut_({ ok: true });
+    }
+
     if (!keyOk_({ k: q.k || body.k || '' })) {
       return jsonOut_({ ok: false, needKey: true, error: 'ต้องใส่กุญแจ' });
     }
     var p = String(q.p || body.p || '');
     if (p === 'ocr') return jsonOut_(betOcr_(body.image));
     if (p === 'bet') return jsonOut_(betAdd_(body.bet || {}, { force: !!body.force }));
+    /* ใส่สกอร์จากหน้าเว็บ — ทางเดียวกับ ?p=score แต่ยิงจากหน้าจอมือถือได้ตรงๆ */
+    if (p === 'score') return jsonOut_(stlWrite_(body.id, body.h, body.a, { force: !!body.force }));
     return jsonOut_({ ok: false, error: 'ไม่รู้จักคำสั่ง ' + p });
   } catch (err) {
     return jsonOut_({ ok: false, error: String(err && err.message ? err.message : err) });
