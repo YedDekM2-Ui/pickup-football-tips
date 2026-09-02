@@ -305,6 +305,9 @@ function doGet(e) {
   if (p === 'hook') return jsonOut_(tgSetHook_(String(q.url || '')));
     if (p === 'hookinfo') return jsonOut_(tgHookInfo_());
     if (p === 'hookoff') return jsonOut_(tgOffHook_());   /* สวิตช์ปิดบอท กดจากมือถือได้ */
+    /* ล้างคิวค้างเอง — ให้ตัวเฝ้าข้างนอก (fb-watch ทุก 5 นาที) เรียกซ้ำ ๆ ได้
+       เงื่อนไขกันล้างมั่วอยู่ใน tgFixQueue_ เอง เรียกถี่แค่ไหนก็ไม่เสียหาย */
+    if (p === 'hookfix') return jsonOut_(tgFixQueue_(String(q.force || '')));
     /* ตั้งค่าลับ/ดูว่าตั้งครบยัง จากลิงก์ — หน้า Script Properties กดไม่ได้บนมือถือ
        คายกลับแค่ชื่อกับความยาว ค่าจริงไม่วิ่งออกไป (ดู setProp_ ใน Compat.gs) */
     if (p === 'setprop') return jsonOut_(setProp_(q.n, q.v));

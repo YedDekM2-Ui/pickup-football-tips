@@ -113,6 +113,46 @@ function tgHookInfo_() {
     'พลาดเมื่อ': w.last_error_date ? new Date(Number(w.last_error_date) * 1000).toISOString() : '' };
 }
 
+/* ---------- ล้างคิวค้างเอง ----------
+   ต้นเหตุถาวร: Apps Script ตอบ POST เป็น 302 เสมอ (เด้งไป googleusercontent)
+   เทเลแกรมนับ 302 = ส่งไม่ถึง เลยยิงใบเดิมซ้ำไม่เลิก ทั้งที่เราทำงานให้ไปแล้ว
+   คิวโตขึ้นเรื่อย ๆ ของใหม่ต่อท้ายของเก่า สุดท้ายพิมพ์อะไรไปบอทก็เงียบ
+   (ของจริง 2 ก.ย. 69: คิวค้าง 10 นิ่ง 7 นาที · พลาดล่าสุด "302 Found" ขยับทุกนาที
+    · ฮุกล่าสุดขึ้น "ข้อความซ้ำ" = ใบหัวคิวคือใบที่เราจับไปทำแล้ว)
+   แก้ที่ต้นเหตุไม่ได้ถ้าไม่มีเซิร์ฟเวอร์ตัวกลางมาตอบ 200 แทน จึงล้างคิวเป็นรอบแทน
+   การล้างทิ้งของที่ยังไม่ได้อ่านไปด้วย เงื่อนไขเลยแน่นไว้ก่อน:
+     คิวต้องถึง 5 ใบ · เงียบมาแล้ว 3 นาที (ไม่ล้างตอนของกำลังไหล) · ล้างถี่สุด 10 นาทีครั้ง */
+var TGQ_MIN_ = 5, TGQ_QUIET_MS_ = 3 * 60 * 1000, TGQ_COOL_MS_ = 10 * 60 * 1000;
+
+function tgFixQueue_(force) {
+  if (!tgTok_()) return { ok: false, error: 'ยังไม่ได้ตั้ง TG_TOKEN ที่ Script Properties' };
+  var w = tgHookInfo_();
+  if (!w.ok) return { ok: false, error: w.error || 'ถามสภาพ webhook ไม่ได้' };
+
+  var q = Number(w['คิวค้าง']) || 0;
+  var out = { ok: true, 'คิวค้าง': q, 'ล้าง': false, 'เหตุผล': '' };
+
+  if (String(force || '') !== '1') {
+    if (q < TGQ_MIN_) { out['เหตุผล'] = 'คิวยังไม่ถึง ' + TGQ_MIN_ + ' ใบ'; return out; }
+    var hit = tgLastHit_(), t = hit && hit['เมื่อ'] ? Date.parse(hit['เมื่อ']) : 0;
+    if (t && (Date.now() - t) < TGQ_QUIET_MS_) { out['เหตุผล'] = 'เพิ่งมีสายเข้า รอให้เงียบก่อน'; return out; }
+    var at = Number(prop_('TG_FIX_AT') || 0);
+    if (at && (Date.now() - at) < TGQ_COOL_MS_) { out['เหตุผล'] = 'เพิ่งล้างไป ยังไม่ครบรอบ'; return out; }
+  }
+
+  var u = String(prop_('EXEC_URL') || '');
+  if (!u) { out.ok = false; out.error = 'ยังไม่รู้ที่อยู่เว็บแอป ยิง ?p=hook&url=... หนึ่งครั้งก่อน'; return out; }
+
+  var r = tgSetHook_(u);   /* ตัวเดิม ข้างในมี drop_pending_updates อยู่แล้ว */
+  if (!r.ok) { out.ok = false; out.error = r.error || 'ล้างไม่สำเร็จ'; return out; }
+
+  try { PropertiesService.getScriptProperties().setProperty('TG_FIX_AT', String(Date.now())); } catch (e) {}
+  out['ล้าง'] = true;
+  out['เหตุผล'] = 'ล้างคิวค้าง ' + q + ' ใบแล้ว';
+  try { logEvent_('INFO', 'ล้างคิวเทเลแกรม ' + q + ' ใบ'); } catch (e) {}
+  return out;
+}
+
 /** ไล่ปัญหา "กดปุ่มแล้วบอทเงียบ" โดยไม่ต้องขอกุญแจ APP_KEY จากเจ้าของ
     บอทเงียบสนิทได้ 4 ทาง: ยังไม่ตั้งโทเคน · webhook หลุด · กุญแจฮุกไม่ตรง · ยังไม่ตั้งเจ้าของ
     ทั้ง 4 ทางตอบได้ด้วย จริง/เท็จ ล้วน ๆ — ห้ามคายโทเคน เลขห้อง หรือ url (มีกุญแจอยู่ในนั้น) */

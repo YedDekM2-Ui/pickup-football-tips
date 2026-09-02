@@ -670,3 +670,94 @@ test('รอยที่คายออกทาง ping ห้ามมีเ�
   const s = JSON.stringify(g.tgLastHit_());
   eq(s.indexOf('987654321'), -1, 'เลขห้องต้องอยู่แค่ในพร็อพเพอร์ตี้ ไม่ออกหน้าจอ');
 });
+
+/* ---------- ล้างคิวค้างเอง (tgFixQueue_) ----------
+   Apps Script ตอบ POST เป็น 302 เสมอ เทเลแกรมนับว่าส่งไม่ถึง แล้วยิงซ้ำไม่เลิก
+   คิวโตขึ้นทีละใบจนของใหม่ไปต่อท้ายของเก่า = พิมพ์อะไรไปบอทก็เงียบ
+   ตัวนี้ล้างคิวให้ แต่การล้างทิ้งของที่ยังไม่ได้อ่านไปด้วย เงื่อนไขจึงต้องแน่น */
+
+/** mock เทเลแกรม: getWebhookInfo คืนคิวตามสั่ง · setWebhook ตอบ ok และจดไว้ให้ตรวจ */
+function tgq(props, pending) {
+  const g = env(Object.assign({ TG_TOKEN: 'T', TG_HOOK_KEY: 'k' }, props || {}));
+  g.__sw = [];
+  g.UrlFetchApp.fetch = (url, opt) => {
+    const u = String(url), b = JSON.parse((opt && opt.payload) || '{}');
+    if (u.indexOf('getWebhookInfo') >= 0) {
+      return fakeResponse(200, JSON.stringify({ ok: true, result: {
+        url: 'https://example.com/exec?p=tg&s=k',
+        pending_update_count: pending,
+        last_error_message: 'Wrong response from the webhook: 302 Found' } }));
+    }
+    if (u.indexOf('setWebhook') >= 0) { g.__sw.push(b); return fakeResponse(200, JSON.stringify({ ok: true, result: true })); }
+    return fakeResponse(200, JSON.stringify({ ok: true, result: {} }));
+  };
+  return g;
+}
+
+test('คิวยังไม่ถึงเกณฑ์ = ไม่ล้าง', () => {
+  const g = tgq({ EXEC_URL: 'https://example.com/exec' }, 2);
+  const r = g.tgFixQueue_();
+  eq(r.ok, true);
+  eq(r['คิวค้าง'], 2);
+  eq(r['ล้าง'], false, 'คิวน้อย ๆ ปล่อยไว้ เดี๋ยวมันไปเอง');
+  eq(g.__sw.length, 0, 'ห้ามยิง setWebhook');
+});
+
+test('คิวตัน + เงียบมานาน = ล้าง และต้องสั่งทิ้งคิวเก่าไปด้วย', () => {
+  const g = tgq({ EXEC_URL: 'https://example.com/exec' }, 12);
+  const r = g.tgFixQueue_();
+  eq(r['ล้าง'], true);
+  eq(r['คิวค้าง'], 12);
+  eq(g.__sw.length, 1, 'ต้องผูก webhook ใหม่ 1 ครั้ง');
+  eq(g.__sw[0].drop_pending_updates, true, 'ไม่สั่งทิ้ง = คิวเดิมยังตันเหมือนเดิม');
+  eq(String(g.prop_('TG_FIX_AT') || '').length > 0, true, 'ต้องจดเวลาไว้กันล้างรัว');
+});
+
+test('เพิ่งมีสายเข้าเมื่อกี้ = ห้ามล้าง (ของกำลังไหล ล้างแล้วข้อความหาย)', () => {
+  const g = tgq({ EXEC_URL: 'https://example.com/exec' }, 12);
+  g.PropertiesService.getScriptProperties().setProperty('TG_LASTHIT',
+    JSON.stringify({ 'เมื่อ': new Date().toISOString(), 'จุด': 'ข้อความ' }));
+  const r = g.tgFixQueue_();
+  eq(r['ล้าง'], false);
+  eq(g.__sw.length, 0);
+});
+
+test('เพิ่งล้างไปเมื่อกี้ = ไม่ล้างซ้ำ (เรียกทุก 5 นาทีก็ไม่รัว)', () => {
+  const g = tgq({ EXEC_URL: 'https://example.com/exec', TG_FIX_AT: String(Date.now() - 60 * 1000) }, 12);
+  const r = g.tgFixQueue_();
+  eq(r['ล้าง'], false);
+  eq(g.__sw.length, 0);
+});
+
+test('เกินรอบพักแล้ว = ล้างได้อีก', () => {
+  const g = tgq({ EXEC_URL: 'https://example.com/exec', TG_FIX_AT: String(Date.now() - 30 * 60 * 1000) }, 12);
+  eq(g.tgFixQueue_()['ล้าง'], true);
+});
+
+test('ยังไม่รู้ที่อยู่เว็บแอป = บอกเหตุ ไม่ผูก webhook มั่ว', () => {
+  const g = tgq({}, 12);
+  const r = g.tgFixQueue_();
+  eq(r.ok, false, 'ผูกด้วยที่อยู่ว่าง = บอทตายสนิท ต้องไม่ทำ');
+  eq(g.__sw.length, 0);
+});
+
+test('force=1 = ล้างทันทีแม้คิวน้อย (ไว้กดเองจากมือถือ)', () => {
+  const g = tgq({ EXEC_URL: 'https://example.com/exec', TG_FIX_AT: String(Date.now()) }, 1);
+  eq(g.tgFixQueue_('1')['ล้าง'], true);
+});
+
+test('tgFixQueue_ ห้ามคายที่อยู่ webhook หรือกุญแจ', () => {
+  const g = tgq({ EXEC_URL: 'https://example.com/exec', TG_HOOK_KEY: 'กุญแจลับ' }, 12);
+  const j = JSON.stringify(g.tgFixQueue_());
+  ok(j.indexOf('กุญแจลับ') < 0, 'ห้ามมีกุญแจ');
+  ok(j.indexOf('example.com') < 0, 'ห้ามมีที่อยู่');
+});
+
+test('?p=hookfix ต้องมีกุญแจ', () => {
+  const g = tgq({ EXEC_URL: 'https://example.com/exec', APP_KEY: 'ss1234' }, 12);
+  const bad = JSON.parse(g.doGet({ parameter: { p: 'hookfix' } }).getContent());
+  eq(bad.ok, false, 'ไม่มีกุญแจต้องไม่ผ่าน');
+  eq(g.__sw.length, 0);
+  const good = JSON.parse(g.doGet({ parameter: { p: 'hookfix', k: 'ss1234' } }).getContent());
+  eq(good['ล้าง'], true);
+});
