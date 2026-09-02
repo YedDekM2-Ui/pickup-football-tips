@@ -181,7 +181,7 @@ test('เลขสกอร์/หัวตาราง ต้องไม่ห
   eq(g.fbParseOne_('<h3>Featured match</h3><div class="rcnt">2 - 1 71%</div>', 'FEATURED'), null);
 });
 
-test('fbPinned_ คืนแถวล่าสุดของแต่ละช่อง พร้อมบอกว่าดึงเมื่อไหร่', () => {
+test('fbPinned_ คืนทุกภาพนิ่งของแต่ละช่อง ใบใหม่สุดติดธงล่าสุด', () => {
   const rows = [
     pickRow({ 'ID':'A1', 'ช่อง':'FEATURED', 'ทีมเหย้า':'Arsenal', 'ทีมเยือน':'Leeds',
               'สร้างเมื่อ':'2026-08-24T12:00:00+07:00' }),
@@ -191,11 +191,47 @@ test('fbPinned_ คืนแถวล่าสุดของแต่ละช�
   ];
   const g = fbEnv(bookOf(rows), '');
   const out = g.fbPinned_(rows, { Arsenal: 'อาร์เซนอล' });
-  eq(out.length, 2);
+  /* forebet สลับคู่ทั้งวัน ชีตจดไว้ครบ — ของที่จดไว้ต้องได้ขึ้นจอทั้งหมด ไม่ใช่ช่องละใบ */
+  eq(out.length, 3);
   eq(out[0]['ช่อง'], 'FEATURED');
-  eq(out[0]['เหย้า'], 'Chelsea', 'ต้องเอาแถวใหม่สุด');
+  eq(out[0]['เหย้า'], 'Chelsea', 'ต้องเอาแถวใหม่สุดขึ้นก่อน');
   eq(out[0]['ดึงเมื่อ'], '2026-08-25T12:00:00+07:00');
-  eq(out[1]['ช่อง'], 'POTD');
+  eq(out[0]['ล่าสุด'], 1, 'ใบใหม่สุดของช่องต้องติดธง');
+  eq(out[1]['เหย้า'], 'Arsenal', 'ใบเก่าของช่องเดียวกันต้องตามมา');
+  ok(!out[1]['ล่าสุด'], 'ใบเก่าห้ามติดธงล่าสุด');
+  eq(out[2]['ช่อง'], 'POTD');
+  eq(out[2]['ล่าสุด'], 1);
+});
+
+test('fbHistory_ แยกบันทึกรายวัน วันใหม่อยู่บน ในวันเดียวกันใบใหม่อยู่บน', () => {
+  const rows = [
+    pickRow({ 'ID':'A1', 'ช่อง':'FEATURED', 'ทีมเหย้า':'Arsenal', 'ทีมเยือน':'Leeds',
+              'วันที่':'2026-08-25' }),
+    pickRow({ 'ID':'A2', 'ช่อง':'FEATURED', 'ทีมเหย้า':'Chelsea', 'ทีมเยือน':'Everton',
+              'วันที่':'2026-08-27' }),
+    pickRow({ 'ID':'B1', 'ช่อง':'POTD', 'ทีมเหย้า':'PSV', 'ทีมเยือน':'Sparta',
+              'วันที่':'2026-08-27' })
+  ];
+  const g = fbEnv(bookOf(rows), '');
+  const h = g.fbHistory_(rows, {}, 7, 100);
+  eq(h.days.length, 2);
+  eq(h.days[0]['วันที่'], '2026-08-27', 'วันใหม่ต้องอยู่บน');
+  eq(h.days[0]['จำนวน'], 2);
+  eq(h.days[1]['วันที่'], '2026-08-25');
+  eq(h.hist['2026-08-27'][0]['เหย้า'], 'PSV', 'ในวันเดียวกันใบใหม่อยู่บน');
+  eq(h.hist['2026-08-25'].length, 1);
+});
+
+test('fbHistory_ ไม่มีของ = ไม่มีวัน และเพดานใบตัดจริง', () => {
+  const g0 = fbEnv(bookOf([]), '');
+  eq(g0.fbHistory_([], {}, 7, 100).days.length, 0);
+  eq(g0.fbHistory_(null, {}, 7, 100).days.length, 0);
+  const rows = [];
+  for (let i = 0; i < 5; i++) {
+    rows.push(pickRow({ 'ID':'X' + i, 'ช่อง':'FEATURED', 'ทีมเหย้า':'A', 'ทีมเยือน':'B' }));
+  }
+  const g = fbEnv(bookOf(rows), '');
+  eq(g.fbHistory_(rows, {}, 7, 3).hist['2026-08-25'].length, 3, 'เกินเพดานต้องตัด');
 });
 
 test('ยังไม่เคยดึงเลย = pinned ว่าง หน้า 1 ต้องไม่พัง', () => {

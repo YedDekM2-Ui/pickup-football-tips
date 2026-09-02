@@ -9,6 +9,16 @@ test('routeOf รู้จัก 3 หน้า และของแปลก�
   eq(w.routeOf('#ledger'), 'ledger');
   eq(w.routeOf(''), 'forebet');
   eq(w.routeOf('#อะไรไม่รู้'), 'forebet');
+  eq(w.routeOf('#forebet/2026-08-27'), 'forebet', 'ท่อนวันที่ต่อท้ายห้ามทำให้หลงหน้า');
+  eq(w.routeOf('#ledger/อะไรก็ไม่รู้'), 'ledger');
+});
+
+test('dayOf อ่านวันที่เลือกจาก hash — ไม่ใช่รูปวันที่ = ถือว่าไม่ได้เลือก', () => {
+  eq(w.dayOf('#forebet/2026-08-27'), '2026-08-27');
+  eq(w.dayOf('#forebet'), '');
+  eq(w.dayOf(''), '');
+  eq(w.dayOf('#forebet/เมื่อวาน'), '');
+  eq(w.dayOf('#forebet/2026-8-7'), '', 'รูปไม่ตรงห้ามเดาให้เอง');
 });
 
 test('renderNav มีครบ 3 ปุ่ม และปุ่มที่เปิดอยู่ถูกทำเครื่องหมาย', () => {
@@ -84,17 +94,27 @@ test('ไม่มี 1X2/สกอร์ที่เดา = ไม่ขึ้
   eq(html.indexOf('เต็ง'), -1, 'ห้ามมีป้ายลอย');
 });
 
-test('renderForebet เรียงเปอร์เซ็นต์มากไปน้อย และไม่เกิน 4 ใบ', () => {
+test('renderForebet เรียงเปอร์เซ็นต์มากไปน้อย และโชว์ได้หลายใบ', () => {
   const many = { picks: [], bets: [], ledger: {} };
   for (let i = 0; i < 9; i++) {
     many.picks.push(Object.assign({}, f.MOCK.picks[0], { id: 'PK-' + i, 'เปอร์เซ็นต์': i * 10 }));
   }
   const html = f.renderForebet(many, Date.now());
-  eq((html.match(/class="card pick"/g) || []).length, 4);
+  /* forebet เปลี่ยนคู่ทั้งวัน ตัดเหลือ 4 ใบ = ของที่จดไว้หาย */
+  eq((html.match(/class="card pick"/g) || []).length, 9, '9 ใบต้องขึ้นครบ');
   ok(html.indexOf('1X2 80%') >= 0, 'ใบเปอร์เซ็นต์สูงสุดต้องติดมา');
-  ok(html.indexOf('1X2 0%') === -1, 'ใบเปอร์เซ็นต์ต่ำสุดต้องถูกตัด');
   const iHi = html.indexOf('80%'), iLo = html.indexOf('50%');
   ok(iHi < iLo, 'ใบเปอร์เซ็นต์สูงต้องอยู่บนกว่า');
+});
+
+test('ใบเยอะเกินก็ยังมีเพดาน กันหน้ายาวจนเลื่อนไม่ไหว', () => {
+  const many = { picks: [], bets: [], ledger: {} };
+  for (let i = 1; i <= 20; i++) {
+    many.picks.push(Object.assign({}, f.MOCK.picks[0], { id: 'PK-' + i, 'เปอร์เซ็นต์': i }));
+  }
+  const html = f.renderForebet(many, Date.now());
+  eq((html.match(/class="card pick"/g) || []).length, 12, 'เกินเพดานต้องตัด');
+  ok(html.indexOf('1X2 1%') === -1, 'ใบเปอร์เซ็นต์ต่ำสุดต้องถูกตัด');
 });
 
 test('renderForebet ไม่มีคู่ = บอกตรงๆ ไม่ใช่หน้าขาว', () => {
@@ -116,11 +136,18 @@ test('pinCard บอกว่าเป็นช่องไหน และด�
   ok(html.indexOf('27/8/2026  00:00') >= 0, 'ต้องมีวันเวลาเตะ');
   ok(html.indexOf('ล่าสุด') >= 0, 'ภาพนิ่งต้องบอกเวลาที่ดึง');
   ok(html.indexOf('12:00') >= 0, 'ต้องมีเวลาที่ดึงจริง');
-  eq(f.pinCard(f.MOCK.pinned[1]).indexOf('PICK OF THE DAY') >= 0, true);
+  eq(f.pinCard(f.MOCK.pinned[2]).indexOf('PICK OF THE DAY') >= 0, true);
+});
+
+test('ภาพนิ่งเก่าของช่องเดียวกันไม่ได้อ้างว่าตัวเองล่าสุด', () => {
+  const oldOne = f.pinCard(f.MOCK.pinned[1]);      /* ใบเก่าของช่อง FEATURED */
+  ok(oldOne.indexOf('จับภาพ') >= 0, 'ใบเก่าต้องบอกว่าเป็นภาพนิ่งตอนนั้น');
+  eq(oldOne.indexOf('ล่าสุด'), -1, 'ใบเก่าห้ามอ้างว่าล่าสุด');
+  ok(f.pinCard(f.MOCK.pinned[0]).indexOf('ล่าสุด') >= 0, 'ใบใหม่สุดของช่องถึงจะพูดว่าล่าสุด');
 });
 
 test('ไม่รู้วันเวลาเตะ = ไม่มีบรรทัดวันเวลาโผล่มามั่ว', () => {
-  const html = f.pinCard(f.MOCK.pinned[1]);         // ใบนี้ไม่มีวันเวลาเตะ
+  const html = f.pinCard(f.MOCK.pinned[2]);         // ใบนี้ไม่มีวันเวลาเตะ
   eq(html.indexOf('2026'), -1, 'ไม่มีวันเตะก็ห้ามเดาปีให้เอง');
   eq(html.indexOf('รอเตะ'), -1, 'ไม่มีเวลาเตะก็ห้ามเดา');
   eq(html.indexOf('อีก '), -1, 'ห้ามนับถอยหลังจากเวลาว่าง');
@@ -139,10 +166,39 @@ test('kickText — รู้ไม่ครบก็โชว์เท่าท�
 
 test('renderForebet ปักหมุดไว้บนสุด และไม่โผล่ซ้ำในลิสต์ปกติ', () => {
   const html = f.renderForebet(f.MOCK, Date.now());
-  eq((html.match(/class="card pick pin"/g) || []).length, 2, 'ปักหมุด 2 ใบ');
+  eq((html.match(/class="card pick pin"/g) || []).length, 3, 'ปักหมุด 3 ใบ');
   eq((html.match(/Premier League/g) || []).length, 1, 'คู่ปักหมุดต้องโผล่ใบเดียว');
   const iPin = html.indexOf('FEATURED MATCH'), iNorm = html.indexOf('อินเตอร์');
   ok(iPin >= 0 && iNorm >= 0 && iPin < iNorm, 'ใบปักหมุดต้องอยู่บนใบปกติ');
+});
+
+test('แถบวัน — ครบทุกวันที่มีบันทึก ปุ่มล่าสุดติดไว้ตอนยังไม่ได้เลือกวัน', () => {
+  const html = f.renderForebet(f.MOCK, Date.now());
+  ok(html.indexOf('class="chips"') >= 0, 'ต้องมีแถบวัน');
+  eq((html.match(/class="chip[ "]/g) || []).length, 4, 'ปุ่มล่าสุด + 3 วัน');
+  ok(html.indexOf('#forebet/2026-08-27') >= 0, 'ลิงก์ต้องเป็น hash ปุ่มย้อนกลับจะได้ใช้ได้');
+  ok(html.indexOf('(2)') >= 0, 'ต้องบอกจำนวนใบของวันนั้น');
+});
+
+test('เลือกวัน = โชว์บันทึกของวันนั้น ไม่ใช่คู่ที่ยังไม่เตะ', () => {
+  const html = f.renderForebet(f.MOCK, Date.now(), '2026-08-27');
+  eq((html.match(/class="card pick pin"/g) || []).length, 2, 'วันนั้นมี 2 ใบ');
+  ok(html.indexOf('อาร์เซนอล') >= 0);
+  ok(html.indexOf('เชลซี') >= 0);
+  eq(html.indexOf('อินเตอร์'), -1, 'ใบของวันอื่นห้ามปน');
+  ok(html.indexOf('chip chip-on') >= 0, 'วันที่เลือกต้องติดไว้ให้เห็น');
+});
+
+test('เลือกวันที่ไม่มีบันทึก = บอกตรงๆ ไม่ใช่หน้าขาว', () => {
+  const html = f.renderForebet(f.MOCK, Date.now(), '2019-01-01');
+  ok(html.indexOf('วันนี้ไม่มีบันทึก') >= 0);
+  ok(html.indexOf('class="chips"') >= 0, 'แถบวันต้องยังอยู่ ให้กดกลับได้');
+});
+
+test('ไม่มีบันทึกย้อนหลังเลย = ไม่ต้องมีแถบวันมาเกะกะ', () => {
+  const noDays = Object.assign({}, f.MOCK, { days: [], hist: {} });
+  eq(f.renderForebet(noDays, Date.now()).indexOf('class="chips"'), -1);
+  eq(f.renderForebet({ picks: [] }, Date.now()).indexOf('class="chips"'), -1);
 });
 
 test('ไม่มีคู่ปักหมุด = หน้าเดิมไม่พัง', () => {

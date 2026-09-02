@@ -1086,12 +1086,61 @@ function fbUpcoming_(rows, nowMs) {
   return out;
 }
 
-/** คู่ที่ปักหมุดบนหน้า 1 = แถวล่าสุดของแต่ละช่อง ช่องไหนยังไม่มีก็ข้าม */
+/* ---------- หลายใบ + ย้อนหลังรายวัน ----------
+   ที่มา: forebet สลับคู่ Featured/Pick of the day ทั้งวัน ชีตจดไว้ครบทุกครั้งที่สลับ
+   (กฎข้อ 2 ของไฟล์นี้ = ไม่แก้แถวเก่า) แต่หน้า 1 เดิมโชว์แค่ "แถวล่าสุดของช่อง" ช่องละใบ
+   ของที่จดไว้ทั้งวันจึงไม่เคยได้ขึ้นจอ — 2 ตัวข้างล่างนี้เปิดทางให้มันขึ้น */
+
+var FB_PIN_MAX  = 12;   /* ใบบนหน้าแรก (ยังไม่เตะ) เกินนี้ตัด ป้องกัน payload บวม */
+var FB_HIST_DAYS = 7;   /* ย้อนหลังกี่วัน */
+var FB_HIST_MAX = 150;  /* ใบย้อนหลังทั้งหมดรวมกัน */
+
+/** วันของแถว = วันเตะ ถ้าอ่านไม่ออกค่อยใช้วันที่ไปดึงมา (ไม่มีวันไหนเลย = คืน '') */
+function fbRowDay_(row) {
+  var d = fbYmd_(row && row['วันที่']);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  var st = stamp_(row && row['สร้างเมื่อ']);
+  var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(st || ''));
+  return m ? m[1] : '';
+}
+
+/** คู่ปักหมุดบนหน้า 1 = ทุกภาพนิ่งที่ยังไม่เตะ เรียงใหม่ก่อน (FEATURED แล้วค่อย POTD)
+    ใบใหม่สุดของแต่ละช่องติดธง 'ล่าสุด' ไว้ ให้หน้าเว็บแยกคำว่า "ล่าสุด" กับ "จับภาพ" ได้ */
 function fbPinned_(pickRows, tmap) {
-  var kinds = [FB_KIND.FEATURED, FB_KIND.POTD], out = [];
-  for (var i = 0; i < kinds.length; i++) {
-    var r = fbLatest_(pickRows || [], kinds[i]);
-    if (r) out.push(pickOut_(r, tmap));
+  var kinds = [FB_KIND.FEATURED, FB_KIND.POTD], out = [], rows = pickRows || [];
+  for (var k = 0; k < kinds.length; k++) {
+    var got = 0;
+    for (var i = rows.length - 1; i >= 0 && out.length < FB_PIN_MAX; i--) {
+      if (String(rows[i]['ช่อง'] || '') !== kinds[k]) continue;
+      var o = pickOut_(rows[i], tmap);
+      if (got === 0) o['ล่าสุด'] = 1;
+      got++;
+      out.push(o);
+    }
   }
   return out;
+}
+
+/** บันทึกย้อนหลังแยกรายวัน — วันใหม่อยู่บน ในวันเดียวกันใบใหม่อยู่บน
+    คืน { days:[{'วันที่','จำนวน'}], hist:{ 'YYYY-MM-DD':[ใบ...] } }
+    อ่านอย่างเดียว ไม่แตะชีต ไม่แปลงเลขอะไรทั้งนั้น */
+function fbHistory_(pickRows, tmap, maxDays, maxRows) {
+  var rows = pickRows || [], bag = {}, keys = [], i;
+  for (i = 0; i < rows.length; i++) {
+    var d = fbRowDay_(rows[i]);
+    if (!d) continue;                      /* ไม่รู้วัน = ไม่รู้จะไปอยู่วันไหน */
+    if (!bag[d]) { bag[d] = []; keys.push(d); }
+    bag[d].push(rows[i]);
+  }
+  keys.sort(function (a, b) { return a < b ? 1 : (a > b ? -1 : 0); });
+  var nd = maxDays || FB_HIST_DAYS, nr = maxRows || FB_HIST_MAX;
+  var days = [], hist = {}, used = 0;
+  for (i = 0; i < keys.length && i < nd && used < nr; i++) {
+    var src = bag[keys[i]], list = [];
+    for (var j = src.length - 1; j >= 0 && used < nr; j--) { list.push(pickOut_(src[j], tmap)); used++; }
+    if (!list.length) continue;
+    days.push({ 'วันที่': keys[i], 'จำนวน': list.length });
+    hist[keys[i]] = list;
+  }
+  return { days: days, hist: hist };
 }

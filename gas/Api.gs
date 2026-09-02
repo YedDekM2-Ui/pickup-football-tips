@@ -178,11 +178,16 @@ function payloadAll_(nowMs) {
   var live = fbUpcoming_(pickRows, now);
   var picks = [];
   for (var i = 0; i < live.length; i++) picks.push(pickOut_(live[i], tmap));
+  /* ย้อนหลังรายวัน — อ่านจากชีตทั้งเล่ม (รวมคู่ที่เตะไปแล้ว) คนละชุดกับ picks/pinned
+     picks กับ pinned ต้องอยู่ที่เดิม เพราะแคชเก่าในเครื่องเจ้าของยังใช้ทรงนั้นอยู่ */
+  var hs = fbHistory_(pickRows, tmap, FB_HIST_DAYS, FB_HIST_MAX);
   return {
     ok: true,
     at: nowIso_(),
     picks: picks,
-    pinned: fbPinned_(live, tmap),       /* Featured / Pick of the day ที่ยังไม่เตะ */
+    pinned: fbPinned_(live, tmap),       /* Featured / Pick of the day ที่ยังไม่เตะ (ทุกภาพนิ่ง) */
+    days: hs.days,                       /* [{'วันที่','จำนวน'}] วันใหม่อยู่บน */
+    hist: hs.hist,                       /* { 'YYYY-MM-DD': [ใบ...] } ใบใหม่อยู่บน */
     bets: nestBets_(betRows, tmap),
     ledger: ledgerStats_(betRows)
   };
