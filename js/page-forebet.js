@@ -90,6 +90,22 @@ function marketLine_(p) {
   return '<div class="pick-mkt">' + esc_(parts.join(' · ')) + '</div>';
 }
 
+/** ผลจริงหลังจบเกม — ว่าง = คู่ยังไม่เตะ/หาผลไม่เจอ ให้หายไปทั้งบรรทัด
+    ห้ามโชว์ "FT -" เพราะคนอ่านจะนึกว่า 0-0 */
+function ftLine_(p) {
+  var sc = s_(p['สกอร์จริง']);
+  if (!sc) return '';
+  var r = s_(p['ถูกผิด']);
+  var mark = r === 'ถูก' ? ' ✅' : (r === 'ผิด' ? ' ❌' : '');
+  return '<div class="pick-ft">FT ' + esc_(sc + mark) + '</div>';
+}
+
+/** สีทั้งใบตามผล 1X2 — ไม่มีผล = ไม่ทาสี (ใบที่ยังไม่เตะต้องดูเป็นกลาง) */
+function resClass_(p) {
+  var r = s_(p['ถูกผิด']);
+  return r === 'ถูก' ? ' ok' : (r === 'ผิด' ? ' bad' : '');
+}
+
 /** ไส้ในของใบ — แยกออกมาเพราะใบปักหมุดใช้ไส้เดียวกัน ต่างแค่กรอบกับป้าย
     เรียงตามที่เจ้าของสั่ง: ลีก / วัน-เวลาเตะ / คู่ / คำเดา / ตลาด
     ไม่มีบรรทัดเปอร์เซ็นต์ลอยกับราคาแล้ว — เปอร์เซ็นต์ไปอยู่ในท่อน 1X2
@@ -104,11 +120,12 @@ function pickBody_(p) {
     (kick ? '<div class="muted">' + esc_(kick) + '</div>' : '') +
     '<div class="big">' + home + ' <span class="muted">VS</span> ' + away + '</div>' +
     predictLine_(p) +
+    ftLine_(p) +
     marketLine_(p);
 }
 
 function pickCard(p) {
-  return '<div class="card pick">' + pickBody_(p) + '</div>';
+  return '<div class="card pick' + resClass_(p) + '">' + pickBody_(p) + '</div>';
 }
 
 /** ชื่อช่องบน Forebet — ไม่รู้จักช่องไหน ก็โชว์รหัสดิบไปตรงๆ ดีกว่าเงียบ */
@@ -116,13 +133,13 @@ var PIN_LABEL = { FEATURED: 'FEATURED MATCH', POTD: 'PICK OF THE DAY' };
 
 /** ใบปักหมุด: ภาพนิ่งของตอนที่ไปดึงมา ไม่ใช่ของสด จึงต้องบอกเวลาที่ดึงเสมอ
     ช่องเดียวกันมีได้หลายใบ (forebet สลับคู่ทั้งวัน) — ใบใหม่สุดของช่องเท่านั้นที่พูดว่า
-    "ล่าสุด" ใบที่เหลือพูดว่า "จับภาพ" ไม่งั้นทุกใบอ้างว่าตัวเองล่าสุดหมด */
+    "ล่าสุด" ใบที่เหลือพูดว่า "อัพเดท" ไม่งั้นทุกใบอ้างว่าตัวเองล่าสุดหมด */
 function pinCard(p) {
   var kind = String(p['ช่อง'] || '').trim().toUpperCase();
   var got = String(p['ดึงเมื่อ'] || '').trim();
-  var word = p['ล่าสุด'] ? 'ล่าสุด ' : 'จับภาพ ';
+  var word = p['ล่าสุด'] ? 'ล่าสุด ' : 'อัพเดท ';
   return '' +
-    '<div class="card pick pin">' +
+    '<div class="card pick pin' + resClass_(p) + '">' +
       '<div class="pin-cap">' + esc_(PIN_LABEL[kind] || kind) + '</div>' +
       pickBody_(p) +
       (got ? '<div class="pin-when">' + word + esc_(thDate(got)) + ' ' + esc_(thTime(got)) + '</div>' : '') +

@@ -81,6 +81,21 @@ body {
 }
 .pin-when { color: var(--ink-dim); font-size: 11px; margin-top: 6px; }
 
+/* ผลจริง + สีทั้งใบตามผล 1X2 (เจ้าของสั่ง: ถูก=เขียวพาสเทล ผิด=แดงพาสเทล)
+   พื้นใบสว่าง จึงต้องกลับสีตัวหนังสือ "ทั้งใบ" ไม่งั้นเทาอ่อนบนเขียวอ่อน = อ่านไม่ออก */
+.pick-ft { font-weight: 700; font-size: 13px; margin: 2px 0 6px; }
+.pick.ok  { background: #cfead9; border-color: #8fcfab; color: #12291e; }
+.pick.bad { background: #f4d3cf; border-color: #e1a49d; color: #2d1512; }
+.pick.ok .muted,  .pick.ok .pick-mkt,  .pick.ok .pin-when,
+.pick.ok .pick-pred  { color: #3c6b52; }
+.pick.bad .muted, .pick.bad .pick-mkt, .pick.bad .pin-when,
+.pick.bad .pick-pred { color: #8a4941; }
+.pick.ok .pick-ft  { color: #14603c; }
+.pick.bad .pick-ft { color: #9b2f24; }
+.pick.ok .pin-cap  { color: #2f6a49; }
+.pick.bad .pin-cap { color: #9b3b30; }
+
+
 /* แถบเลือกวัน — เลื่อนแนวนอนได้ ปุ่มสูง 44px เท่า .btn ให้นิ้วโป้งกดติด */
 .chips {
   display: flex; gap: 8px; overflow-x: auto; margin-bottom: 10px;
