@@ -81,6 +81,20 @@ body {
 }
 .pin-when { color: var(--ink-dim); font-size: 11px; margin-top: 6px; }
 
+/* แถบเลือกวัน — เลื่อนแนวนอนได้ ปุ่มสูง 44px เท่า .btn ให้นิ้วโป้งกดติด */
+.chips {
+  display: flex; gap: 8px; overflow-x: auto; margin-bottom: 10px;
+  padding-bottom: 2px; -webkit-overflow-scrolling: touch;
+}
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex: 0 0 auto; min-height: 44px; line-height: 44px; padding: 0 14px;
+  border-radius: 22px; border: 1px solid var(--line); background: #191d23;
+  color: var(--ink-dim); text-decoration: none; font-size: 13px; font-weight: 600;
+  white-space: nowrap;
+}
+.chip-on { color: var(--bg); background: var(--gold); border-color: var(--gold); }
+
 /* ---- หัวหน้า 3 แบบแอปหุ้น ---- */
 .stk { padding: 16px 14px 12px; }
 .stk-cap { color: var(--ink-dim); font-size: 11px; font-weight: 700;

@@ -6,8 +6,15 @@ var ROUTES = ['forebet', 'mybet', 'ledger'];
 var NAV_LABEL = { forebet: 'FOREBET', mybet: 'MY BET', ledger: 'LEDGER' };
 
 function routeOf(hash) {
-  var h = String(hash || '').replace(/^#/, '');
+  /* ตัดท่อนหลัง '/' ทิ้ง — '#forebet/2026-08-27' ก็ยังเป็นหน้า forebet */
+  var h = String(hash || '').replace(/^#/, '').split('/')[0];
   return ROUTES.indexOf(h) >= 0 ? h : 'forebet';
+}
+
+/** วันที่เลือกไว้ใน hash เช่น '#forebet/2026-08-27' — ไม่ใช่รูปวันที่ = ถือว่าไม่ได้เลือก */
+function dayOf(hash) {
+  var part = String(hash || '').replace(/^#/, '').split('/');
+  return (part.length > 1 && /^\d{4}-\d{2}-\d{2}$/.test(part[1])) ? part[1] : '';
 }
 
 function renderNav(active) {
@@ -34,11 +41,11 @@ function renderNeedKey() {
 }
 
 /** เลือกตัวปั้นหน้าตาม route — ฟังก์ชันพวกนี้มาจาก page-*.js */
-function renderPage(route, data, nowMs, source) {
+function renderPage(route, data, nowMs, source, day) {
   if (source === 'ต้องใส่กุญแจ') return renderNeedKey();
   if (route === 'mybet') return renderMyBet(data, nowMs);
   if (route === 'ledger') return renderLedger(data);
-  return renderForebet(data, nowMs);
+  return renderForebet(data, nowMs, day);
 }
 
 var STATE = { data: MOCK, source: 'ตัวอย่าง', at: Date.now() };
@@ -49,7 +56,8 @@ function mount_() {
   var route = routeOf(location.hash);
   document.body.className = 'page-' + route;
   document.getElementById('note').innerHTML = statusPill(STATE.source, STATE.at);
-  document.getElementById('app').innerHTML = renderPage(route, STATE.data, Date.now(), STATE.source);
+  document.getElementById('app').innerHTML =
+    renderPage(route, STATE.data, Date.now(), STATE.source, dayOf(location.hash));
   document.getElementById('nav').innerHTML = renderNav(route);
   bindKeyForm_();
 }

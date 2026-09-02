@@ -2,7 +2,9 @@
    ทุกฟังก์ชันคืนเป็น string ไม่แตะ DOM เพื่อให้เทสต์ใน Node ได้ */
 'use strict';
 
-var MAX_CARDS = 4;
+/* forebet สลับคู่ทั้งวัน ของที่จดไว้มีหลายใบ ตัดเหลือ 4 = ของหาย
+   ยังต้องมีเพดานอยู่ กันหน้ายาวจนเลื่อนไม่ไหวตอนวันที่คู่เยอะ */
+var MAX_CARDS = 12;
 
 /** แปลไม่เจอ = โชว์ชื่ออังกฤษเดิม (สเปกข้อ 11 — ห้ามทับศัพท์เอง) */
 function teamTh(en, th) {
@@ -112,19 +114,63 @@ function pickCard(p) {
 /** ชื่อช่องบน Forebet — ไม่รู้จักช่องไหน ก็โชว์รหัสดิบไปตรงๆ ดีกว่าเงียบ */
 var PIN_LABEL = { FEATURED: 'FEATURED MATCH', POTD: 'PICK OF THE DAY' };
 
-/** ใบปักหมุด: ภาพนิ่งของตอนที่ไปดึงมา ไม่ใช่ของสด จึงต้องบอกเวลาที่ดึงเสมอ */
+/** ใบปักหมุด: ภาพนิ่งของตอนที่ไปดึงมา ไม่ใช่ของสด จึงต้องบอกเวลาที่ดึงเสมอ
+    ช่องเดียวกันมีได้หลายใบ (forebet สลับคู่ทั้งวัน) — ใบใหม่สุดของช่องเท่านั้นที่พูดว่า
+    "ล่าสุด" ใบที่เหลือพูดว่า "จับภาพ" ไม่งั้นทุกใบอ้างว่าตัวเองล่าสุดหมด */
 function pinCard(p) {
   var kind = String(p['ช่อง'] || '').trim().toUpperCase();
   var got = String(p['ดึงเมื่อ'] || '').trim();
+  var word = p['ล่าสุด'] ? 'ล่าสุด ' : 'จับภาพ ';
   return '' +
     '<div class="card pick pin">' +
       '<div class="pin-cap">' + esc_(PIN_LABEL[kind] || kind) + '</div>' +
       pickBody_(p) +
-      (got ? '<div class="pin-when">ล่าสุด ' + esc_(thDate(got)) + ' ' + esc_(thTime(got)) + '</div>' : '') +
+      (got ? '<div class="pin-when">' + word + esc_(thDate(got)) + ' ' + esc_(thTime(got)) + '</div>' : '') +
     '</div>';
 }
 
-function renderForebet(data, nowMs) {
+/** แถบเลือกวัน — ใบแรก "ล่าสุด" คือหน้าปกติ (คู่ที่ยังไม่เตะ) ไม่ใช่วันใดวันหนึ่ง
+    ลิงก์เป็น hash ล้วน ตัวจัดหน้าใน app.js พาไปเอง ปุ่มย้อนกลับของเครื่องจึงใช้ได้
+    ไม่มีวันย้อนหลังเลย = ไม่ต้องมีแถบมาเกะกะ */
+function dayChips_(days, day) {
+  var list = days || [], out = [], i;
+  for (i = 0; i < list.length; i++) {
+    var d = s_(list[i]['วันที่']);
+    if (!d) continue;
+    var n = Number(list[i]['จำนวน']);
+    var lab = thDate(d) || d;
+    if (n > 0) lab += ' (' + n + ')';
+    out.push('<a class="chip' + (d === day ? ' chip-on' : '') + '" href="#forebet/' + esc_(d) + '">' +
+             esc_(lab) + '</a>');
+  }
+  if (!out.length) return '';
+  return '<div class="chips">' +
+           '<a class="chip' + (day ? '' : ' chip-on') + '" href="#forebet">ล่าสุด</a>' +
+           out.join('') +
+         '</div>';
+}
+
+/** day = 'YYYY-MM-DD' ที่เลือกจากแถบวัน (ว่าง = หน้าปกติ)
+    ต้องรับมาเป็นตัวแปร ห้ามไปอ่าน location เอง เพราะฟังก์ชันนี้ต้องรันในเทสต์ได้ด้วย */
+function renderForebet(data, nowMs, day) {
+  var pickDay = s_(day);
+  var chips = dayChips_(data && data.days, pickDay);
+  var head = '<div class="muted">ข้อมูลรอบ ' + esc_(thTime(data && data.at)) + '</div>';
+  var foot = '<a class="btn" href="#mybet">กรอกเอง</a>';
+
+  /* เลือกวันไว้ = โหมดย้อนหลัง โชว์ทุกภาพนิ่งของวันนั้น (รวมคู่ที่เตะไปแล้ว)
+     คนละชุดกับหน้าปกติ จึงไม่ต้องคัดซ้ำกับ picks */
+  if (pickDay) {
+    var hist = (data && data.hist) ? data.hist : {};
+    var rows = hist[pickDay] || [];
+    var old = rows.map(function (p) { return pinCard(p); }).join('');
+    if (!old) {
+      old = '<div class="card"><div class="big">วันนี้ไม่มีบันทึก</div>' +
+            '<div class="muted">ลองวันอื่น หรือกดล่าสุด</div></div>';
+    }
+    return head + chips + old + foot;
+  }
+
   var pinned = (data && data.pinned ? data.pinned : []).slice();
 
   /* คู่ปักหมุดติดมาในลิสต์ picks ด้วย ต้องคัดออก ไม่งั้นเห็นซ้ำ 2 ใบ */
@@ -138,7 +184,6 @@ function renderForebet(data, nowMs) {
   picks.sort(function (a, b) { return Number(b['เปอร์เซ็นต์']) - Number(a['เปอร์เซ็นต์']); });
   picks = picks.slice(0, MAX_CARDS);
 
-  var head = '<div class="muted">ข้อมูลรอบ ' + esc_(thTime(data && data.at)) + '</div>';
   var pin = pinned.map(function (p) { return pinCard(p); }).join('');
   var body = picks.map(function (p) { return pickCard(p); }).join('');
   if (!pin && !body) {
@@ -146,5 +191,5 @@ function renderForebet(data, nowMs) {
       '<div class="muted">รอบถัดไปอีกไม่นาน หรือกรอกเองได้เลย</div></div>';
   }
 
-  return head + pin + body + '<a class="btn" href="#mybet">กรอกเอง</a>';
+  return head + chips + pin + body + foot;
 }
