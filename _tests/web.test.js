@@ -141,9 +141,24 @@ test('pinCard บอกว่าเป็นช่องไหน และด�
 
 test('ภาพนิ่งเก่าของช่องเดียวกันไม่ได้อ้างว่าตัวเองล่าสุด', () => {
   const oldOne = f.pinCard(f.MOCK.pinned[1]);      /* ใบเก่าของช่อง FEATURED */
-  ok(oldOne.indexOf('จับภาพ') >= 0, 'ใบเก่าต้องบอกว่าเป็นภาพนิ่งตอนนั้น');
+  ok(oldOne.indexOf('อัพเดท') >= 0, 'ใบเก่าต้องบอกว่าเป็นภาพนิ่งตอนนั้น');
   eq(oldOne.indexOf('ล่าสุด'), -1, 'ใบเก่าห้ามอ้างว่าล่าสุด');
   ok(f.pinCard(f.MOCK.pinned[0]).indexOf('ล่าสุด') >= 0, 'ใบใหม่สุดของช่องถึงจะพูดว่าล่าสุด');
+});
+
+test('จบเกมแล้ว: โชว์ FT + ทาสีทั้งใบตามผล 1X2', () => {
+  const win = f.pinCard(f.MOCK.pinned[0]);         /* เดา 1 · จบ 2-0 = ถูก */
+  ok(win.indexOf('FT 2-0 (1-0)') >= 0, 'ต้องโชว์สกอร์จริง');
+  ok(/class="card pick pin ok"/.test(win), 'ถูก = เขียวพาสเทลทั้งใบ');
+
+  const lose = f.pinCard(f.MOCK.pinned[1]);        /* เดา 1 · จบ 0-2 = ผิด */
+  ok(lose.indexOf('FT 0-2') >= 0, 'ใบที่ผิดก็ต้องโชว์สกอร์จริง');
+  ok(/class="card pick pin bad"/.test(lose), 'ผิด = แดงพาสเทลทั้งใบ');
+
+  const none = f.pinCard(f.MOCK.pinned[2]);        /* ยังไม่มีผล */
+  eq(none.indexOf('FT '), -1, 'ไม่มีผล = ไม่มีบรรทัด FT');
+  eq(/class="card pick pin ok"|class="card pick pin bad"/.test(none), false,
+     'ยังไม่เตะห้ามทาสี');
 });
 
 test('ไม่รู้วันเวลาเตะ = ไม่มีบรรทัดวันเวลาโผล่มามั่ว', () => {
@@ -166,7 +181,7 @@ test('kickText — รู้ไม่ครบก็โชว์เท่าท�
 
 test('renderForebet ปักหมุดไว้บนสุด และไม่โผล่ซ้ำในลิสต์ปกติ', () => {
   const html = f.renderForebet(f.MOCK, Date.now());
-  eq((html.match(/class="card pick pin"/g) || []).length, 3, 'ปักหมุด 3 ใบ');
+  eq((html.match(/class="card pick pin( ok| bad)?"/g) || []).length, 3, 'ปักหมุด 3 ใบ');
   eq((html.match(/Premier League/g) || []).length, 1, 'คู่ปักหมุดต้องโผล่ใบเดียว');
   const iPin = html.indexOf('FEATURED MATCH'), iNorm = html.indexOf('อินเตอร์');
   ok(iPin >= 0 && iNorm >= 0 && iPin < iNorm, 'ใบปักหมุดต้องอยู่บนใบปกติ');

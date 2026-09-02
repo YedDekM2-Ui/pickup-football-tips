@@ -976,3 +976,102 @@ test('ได้ 200 แต่ไม่ใช่หน้าจริง = ต้
   g.fbSnapRun_();
   ok(g.fbLastReport_().trail.indexOf('(ไม่ใช่หน้า)') >= 0, 'ต้องติดป้ายว่าไม่ใช่หน้า');
 });
+
+/* ── เกรดใบปักหมุดย้อนหลัง (fbGradePicks_) ────────────────────────────
+   ตัวหาสกอร์จริงอยู่คนละไฟล์ (Compat.gs/FootballTips.gs) ที่นี่ไม่ได้โหลด
+   จึงใส่ของปลอมแทนได้ตรง ๆ — เทสต์นี้พิสูจน์ "กติกาการตัดสิน" ไม่ใช่ตัวดึงเน็ต */
+function gradeEnv(picks, scoreTable, today) {
+  const app = new FakeSpreadsheetApp(bookOf(picks));
+  const seen = [];
+  const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
+    SpreadsheetApp: app,
+    PropertiesService: {
+      getScriptProperties: () => ({ getProperty: k => ({ SHEET_ID: 'S' })[k] || null })
+    },
+    Session: { getScriptTimeZone: () => 'Asia/Bangkok' },
+    Utilities: { formatDate: () => today || '2026-08-26' },
+    UrlFetchApp: { fetch: () => fakeResponse(200, '') },
+    /* ของปลอมแทนตัวดึงผลจากเน็ต */
+    fbtFeedUrl_: (d) => { seen.push(d); return 'u/' + d; },
+    fbFetchJsonText_: (u) => u,
+    fbtParseFeed_: (u) => scoreTable[u.replace('u/', '')] || {},
+    fbLookupScore_: (scores, home, away) => scores[String(home) + '|' + String(away)] || null,
+    fbDayShift_: (d, k) => {
+      /* บวกวันแบบ UTC ล้วน — toISOString ของเวลาท้องถิ่น +07 จะถอยกลับไปวันเดิม */
+      const t = new Date(d + 'T00:00:00Z');
+      t.setUTCDate(t.getUTCDate() + k);
+      return t.toISOString().slice(0, 10);
+    }
+  });
+  g.__app = app; g.__days = seen;
+  return g;
+}
+/** อ่านค่าช่อง สกอร์จริง/ถูกผิด ของแถวที่ i (เริ่ม 0) */
+function gradeRow(g, i) {
+  const r = g.readObjects_('PICKS')[i];
+  return [String(r['สกอร์จริง'] || ''), String(r['ถูกผิด'] || '')];
+}
+
+test('เกรดย้อนหลัง: เจอสกอร์ = เติมทั้งสกอร์จริงและถูกผิด', () => {
+  const g = gradeEnv([
+    pickRow({ 'วันที่': '2026-08-25', 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': '1' }),
+    pickRow({ 'วันที่': '2026-08-25', 'ทีมเหย้า': 'Chelsea', 'ทีมเยือน': 'Everton', 'เดาผล': '1' })
+  ], { '2026-08-25': { 'Arsenal|Leeds': [2, 0, 1, 0], 'Chelsea|Everton': [0, 2, 0, 1] } });
+
+  g.fbGradePicks_();
+  eq(gradeRow(g, 0)[0], '2-0 (1-0)', 'สกอร์เต็มพร้อมครึ่งแรก');
+  eq(gradeRow(g, 0)[1], 'ถูก');
+  eq(gradeRow(g, 1)[1], 'ผิด', 'เดาเจ้าบ้านแต่แพ้ = ผิด');
+});
+
+test('เกรดย้อนหลัง: แถวที่มีสกอร์จริงแล้ว ห้ามแตะซ้ำ', () => {
+  const g = gradeEnv([
+    pickRow({ 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': '1',
+      'สกอร์จริง': '9-9', 'ถูกผิด': 'ถูก' })
+  ], { '2026-08-25': { 'Arsenal|Leeds': [0, 5] } });
+
+  g.fbGradePicks_();
+  eq(gradeRow(g, 0)[0], '9-9', 'ของเก่าต้องอยู่เหมือนเดิม');
+  eq(gradeRow(g, 0)[1], 'ถูก');
+});
+
+test('เกรดย้อนหลัง: คู่ที่ยังไม่ถึงวันเตะ = ไม่ยุ่ง และไม่ไปโหลดวันนั้น', () => {
+  const g = gradeEnv([
+    pickRow({ 'วันที่': '2026-09-30', 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': '1' })
+  ], {});
+
+  const msg = g.fbGradePicks_();
+  eq(gradeRow(g, 0)[0], '');
+  eq(g.__days.indexOf('2026-09-30'), -1, 'ห้ามไปดึงผลของวันที่ยังไม่ถึง');
+  ok(msg.indexOf('ยังไม่เตะ 1 คู่') >= 0, 'ต้องรายงานว่ามีคู่ค้างอยู่');
+});
+
+test('เกรดย้อนหลัง: หาสกอร์ไม่เจอ = ปล่อยว่าง ไม่เดาให้', () => {
+  const g = gradeEnv([
+    pickRow({ 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': '1' })
+  ], { '2026-08-25': {} });
+
+  const msg = g.fbGradePicks_();
+  eq(gradeRow(g, 0).join('|'), '|', 'ต้องยังว่างทั้งสองช่อง');
+  ok(msg.indexOf('หาไม่เจอ 1 คู่') >= 0);
+});
+
+test('เกรดย้อนหลัง: ไม่ได้ทายผลไว้ = ใส่แค่สกอร์ ไม่ตัดสินถูกผิด', () => {
+  const g = gradeEnv([
+    pickRow({ 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': '' })
+  ], { '2026-08-25': { 'Arsenal|Leeds': [1, 1] } });
+
+  g.fbGradePicks_();
+  eq(gradeRow(g, 0)[0], '1-1');
+  eq(gradeRow(g, 0)[1], '', 'ไม่มีคำทาย = ตัดสินไม่ได้');
+});
+
+test('เกรดย้อนหลัง: คู่ดึกต้องเผื่อไปดูผลของวันถัดไปด้วย', () => {
+  const g = gradeEnv([
+    pickRow({ 'วันที่': '2026-08-24', 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': 'X' })
+  ], { '2026-08-25': { 'Arsenal|Leeds': [1, 1] } });
+
+  g.fbGradePicks_();
+  eq(gradeRow(g, 0)[0], '1-1', 'ผลไปโผล่ feed วันถัดไปก็ต้องเจอ');
+  eq(gradeRow(g, 0)[1], 'ถูก', 'ทายเสมอแล้วเสมอจริง');
+});

@@ -148,6 +148,9 @@ function pickOut_(r, tmap) {
     'เปอร์เซ็นต์': Number(r['เปอร์เซ็นต์']) || 0,
     'ราคา': Number(r['ราคา']) || 0,
     'ดึงเมื่อ': stamp_(r['สร้างเมื่อ']),   /* คู่ปักหมุดต้องบอกได้ว่าภาพนี้ของตอนไหน */
+    /* ผลจริง — ว่างได้ (คู่ที่ยังไม่เตะ/หาผลไม่เจอ) หน้าเว็บจะไม่ทาสีใบนั้น */
+    'สกอร์จริง': noDate_(r['สกอร์จริง']),
+    'ถูกผิด': String(r['ถูกผิด'] || ''),
     /* ตลาดจากหน้าของคู่ — เรทกับเปอร์เซ็นต์ส่งเป็น "ข้อความ" ตามที่เขาโชว์ (+150/-208) ห้ามแปลงเป็นตัวเลข */
     'เรทOver': noDate_(r['เรท Over']),
     'เรทBTTSYes': noDate_(r['เรท BTTS YES']),
@@ -285,6 +288,8 @@ function doGet(e) {
        fbhist/fbcrit = ของดิบให้ตัวคัดบอลเอาไปคิดเกณฑ์เอง — คาย JSON ดิบ ห้ามห่อ
        ทางลงรายการทีเด็ดอยู่ที่ doPost (?p=fbtips) เพราะส่งมาทีละหลายสิบคู่ */
     if (p === 'fbgrade') return jsonOut_({ ok: true, ผล: fbtGradeTips_() });
+    /* pickgrade = เกรดใบปักหมุด (แท็บ PICKS) ย้อนหลัง — เติมสกอร์จริง+ถูกผิดจาก feed */
+    if (p === 'pickgrade') return jsonOut_({ ok: true, ผล: fbGradePicks_() });
     if (p === 'fbstat')  return jsonOut_({ ok: true, ข้อความ: fbtStatsText_(q.d || 30) });
     if (p === 'fbhist')  return textOut_(fbtHistoryJson_(String(q.fbhist || q.d || '')));
     if (p === 'fbcrit')  return textOut_(fbtCritJson_(q.d || 45));

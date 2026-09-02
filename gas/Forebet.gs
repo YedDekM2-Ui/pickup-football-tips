@@ -1105,7 +1105,7 @@ function fbRowDay_(row) {
 }
 
 /** คู่ปักหมุดบนหน้า 1 = ทุกภาพนิ่งที่ยังไม่เตะ เรียงใหม่ก่อน (FEATURED แล้วค่อย POTD)
-    ใบใหม่สุดของแต่ละช่องติดธง 'ล่าสุด' ไว้ ให้หน้าเว็บแยกคำว่า "ล่าสุด" กับ "จับภาพ" ได้ */
+    ใบใหม่สุดของแต่ละช่องติดธง 'ล่าสุด' ไว้ ให้หน้าเว็บแยกคำว่า "ล่าสุด" กับ "อัพเดท" ได้ */
 function fbPinned_(pickRows, tmap) {
   var kinds = [FB_KIND.FEATURED, FB_KIND.POTD], out = [], rows = pickRows || [];
   for (var k = 0; k < kinds.length; k++) {
@@ -1143,4 +1143,95 @@ function fbHistory_(pickRows, tmap, maxDays, maxRows) {
     hist[keys[i]] = list;
   }
   return { days: days, hist: hist };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   เกรดใบปักหมุดย้อนหลัง — เติม "สกอร์จริง" + "ถูกผิด" ของแท็บ PICKS
+   ทำไมต้องมี: แถวในชีตเขียนช่องนี้เป็นค่าว่างมาตั้งแต่วันแรก ไม่เคยมีใครเติม
+               หน้าเว็บเลยไม่มีทางรู้ว่าใบไหนถูกใบไหนผิด
+   ที่มาของสกอร์: feed getrs.php ของ forebet (ตัวเดียวกับที่ FootballTips ใช้) วิ่งผ่าน fbProxy_()
+   กติกาที่ยึดจากของเดิม:
+     • แถวที่มีสกอร์จริงแล้ว = จบไปแล้ว ห้ามแตะซ้ำ
+     • เจอสกอร์ = เติมเสมอ แม้ 'เดาผล' จะแปลกจนตัดสินถูกผิดไม่ได้
+     • PICKS ไม่มีช่องรหัสคู่ → จับคู่ด้วยชื่อทีมอย่างเดียว (mid = '')
+     • เขียนกลับทีเดียวต่อคอลัมน์ — setValue ทีละช่องไม่เคยจบใน 6 นาที
+   ───────────────────────────────────────────────────────────── */
+var FB_GRADE_MS = 240000;      /* งบเวลาโหลด feed ต่อรอบ เหลือที่ให้เขียนชีตทัน 6 นาที */
+
+/** ตัดสิน 1X2: คืน 'ถูก'/'ผิด' หรือ '' ถ้าตัดสินไม่ได้ (ไม่ได้ทายผลไว้) */
+function fbJudge1x2_(pick, h, a) {
+  var w = String(pick === null || pick === undefined ? '' : pick).trim().toUpperCase();
+  if (w !== '1' && w !== 'X' && w !== '2') return '';
+  var real = h > a ? '1' : (h < a ? '2' : 'X');
+  return w === real ? 'ถูก' : 'ผิด';
+}
+
+function fbGradePicks_() {
+  var sh = sheetIfExists_(SHEETS.PICKS);
+  if (!sh || sh.getLastRow() < 2) return 'ไม่มีข้อมูลให้เกรด';
+
+  var vals = sh.getDataRange().getValues();
+  var head = vals[0], idx = {};
+  for (var c = 0; c < head.length; c++) idx[String(head[c])] = c;
+  var cS = idx['สกอร์จริง'], cR = idx['ถูกผิด'];
+  if (cS === undefined || cR === undefined) return 'ชีตไม่มีช่อง สกอร์จริง/ถูกผิด';
+
+  var tz = Session.getScriptTimeZone() || 'Asia/Bangkok';
+  var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  var t0 = new Date().getTime();
+  var nRow = vals.length - 1;
+
+  /* 1️⃣ จดว่าต้องโหลดผลของวันไหนบ้าง — เอาเฉพาะแถวที่ยังไม่มีสกอร์ และวันเตะผ่านไปแล้ว */
+  var colS = [], colR = [], need = {}, pend = 0;
+  for (var i = 1; i <= nRow; i++) {
+    colS.push([vals[i][cS]]);
+    colR.push([vals[i][cR]]);
+    if (noDate_(vals[i][cS]).trim()) continue;          /* มีสกอร์แล้ว = จบ */
+    var o = {};
+    for (var h2 = 0; h2 < head.length; h2++) o[String(head[h2])] = vals[i][h2];
+    var d = fbRowDay_(o);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;       /* ไม่รู้วัน = หาผลไม่ได้ */
+    if (d > today) { pend++; continue; }                /* ยังไม่ถึงวันเตะ */
+    need[d] = 1;
+    need[fbDayShift_(d, 1)] = 1;                        /* คู่ดึกไปโผล่ feed ของวันถัดไป */
+  }
+
+  /* 2️⃣ โหลด feed — วันใหม่ก่อน ชนงบเวลาแล้วหยุด รอบหน้าค่อยเก็บวันเก่าต่อ */
+  var scores = {}, dates = Object.keys(need).sort().reverse(), fetched = 0;
+  var maxDate = fbDayShift_(today, 1);
+  for (var u = 0; u < dates.length; u++) {
+    if (new Date().getTime() - t0 > FB_GRADE_MS) break;
+    if (dates[u] > maxDate) continue;
+    var one = fbtParseFeed_(fbFetchJsonText_(fbtFeedUrl_(dates[u])));
+    fetched++;
+    for (var k in one) if (!(k in scores)) scores[k] = one[k];
+  }
+
+  /* 3️⃣ ตัดสิน */
+  var found = 0, graded = 0, miss = 0;
+  for (var r = 1; r <= nRow; r++) {
+    var j = r - 1;
+    if (noDate_(colS[j][0]).trim()) continue;
+    var d2 = fbRowDay_((function () {
+      var o2 = {};
+      for (var h3 = 0; h3 < head.length; h3++) o2[String(head[h3])] = vals[r][h3];
+      return o2;
+    })());
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d2) || d2 > today) continue;
+    var sc = fbLookupScore_(scores, vals[r][idx['ทีมเหย้า']], vals[r][idx['ทีมเยือน']], '');
+    if (!sc) { miss++; continue; }                      /* ยังไม่จบ / เลื่อน / จับชื่อไม่ติด */
+    found++;
+    colS[j] = [sc[0] + '-' + sc[1] + (sc[2] != null ? ' (' + sc[2] + '-' + sc[3] + ')' : '')];
+    var res = fbJudge1x2_(vals[r][idx['เดาผล']], sc[0], sc[1]);
+    if (!res) continue;                                 /* ไม่ได้ทายผล → ใส่แค่สกอร์ */
+    colR[j] = [res];
+    graded++;
+  }
+
+  sh.getRange(2, cS + 1, nRow, 1).setValues(colS);
+  sh.getRange(2, cR + 1, nRow, 1).setValues(colR);
+
+  return 'เติมสกอร์ ' + found + ' คู่ · ตัดสินถูกผิด ' + graded + ' คู่ · โหลด ' + fetched +
+         ' วัน = ' + Object.keys(scores).length + ' คีย์ · หาไม่เจอ ' + miss +
+         ' คู่ · ยังไม่เตะ ' + pend + ' คู่';
 }
