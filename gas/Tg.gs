@@ -66,12 +66,20 @@ function tgHookUrl_(execUrl) {
 function tgSetHook_(execUrl) {
   if (!tgTok_()) return { ok: false, error: 'ยังไม่ได้ตั้ง TG_TOKEN ที่ Script Properties' };
   if (!prop_('TG_HOOK_KEY')) return { ok: false, error: 'ยังไม่ได้ตั้ง TG_HOOK_KEY ที่ Script Properties' };
-  if (!execUrl) return { ok: false, error: 'ไม่รู้ที่อยู่เว็บแอป ส่ง &url= มาด้วย' };
+  /* จำที่อยู่เว็บแอปไว้ตั้งแต่ครั้งแรก ครั้งต่อไปกด ?p=hook เปล่า ๆ ก็ผูกใหม่ได้
+     เพราะเวลาบอทเงียบ เจ้าของอยู่หน้ามือถือ พิมพ์ที่อยู่ยาว ๆ ใหม่ไม่ไหว
+     (ถามตัวเองไม่ได้ว่าที่อยู่ตัวเองคืออะไร ต้องใช้สิทธิ์ script.scriptapp ซึ่งจะบังคับให้กดอนุญาตใหม่ทั้งชุด) */
+  var u = String(execUrl || '').trim() || String(prop_('EXEC_URL') || '');
+  if (!u) return { ok: false, error: 'ไม่รู้ที่อยู่เว็บแอป ส่ง &url= มาด้วย' };
+  execUrl = u;
   var r = tgApi_('setWebhook', {
     url: tgHookUrl_(execUrl),
     allowed_updates: ['message'],
     drop_pending_updates: true
   });
+  if (r.ok === true) {
+    try { PropertiesService.getScriptProperties().setProperty('EXEC_URL', execUrl); } catch (e) { /* จำไม่ได้ก็ไม่เป็นไร */ }
+  }
   /* ห้ามคาย url กลับออกไป เพราะในนั้นมีกุญแจ */
   return { ok: r.ok, error: r.error || '', 'ผูกแล้ว': r.ok === true };
 }
@@ -91,10 +99,62 @@ function tgHookInfo_() {
   var r = tgApi_('getWebhookInfo', {});
   if (!r.ok) return { ok: false, error: r.error || 'ถามไม่ได้' };
   var w = r.result || {};
+  var u = String(w.url || ''), s = prop_('TG_HOOK_KEY');
+  /* 'กุญแจตรง' = กุญแจที่ฝากไว้กับเทเลแกรม ตรงกับกุญแจตอนนี้ไหม
+     ถ้าไม่ตรง = ทุกข้อความที่คนส่งมาโดนด่านตีกลับ {ok:false} บอทเลยเงียบสนิท
+     เทียบข้างในนี้แล้วคืนแค่ จริง/เท็จ — ห้ามคายทั้ง url และกุญแจออกไป */
   return { ok: true,
-    'ผูกอยู่': !!w.url,
+    'ผูกอยู่': !!u,
+    'กุญแจตรง': !!s && !!u && u.indexOf('s=' + encodeURIComponent(s)) >= 0,
     'คิวค้าง': Number(w.pending_update_count) || 0,
-    'พลาดล่าสุด': String(w.last_error_message || '') };
+    'พลาดล่าสุด': String(w.last_error_message || ''),
+    /* เวลาที่พลาด สำคัญพอ ๆ กับตัวข้อความ — เทเลแกรมเก็บ last_error ค้างไว้ไม่ล้างเอง
+       ของเมื่อวานกับของเมื่อกี้หน้าตาเหมือนกันเป๊ะ ถ้าไม่ดูเวลา */
+    'พลาดเมื่อ': w.last_error_date ? new Date(Number(w.last_error_date) * 1000).toISOString() : '' };
+}
+
+/** ไล่ปัญหา "กดปุ่มแล้วบอทเงียบ" โดยไม่ต้องขอกุญแจ APP_KEY จากเจ้าของ
+    บอทเงียบสนิทได้ 4 ทาง: ยังไม่ตั้งโทเคน · webhook หลุด · กุญแจฮุกไม่ตรง · ยังไม่ตั้งเจ้าของ
+    ทั้ง 4 ทางตอบได้ด้วย จริง/เท็จ ล้วน ๆ — ห้ามคายโทเคน เลขห้อง หรือ url (มีกุญแจอยู่ในนั้น) */
+/* ---------- กล่องดำ: จดว่าสายจากเทเลแกรมมาถึงไหนแล้วตาย ----------
+   "กดปุ่มแล้วบอทเงียบ" ตายได้หลายจุด และจากข้างนอกมันหน้าตาเหมือนกันหมด
+     ไม่มีรอยเลย = เทเลแกรมไม่ได้ยิงเข้ามา (คิวค้าง/ตีกลับ 302)
+     กุญแจไม่ตรง · ข้อความซ้ำ · ไม่ใช่เจ้าของ · ถึงตัวตอบ
+   จดแค่ "เวลา + ชื่อจุด" ห้ามจดเนื้อข้อความ ห้ามจดโทเคน
+   เลขห้องเก็บแยกไว้ที่ TG_LASTCHAT ให้ ?p=setchat&id=last หยิบไปตั้งได้ — ห้ามคายออกทาง ping */
+function tgMark_(stage, chat) {
+  try {
+    var ps = PropertiesService.getScriptProperties();
+    ps.setProperty('TG_LASTHIT', JSON.stringify({ 'เมื่อ': nowIso_(), 'จุด': String(stage || '') }));
+    if (chat) ps.setProperty('TG_LASTCHAT', String(chat));
+  } catch (e) { /* จดไม่ได้ ห้ามทำให้บอทตายตาม */ }
+}
+
+function tgLastHit_() {
+  try {
+    var raw = prop_('TG_LASTHIT');
+    if (!raw) return { 'เคยมีสายเข้า': false };
+    var o = JSON.parse(raw) || {};
+    return { 'เคยมีสายเข้า': true, 'เมื่อ': String(o['เมื่อ'] || ''), 'จุด': String(o['จุด'] || '') };
+  } catch (e) { return { 'เคยมีสายเข้า': false }; }
+}
+function tgDiag_() {
+  var d = {
+    'ตั้งโทเคนแล้ว': !!tgTok_(),
+    'ตั้งกุญแจฮุกแล้ว': !!prop_('TG_HOOK_KEY'),
+    'ตั้งเจ้าของแล้ว': !!tgChat_()
+  };
+  if (!d['ตั้งโทเคนแล้ว']) { d.ok = false; d.error = 'ยังไม่ได้ตั้ง TG_TOKEN'; return d; }
+  var w = tgHookInfo_();
+  if (!w.ok) { d.ok = false; d.error = w.error || 'ถาม webhook ไม่ได้'; return d; }
+  d.ok = true;
+  d['ผูกอยู่'] = w['ผูกอยู่'];
+  d['กุญแจตรง'] = w['กุญแจตรง'];
+  d['คิวค้าง'] = w['คิวค้าง'];
+  d['พลาดล่าสุด'] = w['พลาดล่าสุด'];
+  d['พลาดเมื่อ'] = w['พลาดเมื่อ'];
+  d['ฮุกล่าสุด'] = tgLastHit_();
+  return d;
 }
 
 /* ---------- เนื้อความที่บอทตอบ ---------- */
@@ -227,7 +287,7 @@ function tgFresh_(uid) {
 function tgHandle_(update, nowMs) {
   var msg = (update && update.message) || null;
   if (!msg) return '';
-  if (!tgFresh_(update && update.update_id)) return '';
+  if (!tgFresh_(update && update.update_id)) { tgMark_('ข้อความซ้ำ'); return ''; }
   var chat = String((msg.chat && msg.chat.id) || '');
   var text = String(msg.text || '').trim();
   if (!chat) return '';
@@ -235,11 +295,13 @@ function tgHandle_(update, nowMs) {
   var owner = tgChat_();
   if (!owner) {
     /* ยังไม่ตั้งเจ้าของ — บอกเลขห้องให้ไปใส่เอง แล้วจบ ไม่ทำอย่างอื่น */
+    tgMark_('ยังไม่ตั้งเจ้าของ', chat);
     var t0 = 'ยังไม่ได้ตั้งเจ้าของ\n\nเอาเลขนี้ไปใส่ใน Script Property ชื่อ TG_CHAT\n\n' + chat;
     tgSend_(chat, t0);
     return t0;
   }
-  if (chat !== owner) return '';          /* คนอื่นทัก = เงียบสนิท ไม่บอกว่ามีบอทอยู่ */
+  if (chat !== owner) { tgMark_('ไม่ใช่เจ้าของ', chat); return ''; }   /* คนอื่นทัก = เงียบสนิท ไม่บอกว่ามีบอทอยู่ */
+  tgMark_('ถึงตัวตอบ', chat);
 
   /* ตอบใต้ใบถามผลหวย (Reply) = เลขหวยแน่นอน ต้องจบที่ทางหวยเท่านั้น
      ด่านนี้ห้ามย้ายลงไปอยู่ใต้คำสั่งอื่น — บทเรียน PIKTAX 16 ส.ค. 69
@@ -372,6 +434,12 @@ function tgMe_() {
    ตั้งเสร็จทักไปหาห้องนั้นทันที — ถ้าข้อความไม่เด้ง แปลว่าเลขผิด รู้ได้ตรงนั้นเลย */
 function tgSetChat_(id) {
   var s = String(id || '').trim();
+  /* id=last = เอาห้องที่เพิ่งทักบอทมาตั้งเป็นเจ้าของ
+     มีไว้เพราะเลขห้องหาจากมือถือยาก และเวลา TG_CHAT ผิด บอทจะเงียบสนิทจนไม่รู้ว่าผิดตรงไหน */
+  if (s === 'last') {
+    s = String(prop_('TG_LASTCHAT') || '');
+    if (!s) return { ok: false, error: 'ยังไม่มีใครทักบอทมาเลย — ทักบอทสัก 1 ข้อความก่อน แล้วเปิดลิงก์นี้ซ้ำ' };
+  }
   if (!/^-?\d{5,}$/.test(s)) {
     return { ok: false, error: 'เลขห้องไม่ถูกแบบ ต้องเป็นตัวเลขล้วน (ห้องกลุ่มมีขีดนำหน้าได้)' };
   }

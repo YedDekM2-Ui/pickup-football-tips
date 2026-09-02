@@ -210,6 +210,24 @@ test('ผูกสำเร็จ ต้องไม่คายกุญแจ�
      'ที่ส่งให้เทเลแกรมต้องมีกุญแจติดไป');
 });
 
+/* 2 ก.ย. 69: บอทเงียบ แล้วท่าแก้คือ "ผูก webhook ใหม่" ซึ่งต้องพิมพ์ที่อยู่ exec ยาว ๆ จากมือถือ
+   ตัวสคริปต์ถามตัวเองไม่ได้ว่าที่อยู่ตัวเองคืออะไร (ต้องใช้สิทธิ์ที่จะบังคับให้กดอนุญาตใหม่ทั้งชุด)
+   เลยให้มันจำไว้ตอนผูกสำเร็จครั้งแรกแทน */
+test('ผูกสำเร็จแล้วต้องจำที่อยู่ไว้ ครั้งหน้ากดเปล่า ๆ ก็ผูกได้', () => {
+  const g = env({ TG_TOKEN: 'T', TG_HOOK_KEY: 'x' });
+  ok(g.tgSetHook_('https://example.com/exec').ok);
+  eq(g.prop_('EXEC_URL'), 'https://example.com/exec', 'ต้องจำที่อยู่ไว้');
+  const r2 = g.tgSetHook_('');
+  ok(r2.ok, 'ครั้งที่ 2 ไม่ต้องบอกที่อยู่ก็ได้');
+  eq(g.__sent[1].body.url, 'https://example.com/exec?p=tg&s=x', 'ต้องใช้ที่อยู่ที่จำไว้');
+});
+
+test('ผูกไม่สำเร็จ ห้ามจำที่อยู่ผิด ๆ ไว้', () => {
+  const g = env({ TG_HOOK_KEY: 'x' });            /* ไม่มีโทเคน = ผูกไม่ได้ */
+  ok(!g.tgSetHook_('https://ผิด/exec').ok);
+  eq(!!g.prop_('EXEC_URL'), false, 'ห้ามจำ');
+});
+
 test('tgHookUrl_ ไม่มีกุญแจ = คืนค่าว่าง', () => {
   const g = env({ TG_TOKEN: 'T' });
   eq(g.tgHookUrl_('https://example.com/exec'), '');
@@ -518,4 +536,137 @@ test('พิมพ์ /picktips แล้วได้ใบทีเด็ด �
      พอวันจริงเลยวันแข่งในข้อมูลทดสอบ คู่จะถูกกรองทิ้ง เทสต์ตกเองตามปฏิทิน */
   const out = g.tgHandle_({ message: { chat: { id: 111 }, text: '/picktips' } }, NOW_T);
   ok(out.indexOf('Arsenal') >= 0);
+});
+
+/* ---------- ไล่ปัญหา "กดปุ่มแล้วบอทเงียบ" ----------
+   บอทเงียบสนิทได้หลายทาง และทุกทางอยู่ "ก่อน" โค้ดตอบข้อความ ดูจากในโค้ดไม่เห็น
+   จึงต้องมีทางถามสภาพจากข้างนอกได้ โดยไม่ต้องใช้กุญแจ APP_KEY (เจ้าของอยู่บนมือถือ) */
+
+test('tgDiag_ บอกได้ว่ากุญแจฮุกที่ฝากไว้กับเทเลแกรม ไม่ตรงกับกุญแจตอนนี้', () => {
+  const g = env({ TG_TOKEN: 'T', TG_HOOK_KEY: 'ดอกใหม่', TG_CHAT: '111' });
+  g.UrlFetchApp.fetch = () => fakeResponse(200, JSON.stringify({
+    ok: true, result: { url: 'https://example.com/exec?p=tg&s=' + encodeURIComponent('ดอกเก่า'),
+                        pending_update_count: 7, last_error_message: '' }
+  }));
+  const d = g.tgDiag_();
+  eq(d.ok, true);
+  eq(d['ผูกอยู่'], true, 'ผูกอยู่จริง แต่คนละดอก');
+  eq(d['กุญแจตรง'], false, 'ต้องจับได้ว่าไม่ตรง');
+  eq(d['คิวค้าง'], 7);
+});
+
+test('tgDiag_ กุญแจตรง = จริง เมื่อฝากดอกเดียวกันไว้', () => {
+  const g = env({ TG_TOKEN: 'T', TG_HOOK_KEY: 'ดอกเดียวกัน', TG_CHAT: '111' });
+  g.UrlFetchApp.fetch = () => fakeResponse(200, JSON.stringify({
+    ok: true, result: { url: 'https://example.com/exec?p=tg&s=' + encodeURIComponent('ดอกเดียวกัน') }
+  }));
+  const d = g.tgDiag_();
+  eq(d['กุญแจตรง'], true);
+  eq(d['ตั้งเจ้าของแล้ว'], true);
+});
+
+test('tgDiag_ webhook หลุด = ผูกอยู่ เท็จ', () => {
+  const g = env({ TG_TOKEN: 'T', TG_HOOK_KEY: 'k' });
+  g.UrlFetchApp.fetch = () => fakeResponse(200, JSON.stringify({ ok: true, result: { url: '' } }));
+  const d = g.tgDiag_();
+  eq(d['ผูกอยู่'], false);
+  eq(d['ตั้งเจ้าของแล้ว'], false, 'ยังไม่ตั้ง TG_CHAT ก็ต้องบอก — เป็นอีกทางที่ทำให้เงียบ');
+});
+
+test('tgDiag_ ห้ามคายโทเคน เลขห้อง หรือที่อยู่ webhook', () => {
+  const g = env({ TG_TOKEN: 'โทเคนลับ', TG_HOOK_KEY: 'กุญแจลับ', TG_CHAT: '123456789' });
+  g.UrlFetchApp.fetch = () => fakeResponse(200, JSON.stringify({
+    ok: true, result: { url: 'https://example.com/exec?p=tg&s=' + encodeURIComponent('กุญแจลับ') }
+  }));
+  const j = JSON.stringify(g.tgDiag_());
+  ok(j.indexOf('โทเคนลับ') < 0, 'ห้ามมีโทเคน');
+  ok(j.indexOf('กุญแจลับ') < 0, 'ห้ามมีกุญแจ');
+  ok(j.indexOf('123456789') < 0, 'ห้ามมีเลขห้อง');
+  ok(j.indexOf('example.com') < 0, 'ห้ามมีที่อยู่');
+});
+
+test('ยังไม่ตั้งโทเคน = tgDiag_ ต้องบอกเหตุ ไม่ใช่พัง', () => {
+  const g = env({});
+  const d = g.tgDiag_();
+  eq(d.ok, false);
+  eq(d['ตั้งโทเคนแล้ว'], false);
+});
+
+test('?p=ping&tg=1 = ดูสภาพบอทได้โดยไม่ต้องมีกุญแจ APP_KEY', () => {
+  const g = env({ TG_TOKEN: 'T', TG_HOOK_KEY: 'k', TG_CHAT: '111', APP_KEY: 'ss1234' });
+  g.UrlFetchApp.fetch = () => fakeResponse(200, JSON.stringify({
+    ok: true, result: { url: 'https://example.com/exec?p=tg&s=k' }
+  }));
+  const raw = g.doGet({ parameter: { p: 'ping', tg: '1' } }).getContent();
+  const r = JSON.parse(raw);
+  eq(r.ok, true);
+  eq(r['เทเลแกรม']['กุญแจตรง'], true);
+  ok(raw.indexOf('ss1234') < 0, 'ห้ามคายกุญแจหน้าเว็บ');
+  ok(raw.indexOf('example.com') < 0, 'ห้ามคายที่อยู่ webhook');
+});
+
+test('ping ธรรมดา (ไม่ใส่ tg=1) ต้องไม่ไปกวนเทเลแกรม', () => {
+  const g = env({ TG_TOKEN: 'T', TG_HOOK_KEY: 'k', TG_CHAT: '111' });
+  let hit = 0;   /* นับเฉพาะที่ยิงหาเทเลแกรม — ping ปกติมันออกไปดึง forebet อยู่แล้ว */
+  g.UrlFetchApp.fetch = (u) => { if (String(u).indexOf('api.telegram.org') >= 0) hit++;
+    return fakeResponse(200, JSON.stringify({ ok: true, result: {} })); };
+  const r = JSON.parse(g.doGet({ parameter: { p: 'ping' } }).getContent());
+  eq(r.ok, true);
+  eq(r['เทเลแกรม'], undefined);
+  eq(hit, 0, 'ห้ามยิงหาเทเลแกรมทุกครั้งที่มีคน ping');
+});
+
+/* ---------- กล่องดำ: สายจากเทเลแกรมมาถึงไหนแล้วตาย ----------
+   บทเรียน 2 ก.ย. 69: บอทเงียบสนิท แต่ทุกอย่างที่ดูจากข้างนอกบอกว่า "ตั้งครบแล้ว"
+   (โทเคนใช้ได้ · กุญแจตรง · ผูก webhook อยู่) แยกไม่ออกว่าเทเลแกรมไม่ได้ยิงมา
+   หรือยิงมาแล้วตกด่านไหน — ต้องให้มันจดรอยไว้เอง */
+
+test('คนอื่นทัก = จดรอยว่าตกด่าน "ไม่ใช่เจ้าของ" และเก็บเลขห้องไว้ให้ตั้งทีหลัง', () => {
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '111' });
+  g.tgHandle_(msg(999, '/บิล'));
+  const h = g.tgLastHit_();
+  eq(h['จุด'], 'ไม่ใช่เจ้าของ', 'ต้องรู้ว่าตายเพราะเลขห้องไม่ตรง');
+  eq(g.prop_('TG_LASTCHAT'), '999', 'ต้องเก็บห้องที่เพิ่งทักไว้');
+});
+
+test('เจ้าของทัก = จดรอยว่า "ถึงตัวตอบ"', () => {
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '111' });
+  g.tgHandle_(msg(111, '/เมนู'));
+  eq(g.tgLastHit_()['จุด'], 'ถึงตัวตอบ', 'ถึงตัวตอบแล้วต้องจดว่าถึง');
+});
+
+test('ข้อความซ้ำ = จดรอยว่า "ข้อความซ้ำ" ไม่ใช่เงียบหาย', () => {
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '111' }, [], {
+    CacheService: { getScriptCache: () => ({ get: () => '1', put() {} }) }
+  });
+  g.tgHandle_(Object.assign({ update_id: 7 }, msg(111, '/บิล')));
+  eq(g.tgLastHit_()['จุด'], 'ข้อความซ้ำ', 'โดนด่านกันซ้ำต้องรู้');
+  eq(g.__sent.length, 0, 'ข้อความซ้ำห้ามตอบ');
+});
+
+test('ยังไม่เคยมีสายเข้า = บอกว่าไม่เคย ไม่ใช่พัง', () => {
+  const g = env({ TG_TOKEN: 'T' });
+  eq(g.tgLastHit_()['เคยมีสายเข้า'], false, 'ยังไม่มีรอย = ยังไม่เคยมีใครยิงเข้ามา');
+});
+
+test('?p=setchat&id=last = ตั้งห้องที่เพิ่งทักเป็นเจ้าของ (เลขห้องหาจากมือถือยาก)', () => {
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '111' });
+  g.tgHandle_(msg(220022, '/บิล'));             /* ห้องจริงของเจ้าของ แต่ TG_CHAT ตั้งผิดไว้ */
+  const r = g.tgSetChat_('last');
+  eq(r.ok, true, 'ต้องตั้งได้');
+  eq(g.prop_('TG_CHAT'), '220022', 'ต้องกลายเป็นห้องที่เพิ่งทัก');
+});
+
+test('setchat&id=last ตอนยังไม่มีใครทัก = บอกให้ไปทักก่อน ไม่ใช่ตั้งค่าเปล่า', () => {
+  const g = env({ TG_TOKEN: 'T' });
+  const r = g.tgSetChat_('last');
+  eq(r.ok, false, 'ไม่มีของให้ตั้ง ต้องไม่บอกว่าสำเร็จ');
+  eq(!!g.prop_('TG_CHAT'), false, 'ห้ามตั้งค่าเปล่าทับ');
+});
+
+test('รอยที่คายออกทาง ping ห้ามมีเลขห้องติดไปด้วย', () => {
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '111' });
+  g.tgHandle_(msg(987654321, '/บิล'));
+  const s = JSON.stringify(g.tgLastHit_());
+  eq(s.indexOf('987654321'), -1, 'เลขห้องต้องอยู่แค่ในพร็อพเพอร์ตี้ ไม่ออกหน้าจอ');
 });

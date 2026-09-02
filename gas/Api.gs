@@ -198,14 +198,24 @@ function payloadAll_(nowMs) {
    ยังไม่ตั้ง = ปิดตาย ไม่ใช่เปิดหมด (บทเรียน ADMIN_KEY ของ PIKTAX) */
 function keyOk_(q) {
   var want = prop_('APP_KEY');
-  if (!want) return false;
-  return String((q && q.k) || '') === want;
+  /* SCRAPER_KEY = กุญแจ "ใบที่ 2" สำหรับเครื่องขูดบน GitHub Actions โดยเฉพาะ
+     มีเพราะ APP_KEY อ่านจากข้างนอกไม่ได้ (Script Properties ไม่มีทาง API ให้อ่าน)
+     ใบนี้ตั้งได้ครั้งเดียวตอนยังว่าง (ดู claimKey_) แล้วปิดตาย เปลี่ยนทีหลังต้องมีกุญแจ + setprop */
+  var alt = prop_('SCRAPER_KEY');
+  if (!want && !alt) return false;
+  /* k= = ภาษาบอทนี้ · admin= = ภาษาเก่าที่เครื่องขูดบน GitHub Actions พูดอยู่
+     กุญแจตัวเดียวกัน (APP_KEY) — ย้ายบอทแล้วเจ้าของเปลี่ยนแค่ค่า secret ไม่ต้องแก้โค้ด python */
+  var got = String((q && (q.k || q.admin)) || '');
+  if (!got) return false;
+  return (!!want && got === want) || (!!alt && got === alt);
 }
 
 function doGet(e) {
   try {
     var q = (e && e.parameter) ? e.parameter : {};
-    var p = q.p ? String(q.p) : 'all';
+    /* ตัวแปลภาษาเก่า → ใหม่: ?action=f5alert ใช้ทางเดียวกับ ?p=f5alert
+       ?ff=<url> ของเดิมไม่มีชื่อทาง มันเอา url มาแปะเป็นชื่อพารามิเตอร์เลย */
+    var p = q.p ? String(q.p) : (q.action ? String(q.action) : (q.ff ? 'ff' : 'all'));
     /* ping = ทางเดียวที่ไม่ต้องใช้กุญแจ จึงคายได้แค่ของที่ไม่ใช่ความลับ
        พ่วง "กล่องดำ" ของรอบดึงล่าสุดมาด้วย (รหัส HTTP / ไปทางไหน / ได้กี่คู่ / พลาดเพราะอะไร)
        ไม่มีชื่อคู่ ไม่มีข้อมูลในชีต ไม่มีกุญแจ — มีไว้ให้ไล่ปัญหาได้โดยไม่ต้องขอกุญแจจากเจ้าของ
@@ -215,8 +225,22 @@ function doGet(e) {
       try { fbAutoSnap_(readObjects_(SHEETS.PICKS), Date.now()); } catch (err) { /* ping ต้องตอบได้เสมอ */ }
       var alog = '';
       try { alog = PropertiesService.getScriptProperties().getProperty('AUTH_LOG') || ''; } catch (err) { alog = ''; }
-      return jsonOut_({ ok: true, at: nowIso_(), กดอนุญาตล่าสุด: alog, ดึงล่าสุด: fbLastReport_() });
+      var pong = { ok: true, at: nowIso_(), กดอนุญาตล่าสุด: alog, ดึงล่าสุด: fbLastReport_() };
+      /* ?p=ping&tg=1 = ไล่ปัญหา "กดปุ่มแล้วบอทเงียบ" ตอนไม่มีกุญแจในมือ
+         คายแค่ จริง/เท็จ กับสาเหตุ — ไม่มีโทเคน ไม่มีเลขห้อง ไม่มี url */
+      if (String(q.tg || '') === '1') {
+        try { pong['เทเลแกรม'] = tgDiag_(); }
+        catch (err) { pong['เทเลแกรม'] = { ok: false, error: String(err && err.message ? err.message : err) }; }
+      }
+      return jsonOut_(pong);
     }
+    /* ?ff= อยู่ "ก่อน" ด่านกุญแจ เพราะฝั่ง python ไม่เคยส่งกุญแจมาให้ทางนี้
+       ที่กันไว้แทนคือรายชื่อโดเมน: ยิงได้แค่ forebet.com เท่านั้น (ดู ffAllowed_)
+       ของที่ได้เป็นหน้าเว็บสาธารณะล้วน ไม่มีอะไรของเจ้าของอยู่ในนั้น */
+    if (p === 'ff') return textOut_(ffFetch_(q.ff || q.url));
+    /* claimkey อยู่ "ก่อน" ด่านกุญแจโดยตั้งใจ — เป็นทางเดียวที่ตั้งกุญแจใบที่ 2 ได้โดยไม่ต้องรู้ APP_KEY
+       ประตูนี้เปิดเฉพาะตอน SCRAPER_KEY ยังว่าง ตั้งแล้วปิดถาวร (ดู claimKey_) */
+    if (p === 'claimkey') return jsonOut_(claimKey_(q.v));
     if (!keyOk_(q)) return jsonOut_({ ok: false, needKey: true, error: 'ต้องใส่กุญแจ' });
     /* 2 ทางนี้ต้องอยู่หลังด่านกุญแจ — มันยิงเน็ตออกและเขียนชีต ไม่ใช่ทางอ่านเฉยๆ */
     if (p === 'snap') {
@@ -245,6 +269,8 @@ function doGet(e) {
        f5del   = ลบใบทดสอบที่ทำ % เพี้ยน · f5poke = สะกิด workflow ให้ตื่น
        f5stat/f5report = ดูข้อความเดียวกับที่บอทตอบ โดยไม่ต้องกวนแชท
        f5dump  = คาย JSONL ดิบ ห้ามห่อ (ฝั่งที่กินคือสคริปต์) */
+    /* notify = ทางสำรองของ fb_watch และทางเดียวของ fb_pick — ส่งข้อความเปล่า ไม่จดชีต */
+    if (p === 'notify') return textOut_(notify_(q.text));
     if (p === 'f5alert')  return jsonOut_({ ok: true, ผล: f5Alert_(q.text, q.meta) });
     if (p === 'f5stamp')  return jsonOut_({ ok: true, ผล: f5Stamp_(q.data) });
     if (p === 'f5grade')  return jsonOut_({ ok: true, ผล: f5Grade_(q.data) });
@@ -279,6 +305,10 @@ function doGet(e) {
   if (p === 'hook') return jsonOut_(tgSetHook_(String(q.url || '')));
     if (p === 'hookinfo') return jsonOut_(tgHookInfo_());
     if (p === 'hookoff') return jsonOut_(tgOffHook_());   /* สวิตช์ปิดบอท กดจากมือถือได้ */
+    /* ตั้งค่าลับ/ดูว่าตั้งครบยัง จากลิงก์ — หน้า Script Properties กดไม่ได้บนมือถือ
+       คายกลับแค่ชื่อกับความยาว ค่าจริงไม่วิ่งออกไป (ดู setProp_ ใน Compat.gs) */
+    if (p === 'setprop') return jsonOut_(setProp_(q.n, q.v));
+    if (p === 'cfgstat') return jsonOut_(cfgStat_());
     /* เปิดหน้าเว็บ = ถือโอกาสไล่คิดผลบิลที่เตะจบแล้ว (มีตัวหน่วง 10 นาทีในตัว)
        โปรเจกต์นี้ไม่มี trigger โดยตั้งใจ งานอัตโนมัติจึงเกาะรอบเปิดหน้าเว็บแทน
        พังตรงนี้ห้ามลามไปทำให้หน้าเว็บไม่ขึ้น */
@@ -308,7 +338,12 @@ function doPost(e) {
        ตอบ 200 เสมอ ไม่งั้นเทเลแกรมยิงซ้ำจนข้อความเด้งซ้อน */
     if (String(q.p || body.p || '') === 'tg') {
       var hk = prop_('TG_HOOK_KEY');
-      if (!hk || String(q.s || '') !== hk) return jsonOut_({ ok: false });
+      /* จดรอยไว้ก่อนทุกด่าน — ไม่งั้น "บอทเงียบ" กับ "เทเลแกรมไม่ได้ยิงมา" หน้าตาเหมือนกันจากข้างนอก */
+      try { tgMark_('ถึงประตู'); } catch (erm) { /* จดไม่ได้ก็ต้องรับสายต่อ */ }
+      if (!hk || String(q.s || '') !== hk) {
+        try { tgMark_('กุญแจไม่ตรง'); } catch (erm2) { /* เหมือนกัน */ }
+        return jsonOut_({ ok: false });
+      }
       try { tgHandle_(body); } catch (er2) { /* พังก็ต้องตอบ 200 */ }
       return jsonOut_({ ok: true });
     }

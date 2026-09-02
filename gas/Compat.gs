@@ -185,3 +185,86 @@ function tgSendForceReply_(chatId, text) {
     reply_markup: JSON.stringify({ force_reply: true, selective: false })
   });
 }
+
+/* ==========================================================
+   ทางที่ "เครื่องขูดบน GitHub Actions" เรียก — ย้ายมาจากบอทเก่า (PIKTAX)
+   เครื่องขูดพูดภาษาเก่า: ?admin=<กุญแจ>&action=<ชื่อ>  และ  ?ff=<url>
+   ตัวแปลภาษาอยู่หัว doGet ใน Api.gs — ที่นี่มีแต่เนื้องาน
+   ========================================================== */
+
+/* ?ff= เป็นทางเดียวที่ "ไม่มีกุญแจ" (ฝั่ง python ไม่ได้ส่งมาแต่ไหนแต่ไร)
+   จึงต้องล็อกไว้ที่ forebet.com เท่านั้น ไม่งั้นมันคือพร็อกซีเปิดให้คนทั้งโลกใช้ */
+var FF_HOST = 'forebet.com';
+
+function ffAllowed_(url) {
+  var m = String(url || '').match(/^https:\/\/([^\/?#]+)/i);
+  if (!m) return false;
+  var host = m[1].toLowerCase().replace(/:\d+$/, '');
+  return host === FF_HOST || host.slice(-(FF_HOST.length + 1)) === '.' + FF_HOST;
+}
+
+/** คืน "ข้อความดิบ" ของหน้า forebet · ล้มแล้วคืนป้ายสั้น ๆ
+ *  ป้าย BAD_URL / FETCH_ERR คือสัญญาเดิมกับฝั่ง python (มันเช็กคำขึ้นต้นพวกนี้)
+ *  และสั้นกว่า 500 ตัวอักษร ฝั่ง forebet_api จึงนับเป็นล้มแล้วยิงซ้ำเอง */
+function ffFetch_(url) {
+  url = String(url || '').trim();
+  if (!ffAllowed_(url)) return 'BAD_URL';
+  var t = fbFetchJsonText_(url);            /* ตรงก่อน (ฟีด getrs.php) แล้วค่อยอ้อม markdown */
+  if (t) return t;
+  t = fbFetchForebetText_(url);             /* ยิงซ้ำทางอ้อม — กัน 429 ชั่วคราว */
+  return t || 'FETCH_ERR';
+}
+
+/** ?action=notify&text=.. — ทางสำรองของ fb_watch และทางเดียวของ fb_pick
+ *  ต้องมีคำว่า "notify OK" ในคำตอบ ฝั่ง python เช็กคำนี้ตรง ๆ */
+function notify_(text) {
+  text = String(text || '').trim();
+  if (!text) return 'notify: ไม่มี text';
+  if (!tgChat_()) return 'notify: ยังไม่มี TELEGRAM_CHAT_ID (ทัก /start ก่อน)';
+  var mid = f5Send_(text);
+  if (!mid) return 'notify: ส่ง Telegram ไม่ผ่าน';
+  return 'notify OK ' + mid;
+}
+
+/* ---------- ตั้งค่าลับจากลิงก์ (อยู่หลังด่านกุญแจแล้ว) ----------
+   บทเรียนจากบอทเก่า: หน้า Script Properties แทบกดไม่ได้บนมือถือ
+   ของที่ต้องตั้งจึงต้องมีทางตั้งผ่านลิงก์เสมอ
+   ⚠️ คายกลับได้แค่ "ตั้งแล้ว / ยาวกี่ตัว" ห้ามคายค่าจริงออกไป
+   ⚠️ APP_KEY ไม่อยู่ในรายชื่อ — ทับกุญแจประตูตัวเองไม่ได้ */
+var CFG_ALLOW = ['GH_TOKEN', 'JINA_KEY', 'FB_PROXY', 'FB_TZ_SHIFT', 'FOREBET_URL',
+                 'TG_TOKEN', 'TG_HOOK_KEY', 'SCRAPER_KEY'];
+
+/* ตั้งกุญแจใบที่ 2 (SCRAPER_KEY) ได้ "ครั้งเดียว" ตอนที่ยังว่างอยู่
+   ทำไมต้องมี: กุญแจตัวจริง APP_KEY อยู่ใน Script Properties อ่านจากข้างนอกไม่ได้เลย
+   เครื่องขูดบน GitHub Actions จึงต้องมีกุญแจของตัวเองที่ตั้งได้จากข้างนอก 1 ครั้ง
+   ตั้งแล้วประตูนี้ปิดถาวร (ตอบ "ตั้งไปแล้ว") จะเปลี่ยนต้องมีกุญแจเดิมแล้วใช้ ?p=setprop
+   ห้ามคายค่ากลับ คายแค่ยาวกี่ตัว */
+function claimKey_(v) {
+  var p = PropertiesService.getScriptProperties();
+  if (p.getProperty('SCRAPER_KEY')) return { ok: false, error: 'ตั้งไปแล้ว เปลี่ยนทางนี้ไม่ได้' };
+  v = String(v == null ? '' : v).trim();
+  if (v.length < 24) return { ok: false, error: 'กุญแจสั้นเกินไป ต้องอย่างน้อย 24 ตัว' };
+  p.setProperty('SCRAPER_KEY', v);
+  return { ok: true, ผล: 'ตั้งแล้ว', ยาว: v.length };
+}
+
+function setProp_(name, val) {
+  name = String(name || '').trim();
+  if (CFG_ALLOW.indexOf(name) < 0) return { ok: false, error: 'ตั้งได้เฉพาะ ' + CFG_ALLOW.join(' / ') };
+  var p = PropertiesService.getScriptProperties();
+  var v = String(val == null ? '' : val);
+  if (v === '') { p.deleteProperty(name); return { ok: true, ชื่อ: name, ผล: 'ลบแล้ว' }; }
+  p.setProperty(name, v);
+  return { ok: true, ชื่อ: name, ผล: 'ตั้งแล้ว', ยาว: v.length };
+}
+
+function cfgStat_() {
+  var p = PropertiesService.getScriptProperties();
+  var o = {};
+  CFG_ALLOW.concat(['APP_KEY', 'SHEET_ID', 'TG_CHAT']).forEach(function (k) {
+    /* คายแค่ "ตั้งแล้ว/ยังไม่ได้ตั้ง" กับความยาว ห้ามคายค่าจริง */
+    var v = p.getProperty(k);
+    o[k] = v ? ('ตั้งแล้ว (' + String(v).length + ' ตัว)') : 'ยังไม่ได้ตั้ง';
+  });
+  return { ok: true, ค่า: o };
+}
