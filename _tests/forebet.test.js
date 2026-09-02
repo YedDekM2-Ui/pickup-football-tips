@@ -983,10 +983,14 @@ test('ได้ 200 แต่ไม่ใช่หน้าจริง = ต้
 function gradeEnv(picks, scoreTable, today) {
   const app = new FakeSpreadsheetApp(bookOf(picks));
   const seen = [];
+  const P = { SHEET_ID: 'S' };
   const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
     SpreadsheetApp: app,
     PropertiesService: {
-      getScriptProperties: () => ({ getProperty: k => ({ SHEET_ID: 'S' })[k] || null })
+      getScriptProperties: () => ({
+        getProperty: k => (k in P ? P[k] : null),
+        setProperty(k, v) { P[k] = v; return this; }
+      })
     },
     Session: { getScriptTimeZone: () => 'Asia/Bangkok' },
     Utilities: { formatDate: () => today || '2026-08-26' },
@@ -1003,7 +1007,7 @@ function gradeEnv(picks, scoreTable, today) {
       return t.toISOString().slice(0, 10);
     }
   });
-  g.__app = app; g.__days = seen;
+  g.__app = app; g.__days = seen; g.__props = P;
   return g;
 }
 /** อ่านค่าช่อง สกอร์จริง/ถูกผิด ของแถวที่ i (เริ่ม 0) */
@@ -1046,6 +1050,21 @@ test('เกรดย้อนหลัง: คู่ที่ยังไม่
   ok(msg.indexOf('ยังไม่เตะ 1 คู่') >= 0, 'ต้องรายงานว่ามีคู่ค้างอยู่');
 });
 
+test('เกรดย้อนหลัง: เกมกำลังแข่ง = นับเป็น "ยังไม่เตะ" ไม่ใช่ "หาไม่เจอ"', () => {
+  /* เตะไปแล้ว 10 นาที ในวันเดียวกับ "วันนี้" — ด่านที่เทียบแค่วันจะปล่อยผ่านไปหาผลที่ยังไม่มี */
+  const th = new Date(Date.now() + 7 * 3600000 - 10 * 60000).toISOString();
+  const d = th.slice(0, 10), hm = th.slice(11, 16);
+  const g = gradeEnv([
+    pickRow({ 'วันที่': d, 'เวลาเตะ': hm, 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': '1' })
+  ], {}, d);
+
+  const msg = g.fbGradePicks_();
+  eq(gradeRow(g, 0).join('|'), '|', 'เกมยังไม่จบ ห้ามเขียนอะไรลงไป');
+  eq(g.__days.indexOf(d), -1, 'ห้ามไปโหลดผลของเกมที่ยังแข่งอยู่');
+  ok(msg.indexOf('ยังไม่เตะ 1 คู่') >= 0, 'ต้องนับเป็นคู่ที่ยังไม่จบ');
+  ok(msg.indexOf('หาไม่เจอ 0 คู่') >= 0, 'ห้ามฟ้องว่าหาผลไม่เจอ');
+});
+
 test('เกรดย้อนหลัง: หาสกอร์ไม่เจอ = ปล่อยว่าง ไม่เดาให้', () => {
   const g = gradeEnv([
     pickRow({ 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': '1' })
@@ -1074,4 +1093,43 @@ test('เกรดย้อนหลัง: คู่ดึกต้องเผ
   g.fbGradePicks_();
   eq(gradeRow(g, 0)[0], '1-1', 'ผลไปโผล่ feed วันถัดไปก็ต้องเจอ');
   eq(gradeRow(g, 0)[1], 'ถูก', 'ทายเสมอแล้วเสมอจริง');
+});
+
+/* ---------- เกรดเองตอนเปิดหน้าเว็บ ----------
+   เจ้าของอยู่บนมือถือ ไม่มีทางไปกด ?p=pickgrade เอง ถ้าไม่มีตัวนี้ FT กับสีการ์ดจะไม่ขึ้นเอง
+   แต่ห้ามยิงทุกครั้งที่เปิดหน้า ไม่งั้นหน้าเว็บค้างรอโหลด feed ทุกรอบ */
+function autoRow(o) { return pickRow(Object.assign({ 'ทีมเหย้า':'Arsenal', 'ทีมเยือน':'Leeds', 'เดาผล':'1' }, o)); }
+
+test('เกรดอัตโนมัติ: มีคู่ที่จบเกมแล้วยังไม่มีสกอร์ = ลงมือเกรด แล้วบอกให้อ่านชีตซ้ำ', () => {
+  const g = gradeEnv([autoRow({ 'วันที่':'2026-08-25', 'เวลาเตะ':'20:00' })],
+                     { '2026-08-25': { 'Arsenal|Leeds': [2, 1] } }, '2026-08-26');
+  eq(g.fbAutoGrade_(g.readObjects_('PICKS'), T('2026-08-26T12:00:00+07:00')), true);
+  eq(gradeRow(g, 0).join('|'), '2-1|ถูก', 'ต้องเติมสกอร์จริงให้เอง');
+});
+
+test('เกรดอัตโนมัติ: เปิดหน้าซ้ำภายในชั่วโมงเดียว = ไม่ยิงเน็ตเพิ่ม', () => {
+  const g = gradeEnv([autoRow({ 'วันที่':'2026-08-25', 'เวลาเตะ':'20:00' })],
+                     { '2026-08-25': { 'Arsenal|Leeds': [2, 1] } }, '2026-08-26');
+  const t0 = T('2026-08-26T12:00:00+07:00');
+  eq(g.fbAutoGrade_(g.readObjects_('PICKS'), t0), true);
+  const n = g.__days.length;
+  ok(n > 0, 'รอบแรกต้องออกไปโหลดจริง');
+  eq(g.fbAutoGrade_(g.readObjects_('PICKS'), t0 + 59 * 60000), false, 'ยังไม่ถึงคิว');
+  eq(g.__days.length, n, 'ห้ามโหลดซ้ำ');
+});
+
+test('เกรดอัตโนมัติ: ไม่มีคู่ที่จบเกมค้างอยู่ = ไม่ออกไปโหลดอะไรเลย', () => {
+  /* คู่ที่มีสกอร์แล้ว + คู่ที่ยังไม่เตะ = ไม่มีอะไรให้เกรด */
+  const g = gradeEnv([
+    autoRow({ 'วันที่':'2026-08-25', 'เวลาเตะ':'20:00', 'สกอร์จริง':'2-1', 'ถูกผิด':'ถูก' }),
+    autoRow({ 'วันที่':'2026-08-27', 'เวลาเตะ':'20:00' })
+  ], {}, '2026-08-26');
+  eq(g.fbAutoGrade_(g.readObjects_('PICKS'), T('2026-08-26T12:00:00+07:00')), false);
+  eq(g.__days.length, 0, 'ห้ามยิงเน็ต');
+});
+
+test('เกรดอัตโนมัติ: เกรดพัง = ห้ามทำหน้าเว็บล่ม', () => {
+  const g = gradeEnv([autoRow({ 'วันที่':'2026-08-25', 'เวลาเตะ':'20:00' })], {}, '2026-08-26');
+  g.fbGradePicks_ = () => { throw new Error('feed ล่ม'); };
+  eq(g.fbAutoGrade_(g.readObjects_('PICKS'), T('2026-08-26T12:00:00+07:00')), false);
 });

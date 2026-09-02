@@ -177,6 +177,9 @@ function payloadAll_(nowMs) {
   /* ภาพนิ่งเก่าเกินกำหนด = ไปดึงใหม่ตรงนี้เลย (ไม่พึ่ง trigger เพราะ deployment นี้ไม่ได้ขอสิทธิ์ไว้)
      ดึงไม่ได้ก็ผ่าน — ของเก่าต้องขึ้นเหมือนเดิม */
   if (fbAutoSnap_(pickRows, now)) pickRows = readObjects_(SHEETS.PICKS);
+  /* เติมสกอร์จริง/ถูกผิดให้เอง ชั่วโมงละครั้ง — เจ้าของอยู่บนมือถือ ไม่มีทางไปกด ?p=pickgrade
+     ไม่มีคู่ที่จบเกมแล้วค้างอยู่ = ไม่ออกไปโหลดอะไรเลย */
+  if (fbAutoGrade_(pickRows, now)) pickRows = readObjects_(SHEETS.PICKS);
   /* หน้าเว็บเอาเฉพาะคู่ที่ยังไม่ถึงเวลาแข่ง (เจ้าของสั่ง) — ชีตยังเก็บของเก่าไว้ครบเหมือนเดิม */
   var live = fbUpcoming_(pickRows, now);
   var picks = [];

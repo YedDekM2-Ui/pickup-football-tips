@@ -1156,6 +1156,7 @@ function fbHistory_(pickRows, tmap, maxDays, maxRows) {
      • PICKS ไม่มีช่องรหัสคู่ → จับคู่ด้วยชื่อทีมอย่างเดียว (mid = '')
      • เขียนกลับทีเดียวต่อคอลัมน์ — setValue ทีละช่องไม่เคยจบใน 6 นาที
    ───────────────────────────────────────────────────────────── */
+var FB_DONE_MS  = 7200000;     /* นับจากเวลาเตะ 2 ชม. ถือว่าจบเกม (90 นาที + พักครึ่ง + เจ็บ) */
 var FB_GRADE_MS = 240000;      /* งบเวลาโหลด feed ต่อรอบ เหลือที่ให้เขียนชีตทัน 6 นาที */
 
 /** ตัดสิน 1X2: คืน 'ถูก'/'ผิด' หรือ '' ถ้าตัดสินไม่ได้ (ไม่ได้ทายผลไว้) */
@@ -1166,7 +1167,7 @@ function fbJudge1x2_(pick, h, a) {
   return w === real ? 'ถูก' : 'ผิด';
 }
 
-function fbGradePicks_() {
+function fbGradePicks_(budgetMs) {
   var sh = sheetIfExists_(SHEETS.PICKS);
   if (!sh || sh.getLastRow() < 2) return 'ไม่มีข้อมูลให้เกรด';
 
@@ -1179,19 +1180,25 @@ function fbGradePicks_() {
   var tz = Session.getScriptTimeZone() || 'Asia/Bangkok';
   var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
   var t0 = new Date().getTime();
+  var now = t0;
   var nRow = vals.length - 1;
 
   /* 1️⃣ จดว่าต้องโหลดผลของวันไหนบ้าง — เอาเฉพาะแถวที่ยังไม่มีสกอร์ และวันเตะผ่านไปแล้ว */
-  var colS = [], colR = [], need = {}, pend = 0;
+  var colS = [], colR = [], need = {}, day = [], pend = 0;
   for (var i = 1; i <= nRow; i++) {
     colS.push([vals[i][cS]]);
     colR.push([vals[i][cR]]);
+    day.push('');
     if (noDate_(vals[i][cS]).trim()) continue;          /* มีสกอร์แล้ว = จบ */
     var o = {};
     for (var h2 = 0; h2 < head.length; h2++) o[String(head[h2])] = vals[i][h2];
     var d = fbRowDay_(o);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;       /* ไม่รู้วัน = หาผลไม่ได้ */
-    if (d > today) { pend++; continue; }                /* ยังไม่ถึงวันเตะ */
+    /* เกมยังไม่จบ = ยังไม่มีผล ห้ามนับเป็น "หาไม่เจอ"
+       อ่านเวลาเตะไม่ออก (kick = 0) ค่อยยึดวันอย่างเดียว เหมือน fbUpcoming_ */
+    var kick = fbKickMs_(o);
+    if (kick ? now < kick + FB_DONE_MS : d > today) { pend++; continue; }
+    day[i - 1] = d;
     need[d] = 1;
     need[fbDayShift_(d, 1)] = 1;                        /* คู่ดึกไปโผล่ feed ของวันถัดไป */
   }
@@ -1200,7 +1207,7 @@ function fbGradePicks_() {
   var scores = {}, dates = Object.keys(need).sort().reverse(), fetched = 0;
   var maxDate = fbDayShift_(today, 1);
   for (var u = 0; u < dates.length; u++) {
-    if (new Date().getTime() - t0 > FB_GRADE_MS) break;
+    if (new Date().getTime() - t0 > (budgetMs || FB_GRADE_MS)) break;
     if (dates[u] > maxDate) continue;
     var one = fbtParseFeed_(fbFetchJsonText_(fbtFeedUrl_(dates[u])));
     fetched++;
@@ -1208,18 +1215,17 @@ function fbGradePicks_() {
   }
 
   /* 3️⃣ ตัดสิน */
-  var found = 0, graded = 0, miss = 0;
+  var found = 0, graded = 0, miss = 0, lost = [];
   for (var r = 1; r <= nRow; r++) {
     var j = r - 1;
-    if (noDate_(colS[j][0]).trim()) continue;
-    var d2 = fbRowDay_((function () {
-      var o2 = {};
-      for (var h3 = 0; h3 < head.length; h3++) o2[String(head[h3])] = vals[r][h3];
-      return o2;
-    })());
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d2) || d2 > today) continue;
+    if (!day[j]) continue;                              /* รอบแรกคัดไว้แล้วว่าแถวไหนตัดสินได้ */
     var sc = fbLookupScore_(scores, vals[r][idx['ทีมเหย้า']], vals[r][idx['ทีมเยือน']], '');
-    if (!sc) { miss++; continue; }                      /* ยังไม่จบ / เลื่อน / จับชื่อไม่ติด */
+    if (!sc) {                                          /* ยังไม่จบ / เลื่อน / จับชื่อไม่ติด */
+      miss++;
+      /* ต้องบอกได้ว่าคู่ไหนหลุด ไม่งั้นตามหาต้นเหตุจากตัวเลขเปล่า ๆ ไม่ได้ */
+      if (lost.length < 5) lost.push(day[j] + ' ' + vals[r][idx['ทีมเหย้า']] + '-' + vals[r][idx['ทีมเยือน']]);
+      continue;
+    }
     found++;
     colS[j] = [sc[0] + '-' + sc[1] + (sc[2] != null ? ' (' + sc[2] + '-' + sc[3] + ')' : '')];
     var res = fbJudge1x2_(vals[r][idx['เดาผล']], sc[0], sc[1]);
@@ -1233,5 +1239,42 @@ function fbGradePicks_() {
 
   return 'เติมสกอร์ ' + found + ' คู่ · ตัดสินถูกผิด ' + graded + ' คู่ · โหลด ' + fetched +
          ' วัน = ' + Object.keys(scores).length + ' คีย์ · หาไม่เจอ ' + miss +
-         ' คู่ · ยังไม่เตะ ' + pend + ' คู่';
+         ' คู่ · ยังไม่เตะ ' + pend + ' คู่' + (lost.length ? ' · ที่หลุด: ' + lost.join(', ') : '');
+}
+
+/* ---------- เกรดเองอัตโนมัติตอนเปิดหน้าเว็บ ----------
+   ทำไมต้องมี: เจ้าของอยู่บนมือถือ ไม่มีทางไปกด ?p=pickgrade เอง
+               ถ้าไม่มีตัวนี้ FT กับสีการ์ดจะไม่มีวันขึ้นเอง
+   ด่านกันเปลือง: ชั่วโมงละครั้ง + ต้องมีคู่ที่จบเกมแล้วจริง ๆ ค้างอยู่ก่อน
+   งบเวลาเล็กกว่า ?p=pickgrade มาก เพราะรอบนี้คนกำลังรอหน้าเว็บอยู่ */
+var FB_GRADE_EVERY_MIN = 60;
+var FB_GRADE_AUTO_MS   = 20000;
+
+/** มีคู่ที่ "จบเกมแล้ว แต่ยังไม่มีสกอร์" ค้างอยู่ไหม — ไม่มีก็ไม่ต้องเสียเวลาโหลด feed */
+function fbNeedGrade_(rows, nowMs) {
+  var now = nowMs || Date.now();
+  for (var i = 0; i < (rows || []).length; i++) {
+    var r = rows[i];
+    if (noDate_(r['สกอร์จริง']).trim()) continue;
+    var kick = fbKickMs_(r);
+    if (kick && now > kick + FB_DONE_MS) return true;
+  }
+  return false;
+}
+
+function fbLastGrade_() {
+  try { return fbMs_(prop_('FB_LAST_GRADE')); } catch (err) { return 0; }
+}
+
+/** เรียกจากทางอ่านข้อมูล (?p=all) — คืน true ถ้าลงมือเกรด (คนเรียกต้องอ่านชีตซ้ำ) */
+function fbAutoGrade_(rows, nowMs) {
+  try {
+    var now = nowMs || Date.now();
+    var last = fbLastGrade_();
+    if (last && now - last < FB_GRADE_EVERY_MIN * 60000) return false;
+    if (!fbNeedGrade_(rows, now)) return false;
+    PropertiesService.getScriptProperties().setProperty('FB_LAST_GRADE', new Date(now).toISOString());
+    fbGradePicks_(FB_GRADE_AUTO_MS);
+    return true;
+  } catch (err) { return false; }   /* เกรดพลาดห้ามทำหน้าเว็บล่ม */
 }
