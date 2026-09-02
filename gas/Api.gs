@@ -10,6 +10,13 @@ function jsonOut_(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+/* คายข้อความดิบตามที่ฟังก์ชันคืนมา ไม่ห่อ ไม่แปลง
+   มีไว้ให้ 3 ทางที่ "สคริปต์" กิน ไม่ใช่คน (fbhist / fbcrit = JSON · f5dump = JSONL)
+   ห่อเมื่อไหร่ฝั่งที่กินต้องแกะ 2 ชั้น — ของเดิมในบอทเก่าคายดิบ ต้องคายดิบเหมือนกัน */
+function textOut_(str) {
+  return ContentService.createTextOutput(String(str == null ? '' : str));
+}
+
 function r2_(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 
 function teamMap_() {
@@ -211,6 +218,45 @@ function doGet(e) {
       return jsonOut_(fbSnapRun_());
     }
     if (p === 'fbprobe') return jsonOut_(fbProbe_());
+    /* ---------- talkfootball ----------
+       tfgrade = เกรดผลของเมื่อวาน/วันนี้ลงแท็บ TalkFootball (ยิงเน็ต+เขียนชีต จึงอยู่หลังกุญแจ)
+       โปรเจกต์นี้ไม่มี trigger — เจ้าของกดลิงก์นี้เอง ควรกดวันละครั้งตอนเช้า
+       tftext/tfstat = ดูข้อความเดียวกับที่บอทตอบ โดยไม่ต้องกวนแชท */
+    if (p === 'tfgrade') return jsonOut_({ ok: true, ผล: tfGradeLog_() });
+    if (p === 'tftext')  return jsonOut_({ ok: true, ข้อความ: tfText_() });
+    if (p === 'tfstat')  return jsonOut_({ ok: true, ข้อความ: tfStatsText_(q.d || 30) });
+    /* ---------- ใบค่าคุ้มก่อนเกม (fb_value.py ยิงเข้ามา) ----------
+       3 ทางนี้เป็นทางของ "ตัวเฝ้าบน GitHub Actions" ไม่ใช่ของคน
+       fvalert = ส่งใบ+จดชีต · fvpending = ถามว่าค้างใบไหน · fvgrade = เติมผล
+       อยู่หลังกุญแจทั้งหมด เพราะมันส่งข้อความออกและเขียนชีต */
+    if (p === 'fvalert')   return jsonOut_({ ok: true, ผล: fvAlert_(q.text, q.meta) });
+    if (p === 'fvpending') return jsonOut_({ ok: true, ค้าง: fvPending_() });
+    if (p === 'fvgrade')   return jsonOut_({ ok: true, ผล: fvGrade_(q.data) });
+    if (p === 'fvstat')    return jsonOut_({ ok: true, ข้อความ: fvStatsText_() });
+    /* ---------- ใบเตือนบอลสด FABEL5 (ย้ายมาจากบอทเก่า) ----------
+       ทางของ "ตัวเฝ้าบน GitHub Actions" ไม่ใช่ของคน — อยู่หลังกุญแจทั้งหมด
+       เพราะมันส่งข้อความออกหาเจ้าของและเขียนชีต
+       f5alert = ส่งใบ+จดชีต · f5stamp = จดนาทีที่ลูกมา · f5grade = เติมผลจากสกอร์จบ
+       f5del   = ลบใบทดสอบที่ทำ % เพี้ยน · f5poke = สะกิด workflow ให้ตื่น
+       f5stat/f5report = ดูข้อความเดียวกับที่บอทตอบ โดยไม่ต้องกวนแชท
+       f5dump  = คาย JSONL ดิบ ห้ามห่อ (ฝั่งที่กินคือสคริปต์) */
+    if (p === 'f5alert')  return jsonOut_({ ok: true, ผล: f5Alert_(q.text, q.meta) });
+    if (p === 'f5stamp')  return jsonOut_({ ok: true, ผล: f5Stamp_(q.data) });
+    if (p === 'f5grade')  return jsonOut_({ ok: true, ผล: f5Grade_(q.data) });
+    if (p === 'f5del')    return jsonOut_({ ok: true, ผล: f5Del_(q.id) });
+    if (p === 'f5stat')   return jsonOut_({ ok: true, ข้อความ: f5StatsText_() });
+    if (p === 'f5report') return jsonOut_({ ok: true, ข้อความ: f5ReportText_(String(q.force || '') === '1') });
+    if (p === 'f5poke')   return jsonOut_({ ok: true, ผล: f5Poke() });
+    if (p === 'f5dump')   return textOut_(f5Dump_(String(q.since || '')));
+    /* ---------- ทีเด็ดก่อนเกม FootballTips (ย้ายมาจากบอทเก่า) ----------
+       fbgrade = ดึงสกอร์จริงมาเติมคอลัมน์ "ผล" (ยิงเน็ต+เขียนชีต)
+       fbstat  = ข้อความเดียวกับที่บอทตอบ /สถิติบอล
+       fbhist/fbcrit = ของดิบให้ตัวคัดบอลเอาไปคิดเกณฑ์เอง — คาย JSON ดิบ ห้ามห่อ
+       ทางลงรายการทีเด็ดอยู่ที่ doPost (?p=fbtips) เพราะส่งมาทีละหลายสิบคู่ */
+    if (p === 'fbgrade') return jsonOut_({ ok: true, ผล: fbtGradeTips_() });
+    if (p === 'fbstat')  return jsonOut_({ ok: true, ข้อความ: fbtStatsText_(q.d || 30) });
+    if (p === 'fbhist')  return textOut_(fbtHistoryJson_(String(q.fbhist || q.d || '')));
+    if (p === 'fbcrit')  return textOut_(fbtCritJson_(q.d || 45));
     /* ---------- คิดผลบิล ----------
        score = ใส่สกอร์เอง (ทางหลัก เจ้าของพิมพ์เองได้เสมอ ไม่ต้องรอฟีด)
        settle = สั่งให้มันไล่หาสกอร์จบเกมเองรอบเดียว (ทางเสริม)
@@ -270,6 +316,13 @@ function doPost(e) {
     if (p === 'bet') return jsonOut_(betAdd_(body.bet || {}, { force: !!body.force }));
     /* ใส่สกอร์จากหน้าเว็บ — ทางเดียวกับ ?p=score แต่ยิงจากหน้าจอมือถือได้ตรงๆ */
     if (p === 'score') return jsonOut_(stlWrite_(body.id, body.h, body.a, { force: !!body.force }));
+    /* ลงทีเด็ด FootballTips ทีละชุด — ตัวคัดบอลบน GitHub Actions ยิงเข้ามา
+       รับ 2 ทรง: { p:'fbtips', rows:[...] } ของใหม่ และ { fbtips:[...] } ของเดิมในบอทเก่า
+       (ของเดิมยังต้องใช้ได้ ไม่งั้นต้องไปแก้สคริปต์ฝั่งโน้นพร้อมกัน)
+       ต่างจากบอทเก่าตรงที่ทางนี้อยู่หลังด่านกุญแจ — ฝั่งยิงเก็บกุญแจใน secret อยู่แล้ว */
+    if (p === 'fbtips' || body.fbtips) {
+      return jsonOut_({ ok: true, ผล: fbtLog_(body.fbtips || body.rows || [], String(body.day || '')) });
+    }
     return jsonOut_({ ok: false, error: 'ไม่รู้จักคำสั่ง ' + p });
   } catch (err) {
     return jsonOut_({ ok: false, error: String(err && err.message ? err.message : err) });

@@ -390,3 +390,132 @@ test('ยังไม่ตั้งโทเคน = ปิดไม่ได�
   const g = env({});
   eq(g.tgOffHook_().ok, false);
 });
+
+/* ---------- /picktips — ทีเด็ดที่คัดแล้ว ----------
+   ข้อที่ต้องพิสูจน์:
+     1. ต่ำกว่าเกณฑ์ต้องหายไป (ไม่ใช่โชว์แล้วให้คนอ่านกรองเอง)
+     2. ไม่มีอะไรผ่าน = พูดตรงๆ ห้ามลดเกณฑ์เองให้มีของโชว์
+     3. TIP_MIN_PCT ขยับเกณฑ์ได้จริงจาก property (เจ้าของแก้จากมือถือ)
+     4. ปุ่มลัดต้องติดไปกับข้อความทุกครั้ง ไม่งั้นปุ่มหายกลางทาง */
+
+const HEAD_PICKS_T = ['ID','วันที่','ช่อง','ลีก','ทีมเหย้า','ทีมเยือน','เวลาเตะ',
+  'เดาผล','เดาสกอร์','เปอร์เซ็นต์','ราคา','สกอร์จริง','ถูกผิด','สร้างเมื่อ',
+  'เรท Over','เรท BTTS YES','HT เดาผล','HT %','HT เรท',
+  '1X2 %','Over %','BTTS YES %','DB %','DB เดาผล','HT/FT %','HT/FT เดาผล'];
+
+const NOW_T = Date.parse('2026-08-27T10:00:00+07:00');
+
+function pk(o) {
+  const g = {};
+  HEAD_PICKS_T.forEach(h => { g[h] = ''; });
+  g['วันที่'] = '2026-08-27'; g['เวลาเตะ'] = '21:45'; g['ช่อง'] = 'LIST';
+  g['ลีก'] = 'EPL'; g['ทีมเหย้า'] = 'Arsenal'; g['ทีมเยือน'] = 'Chelsea';
+  return Object.assign(g, o);
+}
+
+/** env ที่มีชีต PICKS ด้วย — ตัวบนสุดของไฟล์นี้มีแต่ BETS */
+function envPick(props, picks) {
+  const p = Object.assign({ SHEET_ID: 'S' }, props || {});
+  const sent = [];
+  const g = loadGas(
+    ['gas/Config.gs','gas/Sheets.gs','gas/Api.gs','gas/Forebet.gs','gas/Live.gs','gas/Settle.gs','gas/Tg.gs'],
+    {
+      SpreadsheetApp: new FakeSpreadsheetApp({
+        BETS: [HEAD_BETS],
+        PICKS: [HEAD_PICKS_T].concat((picks || []).map(x => HEAD_PICKS_T.map(h => x[h]))),
+        TEAMS: [['ชื่ออังกฤษ','ชื่อไทย']]
+      }),
+      PropertiesService: { getScriptProperties: () => ({
+        getProperty: (k) => (k in p ? p[k] : null),
+        setProperty: (k, v) => { p[k] = String(v); },
+        deleteProperty: (k) => { delete p[k]; }
+      }) },
+      UrlFetchApp: { fetch: (url, opt) => {
+        sent.push({ url: String(url), body: JSON.parse((opt && opt.payload) || '{}') });
+        return fakeResponse(200, JSON.stringify({ ok: true, result: {} }));
+      } },
+      Utilities: { formatDate: () => '2026-08-27T10:00:00' },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+      ContentService: { MimeType: { JSON: 'json' },
+        createTextOutput: (t) => ({ _t: t, setMimeType() { return this; }, getContent() { return this._t; } })
+      }
+    });
+  g.__sent = sent;
+  return g;
+}
+
+test('ทีเด็ด: ต่ำกว่าเกณฑ์หายไป สูงกว่าเกณฑ์อยู่', () => {
+  const g = envPick({}, [
+    pk({ 'ทีมเหย้า':'Arsenal', 'เดาผล':'1', 'เปอร์เซ็นต์':82 }),
+    pk({ 'ทีมเหย้า':'Fulham', 'เดาผล':'1', 'เปอร์เซ็นต์':41 })
+  ]);
+  const out = g.tgPickTips_(NOW_T);
+  ok(out.indexOf('Arsenal') >= 0, 'ตัวที่ผ่านต้องอยู่');
+  ok(out.indexOf('Fulham') < 0, 'ตัวที่ไม่ถึงเกณฑ์ต้องไม่โผล่');
+  ok(out.indexOf('82') >= 0, 'ต้องบอกเปอร์เซ็นต์ที่ใช้ตัดสิน');
+});
+
+test('ทีเด็ด: ไม่มีอะไรผ่าน = บอกตรงๆ พร้อมเกณฑ์ ห้ามเงียบหรือลดเกณฑ์เอง', () => {
+  const g = envPick({}, [pk({ 'เดาผล':'1', 'เปอร์เซ็นต์':50 })]);
+  const out = g.tgPickTips_(NOW_T);
+  ok(out.indexOf('70') >= 0, 'ต้องบอกเกณฑ์ที่ใช้');
+  ok(out.indexOf('Arsenal') < 0, 'ห้ามแอบโชว์ตัวที่ไม่ผ่าน');
+});
+
+test('ทีเด็ด: TIP_MIN_PCT ขยับเกณฑ์ได้จริง', () => {
+  const rows = [pk({ 'เดาผล':'1', 'เปอร์เซ็นต์':63 })];
+  ok(g_ok(envPick({}, rows).tgPickTips_(NOW_T)) === false, 'เกณฑ์ 70 = ไม่ผ่าน');
+  ok(g_ok(envPick({ TIP_MIN_PCT: '60' }, rows).tgPickTips_(NOW_T)) === true, 'ตั้ง 60 แล้วต้องผ่าน');
+});
+function g_ok(out) { return out.indexOf('Arsenal') >= 0; }
+
+test('ทีเด็ด: เรียงจากมั่นใจสุดลงมา ไม่ใช่เรียงตามเวลา', () => {
+  const g = envPick({}, [
+    pk({ 'ทีมเหย้า':'Aaa', 'เวลาเตะ':'18:00', 'เดาผล':'1', 'เปอร์เซ็นต์':74 }),
+    pk({ 'ทีมเหย้า':'Bbb', 'เวลาเตะ':'23:00', 'เดาผล':'1', 'เปอร์เซ็นต์':91 })
+  ]);
+  const out = g.tgPickTips_(NOW_T);
+  ok(out.indexOf('Bbb') < out.indexOf('Aaa'), 'ตัวมั่นใจกว่าต้องอยู่บน');
+});
+
+test('ทีเด็ด: ตลาดอื่นก็คัดได้ ไม่ได้ดูแต่ 1X2', () => {
+  const g = envPick({}, [pk({ 'ทีมเหย้า':'Leeds', 'เปอร์เซ็นต์':40, 'BTTS YES %':88 })]);
+  const out = g.tgPickTips_(NOW_T);
+  ok(out.indexOf('Leeds') >= 0, 'ผ่านด้วยตลาดทั้งคู่ยิง');
+  ok(out.indexOf('88') >= 0);
+});
+
+test('ทีเด็ด: มีบรรทัดกำกับว่ายังไม่ใช่สถิติที่วัดผลแล้ว', () => {
+  const g = envPick({}, [pk({ 'เดาผล':'1', 'เปอร์เซ็นต์':82 })]);
+  ok(g.tgPickTips_(NOW_T).indexOf('forebet') >= 0, 'ห้ามให้อ่านเป็นทีเด็ดที่พิสูจน์แล้ว');
+});
+
+test('ทีเด็ด: คู่ที่เตะไปแล้วไม่เอามาโชว์', () => {
+  const g = envPick({}, [pk({ 'ทีมเหย้า':'Old', 'วันที่':'2026-08-20', 'เดาผล':'1', 'เปอร์เซ็นต์':95 })]);
+  ok(g.tgPickTips_(NOW_T).indexOf('Old') < 0);
+});
+
+test('ปุ่มลัดติดไปกับข้อความทุกครั้ง', () => {
+  const g = envPick({ TG_TOKEN: 'T', TG_CHAT: '111' }, []);
+  g.tgSend_('111', 'ทดสอบ');
+  const kb = JSON.parse(g.__sent[0].body.reply_markup);
+  eq(kb.is_persistent, true, 'ปุ่มต้องไม่หายหลังกด');
+  eq(kb.resize_keyboard, true);
+  const flat = JSON.stringify(kb.keyboard);
+  ok(flat.indexOf('/picktips') >= 0, 'ต้องมีปุ่มทีเด็ด');
+  ok(flat.indexOf('/บิล') >= 0);
+});
+
+test('เมนูบอกคำสั่ง /picktips ด้วย', () => {
+  const g = envPick({ TG_TOKEN: 'T', TG_CHAT: '111' }, []);
+  ok(g.tgHandle_({ message: { chat: { id: 111 }, text: '/help' } }).indexOf('/picktips') >= 0);
+});
+
+test('พิมพ์ /picktips แล้วได้ใบทีเด็ด ไม่ใช่เมนู', () => {
+  const g = envPick({ TG_TOKEN: 'T', TG_CHAT: '111' },
+    [pk({ 'ทีมเหย้า':'Arsenal', 'เดาผล':'1', 'เปอร์เซ็นต์':82 })]);
+  /* ต้องส่ง NOW_T เข้าไปด้วย — ไม่ส่ง tgHandle_ จะใช้ Date.now() ของเครื่องจริง
+     พอวันจริงเลยวันแข่งในข้อมูลทดสอบ คู่จะถูกกรองทิ้ง เทสต์ตกเองตามปฏิทิน */
+  const out = g.tgHandle_({ message: { chat: { id: 111 }, text: '/picktips' } }, NOW_T);
+  ok(out.indexOf('Arsenal') >= 0);
+});

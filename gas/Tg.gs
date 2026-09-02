@@ -41,7 +41,10 @@ function tgApi_(method, payload) {
 }
 
 function tgSend_(chatId, text) {
-  return tgApi_('sendMessage', { chat_id: chatId, text: text, disable_web_page_preview: true });
+  /* reply_markup ติดไปทุกข้อความ - เทเลแกรมจำปุ่มชุดล่าสุดของห้อง
+     ถ้าส่งบางข้อความไม่ติด ปุ่มจะหายไปเฉยๆ ตอนเจ้าของกำลังใช้อยู่ */
+  return tgApi_('sendMessage', { chat_id: chatId, text: text, disable_web_page_preview: true,
+                                 reply_markup: JSON.stringify(tgKeyboard_()) });
 }
 
 /** ส่งหาเจ้าของ — ใช้ตอนบอทอยากบอกเองโดยไม่มีใครถาม */
@@ -100,8 +103,20 @@ var TG_MENU_ =
   'คำสั่งที่ใช้ได้\n' +
   '/บิล — บิลที่ยังไม่รู้ผล\n' +
   '/สรุป — กำไรขาดทุนสะสม\n' +
+  '/picktips — ทีเด็ดที่ผ่านเกณฑ์ เรียงตามมั่นใจสุด\n' +
   '/คู่ — คู่ที่ยังไม่เตะ\n' +
   '/คิดผล — ไล่หาสกอร์จบเกมเองรอบเดียว\n' +
+  '/หาคู่ [เลข] — สแกน Live coef. จาก forebet (เลข = ค่าคุ้มขั้นต่ำ)\n' +
+  '/talkfootball — คำทำนายเว็บ talkfootball (ครึ่งแรก 90%+ · SH/OU2.5/BTTS เสริม)\n' +
+  '/tfสถิติ [วัน] — ความแม่นของ talkfootball ย้อนหลัง (ไม่ใส่ = 30 วัน)\n' +
+  '/สถิติค่าคุ้ม — ผลจริงของใบค่าคุ้มก่อนเกม (เข้ากี่ % · กำไร/ไม้)\n' +
+  '/สถิติเตือน — ผลจริงของใบเตือนบอลสด FABEL5 (เกรดเอง ไม่ต้องตอบสกอร์)\n' +
+  '/สถิติบอล [วัน] — ความแม่นทีเด็ด FootballTips ย้อนหลัง (ไม่ใส่ = 30 วัน)\n' +
+  '/รายงาน — หน้าเดียวจบ ทุกคู่ทุกด่าน ลิงก์เดิมตลอด ("/รายงาน ใหม่" = บังคับทำใหม่)\n' +
+  '/หุ้น [us] — หุ้นเด่นวันนี้ (ไม่ใส่ = ตลาดไทย)\n' +
+  'หวยไทย · หวยลาว — ผลหวย + ตำราเลขเด่น (พิมพ์ "หวยไทย ช่วย" ดูคำสั่งย่อย)\n' +
+  'หวยไทยB · หวยลาวB — เลขฐาน 6 ตัว คิดจากผลจริงย้อนหลัง\n' +
+  'หวย — เมนูรวมหวย ปฏิทินงวด + เลขเด่นตามตำรา\n' +
   '/id — เลขห้องแชตนี้\n\n' +
   'ใส่สกอร์เอง: พิมพ์ "รหัสบิล สกอร์" เช่น  B7 2-1';
 
@@ -226,12 +241,98 @@ function tgHandle_(update, nowMs) {
   }
   if (chat !== owner) return '';          /* คนอื่นทัก = เงียบสนิท ไม่บอกว่ามีบอทอยู่ */
 
+  /* ตอบใต้ใบถามผลหวย (Reply) = เลขหวยแน่นอน ต้องจบที่ทางหวยเท่านั้น
+     ด่านนี้ห้ามย้ายลงไปอยู่ใต้คำสั่งอื่น — บทเรียน PIKTAX 16 ส.ค. 69
+     เจ้าของตอบ "4615" มาตัวเดียว แล้วมันไหลไปตัวอ่านรายการเงิน ลงบิลถอน 4,615 บาท */
+  if (msg.reply_to_message) {
+    try { if (lotCatchReply_(chat, msg)) return ''; }
+    catch (e0) {
+      tgSend_(chat, 'บันทึกผลหวยไม่สำเร็จ: ' + truncate_(String(e0 && e0.message ? e0.message : e0), 200));
+      return '';
+    }
+    /* ตอบสกอร์ใต้ใบเตือนบอลสด FABEL5 → เกรดใบนั้นเลย (ใบเตือนขึ้นต้นด้วย ⚽ เสมอ)
+       ต้องอยู่ตรงนี้ ก่อนตัวอ่าน "รหัสบิล สกอร์" ข้างล่าง ไม่งั้น "2-1" ที่ตอบใต้ใบเตือน
+       จะไหลไปเข้าตัวคิดผลบิลแทน — บทเรียนเดียวกับหวย */
+    try { if (f5CatchReply_(chat, msg)) return ''; }
+    catch (e1) {
+      tgSend_(chat, 'เกรดใบเตือนไม่สำเร็จ: ' + truncate_(String(e1 && e1.message ? e1.message : e1), 200));
+      return '';
+    }
+  }
+
   var out;
   if (text === '/start' || text === '/help' || text === '/เมนู') out = TG_MENU_;
   else if (text === '/id') out = 'เลขห้องนี้คือ ' + chat;
   else if (text === '/บิล') out = tgBills_();
   else if (text === '/สรุป') out = tgSummary_();
   else if (text === '/คู่') out = tgPicks_(nowMs || Date.now());
+  else if (/^\/หาคู่(\s|$)/.test(text)) {
+    /* ตัวนี้ส่งเอง "หลายข้อความ" (ตอบรับ + การ์ดเป็นชุด) จึง return ตรงนี้เลย
+       ถ้าปล่อยตกไปท้ายฟังก์ชัน tgSend_(chat, out) จะยิงซ้ำอีกใบเปล่าๆ */
+    try { fsHandleCmd_(chat, text); }
+    catch (e) { tgSend_(chat, 'สแกนไม่สำเร็จ: ' + truncate_(String(e && e.message ? e.message : e), 200)); }
+    return '';
+  }
+  else if (/^\/?talkfootball$/i.test(text)) {
+    /* ดึงสด 4 หน้าพร้อมกัน ช้าได้ถึงสิบวินาที — พังต้องบอกว่าพังตรงไหน ไม่ใช่เงียบ */
+    try { out = tfText_(); }
+    catch (e) { out = 'talkfootball ดึงไม่ได้: ' + truncate_(String(e && e.message ? e.message : e), 200); }
+  }
+  else if (/^\/tfสถิติ(\s|$)/.test(text)) {
+    var dArg = (text.split(/\s+/)[1] || '').replace(/[^0-9]/g, '');
+    try { out = tfStatsText_(dArg || 30); }
+    catch (e) { out = 'อ่านสถิติไม่ได้: ' + truncate_(String(e && e.message ? e.message : e), 200); }
+  }
+  else if (/^\/?สถิติค่าคุ้ม$/.test(text)) {
+    /* อ่านชีตอย่างเดียว ไม่ยิงเน็ต — ใบมาจาก fb_value.py ทาง ?p=fvalert */
+    try { out = fvStatsText_(); }
+    catch (e) { out = 'อ่านสถิติค่าคุ้มไม่ได้: ' + truncate_(String(e && e.message ? e.message : e), 200); }
+  }
+  /* === 3 ตัวนี้ย้ายมาจากบอทเก่า (PIKTAX) — คนละเล่มกันทั้งหมด ห้ามเอามารวมกัน ===
+     /สถิติเตือน  = ใบเตือนบอลสด FABEL5 (แท็บ FABEL5 · ตัวเฝ้ายิงเข้ามาทาง ?p=f5alert)
+     /สถิติบอล    = ทีเด็ดก่อนเกม FootballTips (แท็บ FootballTips · เกรดจากสกอร์จริง)
+     /รายงาน      = หน้าเว็บรวมบน GitHub Pages ลิงก์เดิมตลอด
+     /สถิติบอล ห้ามปิดท้ายด้วย $ เพราะรับเลขวันต่อท้ายได้ (เช่น "/สถิติบอล 7") */
+  else if (/^\/?สถิติเตือน$/.test(text)) {
+    try { out = f5StatsText_(); }
+    catch (e) { out = 'อ่านสถิติเตือนไม่ได้: ' + truncate_(String(e && e.message ? e.message : e), 200); }
+  }
+  else if (/^\/?สถิติบอล/.test(text)) {
+    try { out = fbtStatsText_((text.match(/(\d+)/) || [])[1] || 30); }
+    catch (e) { out = 'อ่านสถิติบอลไม่ได้: ' + truncate_(String(e && e.message ? e.message : e), 200); }
+  }
+  else if (/^\/?(รายงาน|report)/i.test(text)) {
+    /* ตัวนี้ส่งข้อความเอง (เช็คหน้าเว็บ + อาจสั่ง workflow ทำใหม่) จึง return ตรงนี้
+       ปล่อยตกไปท้ายฟังก์ชันจะยิงซ้ำอีกใบเปล่า — แบบเดียวกับ /หาคู่ */
+    try { f5HandleReportCmd_(chat, text); }
+    catch (e) { tgSend_(chat, 'เปิดรายงานไม่ได้: ' + truncate_(String(e && e.message ? e.message : e), 200)); }
+    return '';
+  }
+  else if (/^\/?หุ้น(\s|$)/.test(text)) {
+    /* ยิงเน็ตออกนอก ช้าได้หลายวินาที — พังต้องบอกว่าพัง ไม่ใช่เงียบ */
+    var mkt = text.replace(/^\/?หุ้น\s*/, '');
+    try { out = stocksText_(mkt); }
+    catch (e) { out = 'ค้นหุ้นไม่ได้: ' + truncate_(String(e && e.message ? e.message : e), 200); }
+  }
+  /* === หวย — ต้องเรียง ลาว → ไทย → เมนูรวม (ตัวยาวกว่าดักก่อน กันโดนกลืน) ===
+     สามตัวนี้ส่งข้อความเอง (บางคำสั่งส่งหลายใบ) จึง return '' ตรงนี้
+     ถ้าปล่อยตกไปท้ายฟังก์ชัน tgSend_(chat, out) จะยิงใบเปล่าซ้ำ — แบบเดียวกับ /หาคู่
+     คำสั่งเป็นคำไทยล้วน ไม่มี / นำหน้า (ของเดิมในบอทเก่าเป็นแบบนี้ เจ้าของพิมพ์จนชิน) */
+  else if (/^(ผล)?หวยลาว/.test(text)) {
+    try { handleLaoLottery_(chat, text.replace(/^ผลหวยลาว/, 'หวยลาว')); }
+    catch (e) { tgSend_(chat, 'หวยลาวพัง: ' + truncate_(String(e && e.message ? e.message : e), 200)); }
+    return '';
+  }
+  else if (/^(ผล)?หวยไทย/.test(text)) {
+    try { handleThaiLottery_(chat, text.replace(/^ผลหวยไทย/, 'หวยไทย')); }
+    catch (e) { tgSend_(chat, 'หวยไทยพัง: ' + truncate_(String(e && e.message ? e.message : e), 200)); }
+    return '';
+  }
+  else if (/^(หวย|เลขเด็ด|เลขเด่น)/.test(text)) {
+    try { out = lotteryMenuText_(); }
+    catch (e) { out = 'เปิดเมนูหวยไม่ได้: ' + truncate_(String(e && e.message ? e.message : e), 200); }
+  }
+  else if (text === '/picktips' || text === '/ทีเด็ด') out = tgPickTips_(nowMs || Date.now());
   else if (text === '/คิดผล') {
     /* ตัวไล่คิดผลมีตัวกันยิงถี่ 10 นาที · null = ยังไม่ถึงรอบ ไม่ใช่ "หาไม่เจอ"
        ต้องแยกให้ออก ไม่งั้นเจ้าของนึกว่าฟีดพัง */
@@ -286,4 +387,92 @@ function tgSetChat_(id) {
              error: 'ตั้งเลขให้แล้ว แต่ทักเข้าไปไม่ได้ — ถ้ายังไม่เคยกด Start ในแชทบอท กดก่อนแล้วเปิดลิงก์นี้ซ้ำ' };
   }
   return { ok: true, 'ตั้งแล้ว': true, 'ข้อความทดสอบ': 'ส่งไปแล้ว ไปดูในแชทบอทได้เลย' };
+}
+
+/* ---------- เมนูลัด (ปุ่มถาวรใต้ช่องพิมพ์) ----------
+   ย้ายแนวคิดมาจาก PIKTAX `tgKeyboard_()` — เจ้าของอยู่บนมือถือ พิมพ์คำสั่งไทยทีละตัวช้า
+   กฎเดิมจาก PIKTAX: ใส่เฉพาะปุ่มที่ "กดบ่อยจริง" ตัวที่นานๆ ใช้ทีให้พิมพ์เอา
+   is_persistent = ปุ่มไม่หายหลังกด (ไม่งั้นต้องกดไอคอนเรียกคืนทุกที) */
+function tgKeyboard_() {
+  return {
+    keyboard: [
+      [{ text: '/picktips' }, { text: '/คู่' }],
+      [{ text: '/บิล' }, { text: '/สรุป' }],
+      [{ text: '/คิดผล' }, { text: '/หาคู่' }],
+      [{ text: '/talkfootball' }, { text: '/tfสถิติ' }],
+      [{ text: '/รายงาน' }, { text: '/สถิติเตือน' }, { text: '/สถิติบอล' }],
+      [{ text: 'หวยไทย' }, { text: 'หวยลาว' }, { text: 'หวย' }],
+      [{ text: 'หวยไทยB' }, { text: 'หวยลาวB' }],
+      [{ text: '/help' }]
+    ],
+    resize_keyboard: true,
+    is_persistent: true
+  };
+}
+
+/* ---------- /picktips — ทีเด็ดที่คัดแล้ว ----------
+   ต่างจาก /คู่ ตรงที่ /คู่ เรียงตามเวลา (ดูว่าคืนนี้มีอะไรเตะบ้าง)
+   ส่วนอันนี้เรียงตาม "มั่นใจสุด" และตัดคู่ที่ไม่ถึงเกณฑ์ทิ้ง — ไว้ตัดสินใจ ไม่ใช่ไว้ดูตาราง
+
+   เกณฑ์อยู่ที่ Script Property `TIP_MIN_PCT` (ไม่ตั้ง = 70)
+   ทำเป็น property เพราะเจ้าของจะขยับเกณฑ์เองจากมือถือได้ ไม่ต้องรอ push
+
+   ⚠️ เปอร์เซ็นต์พวกนี้เป็น "ของที่ forebet เดา" ยังไม่ใช่สถิติที่วัดผลแล้ว
+      เลยต้องมีบรรทัดกำกับท้ายใบ ห้ามให้อ่านเป็นทีเด็ดที่พิสูจน์แล้ว
+      (บทเรียนหน้า /รายงาน ของ FABEL5 — ด่านแรกไม่ใช่ hit rate) */
+function tipMinPct_() {
+  var raw = prop_('TIP_MIN_PCT');
+  if (raw === '' || raw === null || raw === undefined) return 70;
+  var n = Number(raw);
+  return isFinite(n) && n > 0 ? n : 70;
+}
+
+/** ดึงตลาดที่ผ่านเกณฑ์ของคู่นั้นออกมาเป็นรายการ — คู่ไหนไม่ผ่านสักตลาด คืนอาร์เรย์ว่าง */
+function tipMarkets_(p, minPct) {
+  var out = [];
+  var push = function (name, pick, pct) {
+    var n = Number(pct);
+    if (!isFinite(n) || n < minPct) return;
+    var t = String(pick || '').trim();
+    out.push({ 'ตลาด': name, 'เลือก': t, '%': n });
+  };
+  push('1X2', p['เดาผล'], p['เปอร์เซ็นต์']);
+  push('Over/Under', 'Over', p['Over %']);
+  push('ทั้งคู่ยิง', 'YES', p['BTTS YES %']);
+  push('สองโอกาส', p['DB เดาผล'], p['DB %']);
+  push('ครึ่งแรก/จบ', p['HT/FT เดาผล'], p['HT/FT %']);
+  out.sort(function (a, b) { return b['%'] - a['%']; });
+  return out;
+}
+
+function tgPickTips_(nowMs) {
+  var minPct = tipMinPct_();
+  var live = fbUpcoming_(readObjects_(SHEETS.PICKS), nowMs || Date.now());
+  if (!live.length) return 'ยังไม่มีคู่ที่รอเตะในชีต ลองเปิดหน้าเว็บให้มันดึงรอบใหม่';
+
+  var picked = [], i;
+  for (i = 0; i < live.length; i++) {
+    var mk = tipMarkets_(live[i], minPct);
+    if (mk.length) picked.push({ p: live[i], mk: mk, top: mk[0]['%'] });
+  }
+  /* ไม่มีอะไรผ่านเกณฑ์ = บอกตรงๆ พร้อมเกณฑ์ที่ใช้ ห้ามลดเกณฑ์เองให้มีของโชว์
+     (ถ้าลดเอง เจ้าของจะนึกว่าวันนี้มีทีเด็ด ทั้งที่จริงไม่มี) */
+  if (!picked.length) {
+    return 'วันนี้ไม่มีคู่ไหนถึงเกณฑ์ ' + minPct + '%\n' +
+           'ดูทั้งหมดได้ที่ /คู่ · อยากขยับเกณฑ์ตั้ง TIP_MIN_PCT';
+  }
+  picked.sort(function (a, b) { return b.top - a.top; });
+
+  var lines = ['ทีเด็ด ' + picked.length + ' คู่ (เกณฑ์ ' + minPct + '%)', ''];
+  for (i = 0; i < picked.length && i < 10; i++) {
+    var p = picked[i].p, mk = picked[i].mk, k;
+    lines.push(fbHm_(p['เวลาเตะ']) + '  ' + String(p['ทีมเหย้า'] || '') + ' พบ ' + String(p['ทีมเยือน'] || ''));
+    lines.push('   ' + String(p['ลีก'] || ''));
+    for (k = 0; k < mk.length; k++) {
+      lines.push('   ' + mk[k]['ตลาด'] + '  ' + (mk[k]['เลือก'] || '-') + '  ' + mk[k]['%'] + '%');
+    }
+  }
+  if (picked.length > 10) lines.push('… อีก ' + (picked.length - 10) + ' คู่');
+  lines.push('', 'เลขพวกนี้คือที่ forebet เดา ยังไม่ใช่สถิติที่วัดผลแล้ว');
+  return lines.join('\n');
 }

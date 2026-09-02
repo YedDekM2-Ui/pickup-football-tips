@@ -28,7 +28,7 @@ function sheetHeadSync_(sh, name, headers) {
   if (!add.length) return sh;
   var at = head.length;
   sh.getRange(1, at + 1, 1, add.length).setValues([add]);
-  var texts = TEXT_COLS[name] || [];
+  var texts = textCols_(name);
   for (i = 0; i < add.length; i++) {
     if (texts.indexOf(add[i]) >= 0) sh.getRange(1, at + 1 + i, 2000, 1).setNumberFormat('@');
   }
@@ -42,7 +42,7 @@ function sheetHeadSync_(sh, name, headers) {
     พังตรงไหนก็ปล่อยผ่าน — จัดรูปแบบเป็นของแถม ห้ามทำให้เขียนแถวไม่ได้ */
 function sheetTextFix_(sh, name, headers) {
   try {
-    var texts = TEXT_COLS[name] || [];
+    var texts = textCols_(name);
     if (!texts.length) return sh;
     var stamp = texts.join('|'), key = 'FMT_' + name, props = null;
     try {
@@ -64,7 +64,7 @@ function sheetEnsure_(name, headers) {
   if (!sh) {
     sh = bk.insertSheet(name);
     sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    var texts = TEXT_COLS[name] || [];
+    var texts = textCols_(name);
     for (var i = 0; i < texts.length; i++) {
       var col = headers.indexOf(texts[i]) + 1;
       if (col > 0) sh.getRange(1, col, 2000, 1).setNumberFormat('@');
