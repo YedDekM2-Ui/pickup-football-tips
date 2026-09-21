@@ -881,9 +881,31 @@ test('คำสั่งอังกฤษในเมนู "/" แปลงก
   eq(g.tgAlias_('/lotlaob'), 'หวยลาวB');
   eq(g.tgAlias_('/lotto'), 'หวย');
   eq(g.tgAlias_('/tfstat 7'), '/tfสถิติ 7');
+  eq(g.tgAlias_('/fvstat'), '/สถิติค่าคุ้ม');
+  eq(g.tgAlias_('/f5stat'), '/สถิติเตือน');
+  eq(g.tgAlias_('/fbstat 7'), '/สถิติบอล 7');
   eq(g.tgAlias_('/matches@Mr_pickupx2nbOt'), '/คู่');
   /* ของเดิมที่พิมพ์ไทยอยู่แล้วห้ามโดนแตะ */
   eq(g.tgAlias_('หวยไทย ดึง 200'), 'หวยไทย ดึง 200');
   eq(g.tgAlias_('/talkfootball'), '/talkfootball');
   eq(g.tgAlias_('B7 2-1'), 'B7 2-1');
+});
+
+test('ทุกคำสั่งในเมนูต้องมีในตารางเมนู "/" ด้วย', () => {
+  const g = env({});
+  const thai = g.TG_CMDS_.map(c => c.thai);
+  const DASH = ' — ';
+  g.TG_MENU_.split(String.fromCharCode(10)).forEach(line => {
+    const i = line.indexOf(DASH);
+    if (i < 0) return;
+    /* '/หาคู่ [เลข]' -> '/หาคู่'  ·  'หวยไทย · หวยลาว' -> สองตัว */
+    var head = line.slice(0, i);
+    var br = head.indexOf(' [');          /* ' [วัน]' คือคำอธิบายอาร์กิวเมนต์ ไม่ใช่ชื่อคำสั่ง */
+    if (br >= 0) head = head.slice(0, br);
+    head.split(' · ').forEach(tok => {
+      tok = tok.trim();
+      if (!tok) return;
+      ok(thai.indexOf(tok) >= 0, 'เมนูมีแต่ตาราง "/" ไม่มี: ' + tok);
+    });
+  });
 });
