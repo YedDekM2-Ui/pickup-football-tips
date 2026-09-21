@@ -60,3 +60,57 @@ test('FB_ENGINE ต้องตั้งผ่านลิงก์ได้ (�
   const g = env({});
   ok(g.CFG_ALLOW.indexOf('FB_ENGINE') >= 0, 'FB_ENGINE ต้องอยู่ใน CFG_ALLOW');
 });
+
+/* ---- v65: ตัวยิงอีก 2 ตัวที่ v62 ลืม ----
+   ของจริง 21 ก.ย. 69 หน้า 1 ดึงบอลไม่ได้ trail="อ้อม:200(ไม่ใช่หน้า)" ทั้งที่ v62 ใส่หัวแล้ว
+   เพราะ Forebet.gs/TalkFootball.gs มีตัวยิงของตัวเอง ไม่ได้ผ่าน cpGet_
+   เทสต์ชุดนี้กันไม่ให้ตัวยิงตัวใดตัวหนึ่งหลุดจากด่านกลาง cpJinaHead_ อีก */
+
+function envFor(files, props) {
+  const seen = [];
+  const g = loadGas(files, {
+    UrlFetchApp: { fetch: (url, opt) => { seen.push({ url, opt }); return fakeResponse(200, 'x'); } }
+  });
+  Object.keys(props || {}).forEach((k) => {
+    g.PropertiesService.getScriptProperties().setProperty(k, props[k]);
+  });
+  g.__seen = seen;
+  return g;
+}
+
+const FB_FILES = ['gas/Config.gs', 'gas/Compat.gs', 'gas/Forebet.gs'];
+const TF_FILES = ['gas/Config.gs', 'gas/Compat.gs', 'gas/TalkFootball.gs'];
+
+test('fbFetch_ (คู่ปักหมุดหน้า 1) ต้องสั่ง engine browser ด้วย', () => {
+  const g = envFor(FB_FILES, { JINA_KEY: 'k1' });
+  g.fbFetch_('https://www.forebet.com/en/football-tips-and-predictions-for-today', 'https://r.jina.ai/');
+  eq(g.__seen[0].opt.headers['X-Engine'], 'browser');
+  eq(g.__seen[0].opt.headers['Authorization'], 'Bearer k1');
+  eq(g.__seen[0].opt.headers['X-Return-Format'], 'html');
+});
+
+test('fbFetch_ ยิงตรง ห้ามมีหัวของ jina ติดไป', () => {
+  const g = envFor(FB_FILES, { JINA_KEY: 'k1' });
+  g.fbFetch_('https://www.forebet.com/x', '');
+  eq(g.__seen[0].opt.headers['X-Engine'], undefined);
+  eq(g.__seen[0].opt.headers['Authorization'], undefined);
+});
+
+test("fbFetch_ ต้องฟัง FB_ENGINE='-' (สวิตช์ปิดต้องปิดได้ทุกตัวยิง)", () => {
+  const g = envFor(FB_FILES, { JINA_KEY: 'k1', FB_ENGINE: '-' });
+  g.fbFetch_('https://www.forebet.com/x', 'https://r.jina.ai/');
+  eq(g.__seen[0].opt.headers['X-Engine'], undefined);
+});
+
+test('tfGet_ (/talkfootball) ต้องสั่ง engine browser ด้วย', () => {
+  const g = envFor(TF_FILES, { JINA_KEY: 'k1' });
+  g.tfGet_('https://www.forebet.com/x', 'https://r.jina.ai/');
+  eq(g.__seen[0].opt.headers['X-Engine'], 'browser');
+  eq(g.__seen[0].opt.headers['Authorization'], 'Bearer k1');
+});
+
+test('tfGet_ ไม่มีคีย์ → ห้ามสั่ง engine', () => {
+  const g = envFor(TF_FILES, {});
+  g.tfGet_('https://www.forebet.com/x', 'https://r.jina.ai/');
+  eq(g.__seen[0].opt.headers['X-Engine'], undefined);
+});

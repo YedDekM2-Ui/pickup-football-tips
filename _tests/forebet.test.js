@@ -82,7 +82,7 @@ const PAGE_B = Object.assign({}, PAGE_A, { home1: 'Chelsea', away1: 'Everton' })
 
 function fbEnv(book, body, code) {
   const app = new FakeSpreadsheetApp(book);
-  const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
+  const g = loadGas(['gas/Config.gs', 'gas/Compat.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
     SpreadsheetApp: app,
     PropertiesService: {
       getScriptProperties: () => ({ getProperty: k => ({ SHEET_ID: 'S' })[k] || null })
@@ -251,7 +251,7 @@ test('ยังไม่เคยดึงเลย = pinned ว่าง หน
 function fbEnvP(book, body, code) {
   const app = new FakeSpreadsheetApp(book);
   const box = { n: 0 };
-  const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
+  const g = loadGas(['gas/Config.gs', 'gas/Compat.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
     SpreadsheetApp: app,
     Utilities: { formatDate: () => '2026-08-25T18:00:00' },
     UrlFetchApp: { fetch: () => { box.n++; return fakeResponse(code === undefined ? 200 : code, body); } }
@@ -521,7 +521,7 @@ test('หัวข้อ "Featured matches" ของตารางใหญ่
 function fbNet(book, fetchFn, props) {
   const app = new FakeSpreadsheetApp(book);
   const calls = [];
-  const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
+  const g = loadGas(['gas/Config.gs', 'gas/Compat.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
     SpreadsheetApp: app,
     PropertiesService: {
       getScriptProperties: () => ({
@@ -944,7 +944,7 @@ test('ไม่มี JINA_KEY = ห้ามแนบหัวบัตรเ�
    ต้องใช้กล่องคุณสมบัติแบบเขียนได้ (ของ fbNet เขียนไม่ได้ กล่องดำจะหาย) */
 function fbEnvF(book, fetchFn) {
   const app = new FakeSpreadsheetApp(book);
-  const g = loadGas(['gas/Config.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
+  const g = loadGas(['gas/Config.gs', 'gas/Compat.gs', 'gas/Sheets.gs', 'gas/Forebet.gs', 'gas/Api.gs'], {
     SpreadsheetApp: app,
     Utilities: { formatDate: () => '2026-08-25T18:00:00' },
     UrlFetchApp: { fetch: (url, opt) => fetchFn(url, opt) }

@@ -496,13 +496,7 @@ function fbFetch_(url, via) {
   var target = url;
   if (via) {
     target = via + url;
-    head['X-Return-Format'] = 'html';   /* ขาดบรรทัดนี้ = ได้ markdown อ่านไม่ออก */
-    /* ทางอ้อมแบบไม่มีบัตร เขาจำกัดจำนวนครั้ง "ต่อ IP" ซึ่ง IP ของ Google ใช้ร่วมกันทั้งโลก
-       ไม่มีบัตรจึงมีสิทธิ์โดนปฏิเสธ (429) เป็นพักๆ โดยที่ของเราไม่ได้ผิดอะไรเลย
-       มีบัตรเมื่อไหร่ก็ใส่ที่ Script Property ชื่อ JINA_KEY — ไม่ใส่ก็ทำงานได้เหมือนเดิม
-       (ห้ามเขียนบัตรลงไฟล์ ที่นี่อ่านจาก Property อย่างเดียว) */
-    var jk = prop_('JINA_KEY');
-    if (jk) head['Authorization'] = 'Bearer ' + jk;
+    cpJinaHead_(head, false);   /* หัวทางอ้อมรวมไว้ที่เดียว (Compat.gs) — ขาด X-Engine = ได้หน้ากันบอท 200 */
   }
   var res = UrlFetchApp.fetch(target, {
     method: 'get',

@@ -52,6 +52,27 @@ function fbToday_() {
   return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
 }
 
+/** หัวที่ต้องติดไปกับ "ทุก" การยิงผ่านทางอ้อม jina — ที่เดียวของทั้งโปรเจกต์
+ *  ทำไมต้องรวมไว้ที่เดียว: v62 เคยใส่ X-Engine แค่ใน cpGet_ แล้วนึกว่าครบ
+ *  แต่ Forebet.gs กับ TalkFootball.gs มีตัวยิงของตัวเอง จึงยังโดน Cloudflare อยู่
+ *  เงียบๆ (200 แต่ไม่ใช่หน้า) — ใครเพิ่มตัวยิงใหม่ ต้องเรียกตัวนี้เท่านั้น
+ *  md=true → ห้ามใส่ X-Return-Format:html (ตัวแกะของ FabScan อ่าน markdown)
+ *  Cloudflare กั้นทั้ง IP ของกูเกิลและตัวดึงปกติของ jina (ตอบ 200 แต่เป็นหน้ากันบอท)
+ *  วัดจริง 21 ก.ย. 69: engine browser เท่านั้นที่ได้หน้าจริง (359 KB / 44 คู่ / 9.4 วิ)
+ *  ตั้ง FB_ENGINE='-' เพื่อปิด (จะกลับไปใช้ตัวดึงปกติ) */
+function cpJinaHead_(head, md) {
+  if (!md) head['X-Return-Format'] = 'html';
+  var jk = '';
+  try { jk = prop_('JINA_KEY'); } catch (e) { jk = ''; }
+  if (!jk) return head;                       /* ไม่มีบัตร = ห้ามสั่ง engine (โควต้าต้องมีบัตร) */
+  head['Authorization'] = 'Bearer ' + jk;
+  var eng = '';
+  try { eng = prop_('FB_ENGINE'); } catch (e2) { eng = ''; }
+  if (!eng) eng = 'browser';
+  if (eng !== '-') head['X-Engine'] = eng;
+  return head;
+}
+
 /** ยิงเอา "ข้อความดิบ" มา 1 หน้า — ใช้กับฟีด JSON และหน้า markdown
  *  md=true  → ห้ามใส่ X-Return-Format:html เพราะตัวแกะของ FabScan อ่าน markdown
  *  ตรงก่อน แล้วค่อยอ้อม: ฟีด getrs.php ยิงตรงติดบ่อย (ไม่ใช่หน้าเว็บ Cloudflare ไม่ค่อยกั้น) */
@@ -60,14 +81,7 @@ function cpGet_(url, via, md) {
   var target = url;
   if (via) {
     target = via + url;
-    if (!md) head['X-Return-Format'] = 'html';
-    var jk = prop_('JINA_KEY');
-    if (jk) head['Authorization'] = 'Bearer ' + jk;
-    // Cloudflare กั้นทั้ง IP ของกูเกิลและตัวดึงปกติของ jina (ตอบ 200 แต่เป็นหน้ากันบอท)
-    // วัดจริง 21 ก.ย. 69: engine browser เท่านั้นที่ได้หน้าจริง (359 KB / 44 คู่ / 9.4 วิ)
-    // ตั้ง FB_ENGINE='-' เพื่อปิด (จะกลับไปใช้ตัวดึงปกติ)
-    var eng = prop_('FB_ENGINE') || 'browser';
-    if (jk && eng !== '-') head['X-Engine'] = eng;
+    cpJinaHead_(head, md);
   } else {
     head['Referer'] = 'https://www.forebet.com/';
   }

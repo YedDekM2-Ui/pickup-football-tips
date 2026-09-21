@@ -67,10 +67,7 @@ function tfGet_(url, via) {
   var target = url;
   if (via) {
     target = via + url;
-    head['X-Return-Format'] = 'html';       /* ขาดบรรทัดนี้ = ได้ markdown ไม่มีตาราง */
-    var jk = '';
-    try { jk = prop_('JINA_KEY'); } catch (e) { jk = ''; }
-    if (jk) head['Authorization'] = 'Bearer ' + jk;
+    cpJinaHead_(head, false);   /* หัวทางอ้อมรวมไว้ที่เดียว (Compat.gs) — ขาด X-Engine = ได้หน้ากันบอท 200 */
   }
   var res = UrlFetchApp.fetch(target, {
     method: 'get', muteHttpExceptions: true, followRedirects: true, headers: head
