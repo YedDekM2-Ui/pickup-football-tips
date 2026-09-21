@@ -63,6 +63,11 @@ function cpGet_(url, via, md) {
     if (!md) head['X-Return-Format'] = 'html';
     var jk = prop_('JINA_KEY');
     if (jk) head['Authorization'] = 'Bearer ' + jk;
+    // Cloudflare กั้นทั้ง IP ของกูเกิลและตัวดึงปกติของ jina (ตอบ 200 แต่เป็นหน้ากันบอท)
+    // วัดจริง 21 ก.ย. 69: engine browser เท่านั้นที่ได้หน้าจริง (359 KB / 44 คู่ / 9.4 วิ)
+    // ตั้ง FB_ENGINE='-' เพื่อปิด (จะกลับไปใช้ตัวดึงปกติ)
+    var eng = prop_('FB_ENGINE') || 'browser';
+    if (jk && eng !== '-') head['X-Engine'] = eng;
   } else {
     head['Referer'] = 'https://www.forebet.com/';
   }
@@ -231,7 +236,7 @@ function notify_(text) {
    ของที่ต้องตั้งจึงต้องมีทางตั้งผ่านลิงก์เสมอ
    ⚠️ คายกลับได้แค่ "ตั้งแล้ว / ยาวกี่ตัว" ห้ามคายค่าจริงออกไป
    ⚠️ APP_KEY ไม่อยู่ในรายชื่อ — ทับกุญแจประตูตัวเองไม่ได้ */
-var CFG_ALLOW = ['GH_TOKEN', 'JINA_KEY', 'FB_PROXY', 'FB_TZ_SHIFT', 'FOREBET_URL',
+var CFG_ALLOW = ['GH_TOKEN', 'JINA_KEY', 'FB_PROXY', 'FB_ENGINE', 'FB_TZ_SHIFT', 'FOREBET_URL',
                  'TG_TOKEN', 'TG_HOOK_KEY', 'SCRAPER_KEY'];
 
 /* ตั้งกุญแจใบที่ 2 (SCRAPER_KEY) ได้ "ครั้งเดียว" ตอนที่ยังว่างอยู่
