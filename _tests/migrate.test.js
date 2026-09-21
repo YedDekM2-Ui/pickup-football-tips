@@ -274,3 +274,36 @@ test('cfgstat บอกว่า SCRAPER_KEY ตั้งแล้วยัง �
   ok(st['ค่า'].SCRAPER_KEY.indexOf('ตั้งแล้ว') === 0);
   ok(JSON.stringify(st).indexOf(K) < 0, 'ห้ามหลุดค่ากุญแจ');
 });
+
+/* ---------- 7. บั๊กที่เจอตอนไล่ตรวจ 21 ก.ย. 69 ---------- */
+
+test('พิมพ์ชื่อคำสั่งผิด ต้องฟ้อง ไม่ใช่เงียบ ๆ คายของหน้าเว็บกลับไป', () => {
+  const g = env();
+  const out = JSON.parse(body(g.doGet({ parameter: { k: 'kk', p: 'pollllll' } })));
+  eq(out.ok, false);
+  ok(String(out.error).indexOf('pollllll') >= 0, 'ต้องบอกด้วยว่าคำไหนที่ไม่รู้จัก');
+  const all = JSON.parse(body(g.doGet({ parameter: { k: 'kk', p: 'all' } })));
+  ok(all.ok !== false, 'ทางปกติ (all) ต้องไม่โดนลูกหลง');
+});
+
+test('ตัวถามผลหวยต้องเกาะรอบ poll ได้ แม้ tgPoll_ จะคืนตั้งแต่บรรทัดแรก', () => {
+  const g = env();          // ไม่ได้ตั้ง TG_MODE = tgPoll_ คืน error ทันที
+  let called = 0;
+  g.lotAutoAsk_ = function () { called++; };
+  const out = JSON.parse(body(g.doGet({ parameter: { k: 'kk', p: 'poll' } })));
+  eq(out.ok, false, 'โหมดยังไม่ใช่ poll — ส่วนของเทเลแกรมต้องฟ้องเหมือนเดิม');
+  eq(called, 1, 'แต่หวยต้องถูกเรียก ไม่งั้นเงียบตามกันไปทั้งที่คนละเรื่อง');
+});
+
+test('หวยพังห้ามลามมาทำให้ทางดึงข้อความพัง', () => {
+  const g = env();
+  g.lotAutoAsk_ = function () { throw new Error('ชีตหวยพัง'); };
+  const out = JSON.parse(body(g.doGet({ parameter: { k: 'kk', p: 'poll' } })));
+  ok(out && typeof out.ok !== 'undefined', 'ต้องยังตอบกลับเป็นก้อน json ปกติ');
+});
+
+test('cfgstat ต้องบอกโหมดรับข้อความด้วย (เวลาบอทเงียบจะได้ไล่ถูก)', () => {
+  const g = env({ props: { TG_MODE: 'poll' } });
+  const st = JSON.parse(body(g.doGet({ parameter: { k: 'kk', p: 'cfgstat' } })));
+  eq(st['ค่า'].TG_MODE, 'poll', 'โหมดไม่ใช่ความลับ ต้องโชว์ค่าจริง');
+});
