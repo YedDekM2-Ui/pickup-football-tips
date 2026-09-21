@@ -40,11 +40,37 @@ function tgApi_(method, payload) {
   }
 }
 
+/** แตกข้อความยาวเป็นหลายก้อน
+    เทเลแกรมเกิน 4096 ตัวอักษร = "ไม่ส่งให้เลย" (ไม่ใช่ตัดท้ายให้) เจ้าของจะเห็นเป็นบอทเงียบ
+    ตัดตรงขึ้นบรรทัดใหม่ก่อน ถ้าบรรทัดยาวผิดปกติค่อยตัดดิบ ๆ */
+function tgChunks_(text, lim) {
+  var NLC = String.fromCharCode(10);   /* เขียนเป็นรหัสตัวอักษร กันตัวหนีบรรทัดหายตอนแก้ไฟล์ */
+  var s   = String(text == null ? '' : text);
+  var max = lim || 3900;
+  var out = [];
+  while (s.length > max) {
+    var cut = s.lastIndexOf(NLC, max);
+    if (cut < max / 2) cut = max;
+    out.push(s.slice(0, cut));
+    s = s.slice(cut);
+    if (s.charAt(0) === NLC) s = s.slice(1);
+  }
+  out.push(s);
+  return out;
+}
+
 function tgSend_(chatId, text) {
   /* reply_markup ติดไปทุกข้อความ - เทเลแกรมจำปุ่มชุดล่าสุดของห้อง
-     ถ้าส่งบางข้อความไม่ติด ปุ่มจะหายไปเฉยๆ ตอนเจ้าของกำลังใช้อยู่ */
-  return tgApi_('sendMessage', { chat_id: chatId, text: text, disable_web_page_preview: true,
-                                 reply_markup: JSON.stringify(tgKeyboard_()) });
+     ถ้าส่งบางข้อความไม่ติด ปุ่มจะหายไปเฉยๆ ตอนเจ้าของกำลังใช้อยู่
+     ยาวเกินลิมิตก็แตกให้ที่นี่จุดเดียว ทางเรียกทุกทางจะได้ไม่ต้องนับเอง */
+  var parts = tgChunks_(text, 3900);
+  var res   = { ok: false, error: 'ไม่มีข้อความให้ส่ง' };
+  for (var i = 0; i < parts.length; i++) {
+    res = tgApi_('sendMessage', { chat_id: chatId, text: parts[i], disable_web_page_preview: true,
+                                  reply_markup: JSON.stringify(tgKeyboard_()) });
+    if (!res.ok) return res;   /* ก้อนแรกไม่ไป ก้อนหลังก็ไม่ต้องยิงให้เปลือง */
+  }
+  return res;
 }
 
 /** ส่งหาเจ้าของ — ใช้ตอนบอทอยากบอกเองโดยไม่มีใครถาม */
@@ -274,7 +300,7 @@ var TG_MENU_ =
   '/คู่ — คู่ที่ยังไม่เตะ\n' +
   '/คิดผล — ไล่หาสกอร์จบเกมเองรอบเดียว\n' +
   '/หาคู่ [เลข] — สแกน Live coef. จาก forebet (เลข = ค่าคุ้มขั้นต่ำ)\n' +
-  '/talkfootball — คำทำนายเว็บ talkfootball (ครึ่งแรก 90%+ · SH/OU2.5/BTTS เสริม)\n' +
+  '/talkfootball — คำทำนายเว็บ talkfootball (ครึ่งแรก 80%+ · SH/OU2.5/BTTS เสริม)\n' +
   '/tfสถิติ [วัน] — ความแม่นของ talkfootball ย้อนหลัง (ไม่ใส่ = 30 วัน)\n' +
   '/สถิติค่าคุ้ม — ผลจริงของใบค่าคุ้มก่อนเกม (เข้ากี่ % · กำไร/ไม้)\n' +
   '/สถิติเตือน — ผลจริงของใบเตือนบอลสด FABEL5 (เกรดเอง ไม่ต้องตอบสกอร์)\n' +

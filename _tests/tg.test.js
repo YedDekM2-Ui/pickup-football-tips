@@ -909,3 +909,61 @@ test('ทุกคำสั่งในเมนูต้องมีในต�
     });
   });
 });
+
+/* ---- ข้อความยาวเกินลิมิตเทเลแกรม ----
+   เกิน 4096 ตัวอักษร เทเลแกรมไม่ตัดท้ายให้ มัน "ไม่ส่งให้เลย" เจ้าของเห็นเป็นบอทเงียบ
+   ด่านนี้อยู่ที่ tgSend_ จุดเดียว ทางเรียกทุกทางจะได้ไม่ต้องนับเอง */
+
+test('tgChunks_ ข้อความสั้น = ก้อนเดียว ไม่ถูกแตะ', () => {
+  const g = env({});
+  const out = g.tgChunks_('สวัสดี', 3900);
+  eq(out.length, 1);
+  eq(out[0], 'สวัสดี');
+});
+
+test('tgChunks_ ตัดตรงขึ้นบรรทัดใหม่ ไม่ตัดกลางบรรทัด', () => {
+  const g  = env({});
+  const NL = String.fromCharCode(10);
+  const txt = ['aaaa', 'bbbb', 'cccc', 'dddd'].join(NL);
+  const out = g.tgChunks_(txt, 10);
+  ok(out.length > 1, 'ยาวเกินลิมิตแล้วยังไม่แตก');
+  out.forEach(p => ok(p.length <= 10, 'ก้อนยาวเกินลิมิต: ' + p.length));
+  out.forEach(p => p.split(NL).forEach(l => ok(l === 'aaaa' || l === 'bbbb' || l === 'cccc' || l === 'dddd', 'ตัดกลางบรรทัด: ' + l)));
+  eq(out.join(NL), txt);
+});
+
+test('tgSend_ ข้อความยาวเกิน 4096 = แตกหลายข้อความ ก้อนละไม่เกิน 3900 + มีปุ่มทุกก้อน', () => {
+  const g   = env({ TG_TOKEN: 'T', TG_CHAT: '9' });
+  const NL  = String.fromCharCode(10);
+  const one = new Array(101).join('x');          /* บรรทัดละ 100 ตัว */
+  const lines = [];
+  for (let i = 0; i < 120; i++) lines.push(one); /* ~12,000 ตัว */
+  const txt = lines.join(NL);
+  const res = g.tgSend_('9', txt);
+
+  ok(res.ok, 'ส่งไม่สำเร็จ');
+  ok(g.__sent.length >= 3, 'ต้องแตกหลายก้อน แต่ได้ ' + g.__sent.length);
+  g.__sent.forEach(s => {
+    ok(s.url.indexOf('/sendMessage') > 0, 'ยิงผิด method: ' + s.url);
+    ok(s.body.text.length <= 3900, 'ก้อนยาวเกิน 3900: ' + s.body.text.length);
+    ok(!!s.body.reply_markup, 'ก้อนนี้ไม่มีปุ่ม ปุ่มจะหายจากห้องเจ้าของ');
+  });
+  eq(g.__sent.map(s => s.body.text).join(NL), txt);
+});
+
+test('tgSend_ ก้อนแรกล้ม = หยุดยิงก้อนที่เหลือ', () => {
+  const hit = [];
+  const g = env({ TG_TOKEN: 'T', TG_CHAT: '9' }, [], {
+    UrlFetchApp: { fetch: (url, opt) => {
+      hit.push(JSON.parse((opt && opt.payload) || '{}'));
+      return fakeResponse(200, JSON.stringify({ ok: false, description: 'chat not found' }));
+    } }
+  });
+  const NL    = String.fromCharCode(10);
+  const one   = new Array(101).join('x');
+  const lines = [];
+  for (let i = 0; i < 120; i++) lines.push(one);
+  const res = g.tgSend_('9', lines.join(NL));
+  eq(res.ok, false);
+  eq(hit.length, 1);
+});

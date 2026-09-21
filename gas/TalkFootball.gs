@@ -3,10 +3,10 @@
  * ย้ายมาจาก PIKTAX (talkfootball.gs) 27 ส.ค. 69 — บอทเก่าเหลือแค่ภาษี+กรรชัย
  *
  * กติกาเดิมที่เจ้าของสั่งไว้ ห้ามเปลี่ยน:
- *   - หน้า first-half-goals = "ตัวหลัก" เอาเฉพาะ 90-100%
+ *   - หน้า first-half-goals = "ตัวหลัก" เอาเฉพาะ 80-100% (เจ้าของสั่งลดจาก 90 → 80 · 21 ก.ย. 69)
  *   - อีก 3 หน้า (SH / OU2.5 / BTTS) = ตัวเสริม เกาะมาบรรทัดเดียวกัน · ไม่มี = "-"
  *   - เวลาเว็บเป็น UTC → ไทย = +7 (ปล่อยให้ TZ จัดการ) · เรียงเวลาเป็นหลัก แล้วค่อย %
- *   - ไม่มีคู่ถึง 90% → บอก "ไม่มีบอลน่าสนใจในตอนนี้" พร้อมเหตุผล
+ *   - ไม่มีคู่ถึงเกณฑ์ → บอก "ไม่มีบอลน่าสนใจในตอนนี้" พร้อมเหตุผล
  *
  * ต่างจากของเดิม 3 อย่าง:
  *   1. ชีตผ่าน sheetEnsure_/sheetIfExists_ (SHEET_ID ของโปรเจกต์นี้) ไม่ใช่ openById ตรงๆ
@@ -18,12 +18,13 @@ var TF_URL_HT   = 'https://talkfootball.co.uk/predictions/first-half-goals/';
 var TF_URL_SH   = 'https://talkfootball.co.uk/predictions/second-half-goals/';
 var TF_URL_25   = 'https://talkfootball.co.uk/predictions/match-goals-over-2.5/';
 var TF_URL_BTTS = 'https://talkfootball.co.uk/predictions/btts/';
-var TF_MIN_PCT  = 90;   // ตัวหลัก (HT) เอาเฉพาะ 90-100%
-var TF_MAX_ROWS = 30;   // กันข้อความยาวเกินลิมิต Telegram (4096)
+var TF_MIN_PCT  = 80;   // ตัวหลัก (HT) เอาเฉพาะ 80-100% (เจ้าของสั่ง 21 ก.ย. 69 — เดิม 90)
+var TF_MAX_ROWS = 50;   // ยาวเกิน 4096 ไม่หายแล้ว tgSend_ แตกข้อความให้เอง · เกินนี้ต่อท้ายว่าเหลืออีกกี่คู่
 
-// ระยะเวลาล่วงหน้าขั้นต่ำ — คู่ที่จะเตะเร็วกว่านี้ไม่ต้องเอามาโชว์
-// เจ้าของสั่ง 11 ส.ค. 69: "กดขอไปตอนไหน มันก็มีแต่ที่จะใกล้ถึง บอลน้อยๆมันดูไม่ทัน"
-var TF_LEAD_MIN = 60;
+// จุดเริ่มตาราง นับจากตอนกด (นาที) — ติดลบ = ย้อนหลัง เอาคู่ที่เพิ่งเตะมาโชว์ด้วย
+// เจ้าของสั่ง 11 ส.ค. 69: "กดขอไปตอนไหน มันก็มีแต่ที่จะใกล้ถึง บอลน้อยๆมันดูไม่ทัน" -> +60
+// เจ้าของสั่ง 21 ก.ย. 69: "เปลี่ยนให้เร็วขึ้นอีก 2 ชั่วโมง" -> 60 - 120 = -60 (เริ่มที่ 1 ชม.ก่อนตอนกด)
+var TF_LEAD_MIN = -60;
 
 /** ดึง+แปลงตารางทำนาย (ทุกหน้าใช้โครงตารางเดียวกัน 7 ช่อง)
  *  ทางเข้าเว็บ — ยิงตรงก่อน โดนกั้นค่อยอ้อมผ่าน fbProxy_() (ห้ามฝัง r.jina.ai ตรงๆ)
@@ -167,7 +168,7 @@ function tfText_() {
   }
 
   var nowMs   = Date.now();
-  var startMs = nowMs + TF_LEAD_MIN * 60 * 1000;        // จุดเริ่มตาราง = อีก 1 ชม.ข้างหน้า
+  var startMs = nowMs + TF_LEAD_MIN * 60 * 1000;        // จุดเริ่มตาราง (ค่าติดลบ = ย้อนหลัง)
   var hit = rows.filter(function (r) {
     return r.pct >= TF_MIN_PCT && r.kickUtc >= startMs;
   }).sort(function (a, b) {
@@ -179,12 +180,12 @@ function tfText_() {
 
   if (!hit.length) {
     // ไม่มีของให้โชว์ ต้องบอกให้ชัดว่าเพราะอะไร จะได้รู้ว่าไม่ใช่เว็บพัง
+    /* เทียบกับ startMs ตัวเดียว ห้ามเทียบกับ "ตอนนี้" — พอ TF_LEAD_MIN ติดลบ
+       คู่ที่เตะไปแล้วแต่ยังอยู่ในตาราง จะถูกนับเป็นเหตุผลที่ไม่โชว์ ทั้งที่มันโชว์อยู่ */
     var ok     = rows.filter(function (r) { return r.pct >= TF_MIN_PCT; });
-    var soon   = ok.filter(function (r) { return r.kickUtc >= nowMs && r.kickUtc < startMs; }).length;
-    var passed = ok.filter(function (r) { return r.kickUtc <  nowMs; }).length;
+    var passed = ok.filter(function (r) { return r.kickUtc < startMs; }).length;
     var why = [];
-    if (soon)   why.push(soon + ' คู่จะเตะภายใน ' + TF_LEAD_MIN + ' นาทีนี้ (ใกล้เกินไป)');
-    if (passed) why.push(passed + ' คู่เตะไปแล้ว');
+    if (passed) why.push(passed + ' คู่เตะไปก่อน ' + startTh + ' แล้ว');
     return '⚽ talkfootball · ครึ่งแรกน่าจะมีสกอร์ · เวลาไทย ' + nowTh + '\n' +
            'ไม่มีบอลน่าสนใจในตอนนี้' +
            (why.length ? '\n(วันนี้มี ' + ok.length + ' คู่ที่ถึง ' + TF_MIN_PCT + '% — ' +
@@ -209,6 +210,7 @@ function tfText_() {
                '  HT ' + r.pct + '% · SH ' + tfPct_(sh, k) +
                ' · OU2.5 ' + tfPct_(ou, k) + ' · BTTS ' + tfPct_(btts, k));
   });
+  if (hit.length > shown.length) lines.push('', '… อีก ' + (hit.length - shown.length) + ' คู่');
   return lines.join('\n');
 }
 
