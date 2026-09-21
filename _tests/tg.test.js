@@ -520,13 +520,13 @@ test('ปุ่มลัดติดไปกับข้อความทุ�
   eq(kb.is_persistent, true, 'ปุ่มต้องไม่หายหลังกด');
   eq(kb.resize_keyboard, true);
   const flat = JSON.stringify(kb.keyboard);
-  ok(flat.indexOf('/picktips') >= 0, 'ต้องมีปุ่มทีเด็ด');
+  ok(flat.indexOf('/ทีเด็ด') >= 0, 'ต้องมีปุ่มทีเด็ด');
   ok(flat.indexOf('/บิล') >= 0);
 });
 
-test('เมนูบอกคำสั่ง /picktips ด้วย', () => {
+test('เมนูบอกคำสั่งทีเด็ดด้วย', () => {
   const g = envPick({ TG_TOKEN: 'T', TG_CHAT: '111' }, []);
-  ok(g.tgHandle_({ message: { chat: { id: 111 }, text: '/help' } }).indexOf('/picktips') >= 0);
+  ok(g.tgHandle_({ message: { chat: { id: 111 }, text: '/help' } }).indexOf('/ทีเด็ด') >= 0);
 });
 
 test('พิมพ์ /picktips แล้วได้ใบทีเด็ด ไม่ใช่เมนู', () => {
@@ -889,6 +889,14 @@ test('คำสั่งอังกฤษในเมนู "/" แปลงก
   eq(g.tgAlias_('หวยไทย ดึง 200'), 'หวยไทย ดึง 200');
   eq(g.tgAlias_('/talkfootball'), '/talkfootball');
   eq(g.tgAlias_('B7 2-1'), 'B7 2-1');
+});
+
+test('ทุกปุ่มลัดต้องเป็นคำสั่งที่มีในตารางเมนู "/"', () => {
+  const g = env({});
+  const thai = g.TG_CMDS_.map(c => c.thai);
+  g.tgKeyboard_().keyboard.forEach(row => row.forEach(b => {
+    ok(thai.indexOf(b.text) >= 0, 'ปุ่มลัดไม่มีในตาราง "/": ' + b.text);
+  }));
 });
 
 test('ทุกคำสั่งในเมนูต้องมีในตารางเมนู "/" ด้วย', () => {
