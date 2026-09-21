@@ -54,7 +54,7 @@ function handleThaiLottery_(chatId, t) {
   // ⛔ บอทนี้ไม่มี trigger (ไม่ขอสิทธิ์ script.scriptapp) — ตัวถามยิงจากข้างนอกผ่าน ?p=lotask
   if (/^(เตือน|ตั้งเตือน|setup|เปิดเตือน|ปิดเตือน|stop)/i.test(s))
     return tgSend_(chatId, '🔔 บอทนี้ไม่ตั้งเตือนเอง\nพิมพ์ "หวยไทย ถาม" เพื่อให้ถามงวดค้างเดี๋ยวนี้');
-  if (/^(ถาม|test|ทดสอบ)/i.test(s)) { askThaiLottery_(true); return; }
+  if (/^(ถาม|test|ทดสอบ)/i.test(s)) return lotAskCmd_(chatId, 'thai');
   if (/^(ดึง|โหลด|backfill|sync)/i.test(s)) {
     var nT = (s.match(/(\d{2,4})\s*$/) || [])[1];
     return tgSend_(chatId, thaiBackfill(nT));
@@ -80,8 +80,9 @@ function askThaiLottery_(force) {
   if (!chatId) { logEvent_('WARN', 'askThaiLottery_: ไม่มี chat id'); return; }
   var todayISO = lotTodayISO_();
   var due = lotDueDraws_('thai', todayISO);
-  if (force !== true && !due.length) return;          // ไม่ใช่วันงวด และไม่มีค้าง = เงียบ
-  var iso = due.length ? due[0] : todayISO;           // ค้างเก่าสุดก่อน
+  /* ไม่มีงวดค้าง = เงียบ แม้ force ก็เงียบ (กันถามงวดที่ยังไม่ออก) */
+  if (!due.length) return;
+  var iso = due[0];                                  // ค้างเก่าสุดก่อน
   setThaiPending_({ date: iso, ts: Date.now() });
   var late = (iso !== todayISO) ? '\n(งวดนี้ยังไม่ได้บันทึก เลยตามถามย้อนให้ครับ)' : '';
   tgSendForceReply_(chatId,

@@ -26,20 +26,60 @@ var TF_MAX_ROWS = 30;   // กันข้อความยาวเกิน�
 var TF_LEAD_MIN = 60;
 
 /** ดึง+แปลงตารางทำนาย (ทุกหน้าใช้โครงตารางเดียวกัน 7 ช่อง)
-    เว็บนี้ยิงตรงได้ ไม่ใช่ forebet ไม่ต้องอ้อม (และห้ามใส่ Referer ของ forebet) */
-function tfFetchRows_(url) {
-  var res = UrlFetchApp.fetch(url, {
-    muteHttpExceptions: true,
-    followRedirects: true,
-    headers: {
-      'User-Agent': CP_UA,
-      'Accept': 'text/html,application/xhtml+xml',
-      'Accept-Language': 'en-US,en;q=0.9'
-    }
-  });
-  if (res.getResponseCode() !== 200) throw new Error('HTTP ' + res.getResponseCode());
+ *  ทางเข้าเว็บ — ยิงตรงก่อน โดนกั้นค่อยอ้อมผ่าน fbProxy_() (ห้ามฝัง r.jina.ai ตรงๆ)
+ *  ⚠️ ของจริง 21 ก.ย. 69: ยิงตรงจากเครื่องกูเกิลได้ HTTP 200 แต่เป็น "หน้ากั้น" ไม่มี <tr> สักตัว
+ *     ตัวเก่าเลยตอบ "หน้าเว็บอาจเปลี่ยนโครงสร้าง" ทั้งที่ตัวแกะไม่ได้พัง (ลองกับหน้าจริงได้ 50 แถว)
+ *  → กฎ: วัดที่ "แกะได้กี่แถว" ไม่ใช่แค่โค้ด 200 แล้วจดทางที่ลองไว้ให้รู้ว่าใครปิดประตูใส่เรา */
+var TF_TRAIL = '';
 
-  var trs = res.getContentText().match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
+function tfFetchRows_(url) {
+  var ways = [''], via = '';
+  try { via = fbProxy_(); } catch (e0) { via = ''; }
+  if (via) ways.push(via);
+
+  var trail = [], hardErr = null, got200 = false;
+  for (var w = 0; w < ways.length; w++) {
+    var tag = ways[w] ? 'อ้อม' : 'ตรง', r = null;
+    try { r = tfGet_(url, ways[w]); }
+    catch (e) { trail.push(tag + ':ล้ม'); hardErr = hardErr || e; continue; }
+    if (r.code !== 200) {
+      trail.push(tag + ':' + r.code);
+      hardErr = hardErr || new Error('HTTP ' + r.code);
+      continue;
+    }
+    got200 = true;
+    var rows = tfParse_(r.body);
+    trail.push(tag + ':200/' + rows.length + 'แถว');
+    if (rows.length) { TF_TRAIL = trail.join(' '); return rows; }
+  }
+  TF_TRAIL = trail.join(' ');
+  if (!got200 && hardErr) throw hardErr;   /* ไม่มีทางไหนถึงหน้าเลย = โยนขึ้นไปบอกเหตุผล */
+  return [];
+}
+
+function tfGet_(url, via) {
+  var head = {
+    'User-Agent': CP_UA,
+    'Accept': 'text/html,application/xhtml+xml',
+    'Accept-Language': 'en-US,en;q=0.9'
+  };
+  var target = url;
+  if (via) {
+    target = via + url;
+    head['X-Return-Format'] = 'html';       /* ขาดบรรทัดนี้ = ได้ markdown ไม่มีตาราง */
+    var jk = '';
+    try { jk = prop_('JINA_KEY'); } catch (e) { jk = ''; }
+    if (jk) head['Authorization'] = 'Bearer ' + jk;
+  }
+  var res = UrlFetchApp.fetch(target, {
+    method: 'get', muteHttpExceptions: true, followRedirects: true, headers: head
+  });
+  return { code: res.getResponseCode(), body: res.getContentText() };
+}
+
+/** แกะตารางออกจาก html — แยกเป็นตัวเดียวจะได้เอาหน้าจริงมาเทสต์ได้โดยไม่ต้องต่อเน็ต */
+function tfParse_(html) {
+  var trs = String(html || '').match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
   var out = [];
 
   for (var i = 0; i < trs.length; i++) {
@@ -48,20 +88,16 @@ function tfFetchRows_(url) {
     var c = tds.map(function (x) { return tfClean_(x); });
 
     // c[0]="07/31 13:00" c[1]="Vietnam - Singapore" c[2]=ลีก c[3]=%ฝั่งใช่ c[5]=ความมั่นใจ
-    var dt = c[0].match(/^(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})$/);
-    if (!dt) continue;
+    var ms = tfKickMs_(tds[0], c[0]);
+    if (!ms) continue;
     var pct = parseInt(String(c[5]).replace('%', ''), 10);
     if (isNaN(pct)) pct = parseInt(String(c[3]).replace('%', ''), 10);
     if (isNaN(pct)) continue;
 
-    out.push({
-      kickUtc: tfUtcMs_(+dt[1], +dt[2], +dt[3], +dt[4]),
-      match: c[1], league: c[2], pct: pct
-    });
+    out.push({ kickUtc: ms, match: c[1], league: c[2], pct: pct });
   }
 
-  // หน้าเว็บมีตารางซ้อนกันหลายชุด (คู่เด่นด้านบน + ตารางรวม) → คู่เดียวกันโผล่ 2 รอบ
-  // ตัดซ้ำด้วย "เวลาเตะ + ชื่อคู่" เก็บอันที่ % สูงกว่าไว้
+  // หน้าเว็บมีตารางซ้อนกันหลายชุด → คู่เดียวกันโผล่ 2 รอบ
   var seen = {}, uniq = [];
   out.forEach(function (r) {
     var k = tfKey_(r);
@@ -71,6 +107,15 @@ function tfFetchRows_(url) {
   return uniq;
 }
 
+/** เวลาเตะของแถวนี้ — เอา microdata startDate ก่อนเสมอ (มีปีเต็ม ไม่ต้องเดาปี)
+ *  ไม่มีค่อยถอยไปอ่านข้อความ MM/DD hh:mm ที่เขาโชว์ */
+function tfKickMs_(rawTd, cleanTd) {
+  var sd = String(rawTd || '').match(/itemprop=["']startDate["'][^>]*content=["'](\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if (sd) return Date.UTC(+sd[1], +sd[2] - 1, +sd[3], +sd[4], +sd[5], 0);
+  var dt = String(cleanTd || '').match(/(\d{1,2})\/(\d{1,2})\D+(\d{1,2}):(\d{2})/);
+  if (!dt) return 0;
+  return tfUtcMs_(+dt[1], +dt[2], +dt[3], +dt[4]);
+}
 function tfKey_(r) { return r.kickUtc + '|' + r.match; }
 
 /** ดึงหน้าเสริม → map {key: %} · หน้าไหนล่มก็แค่คอลัมน์นั้นว่าง ไม่ทำทั้งคำสั่งพัง */
@@ -108,9 +153,18 @@ function tfText_() {
   try {
     rows = tfFetchRows_(TF_URL_HT);   // ตัวหลัก — ล่มเมื่อไหร่คือจบ
   } catch (err) {
-    return '⚽ talkfootball · ครึ่งแรกน่าจะมีสกอร์\n❌ ดึงข้อมูลไม่ได้: ' + err.message + '\nลองใหม่อีกครั้งนะ';
+    try { logEvent_('warn', 'tf ดึงไม่ได้ ' + TF_TRAIL + ' | ' + err.message); } catch (e) { }
+    return '⚽ talkfootball · ครึ่งแรกน่าจะมีสกอร์\n❌ ดึงข้อมูลไม่ได้: ' + err.message +
+           (TF_TRAIL ? '\n🛣️ ทางที่ลอง: ' + TF_TRAIL : '') + '\nลองใหม่อีกครั้งนะ';
   }
-  if (!rows.length) return '⚽ talkfootball · ครึ่งแรกน่าจะมีสกอร์\n❌ อ่านตารางจากเว็บไม่ได้ (หน้าเว็บอาจเปลี่ยนโครงสร้าง)';
+  if (!rows.length) {
+    /* ถึงหน้าแล้วแต่ไม่ได้แถว = โดนหน้ากั้น หรือเขาเปลี่ยนโครงตารางจริง
+       บรรทัด "ทางที่ลอง" แยกสองอย่างนี้ออกจากกันได้โดยไม่ต้องเปิดคอม */
+    try { logEvent_('warn', 'tf ได้ 0 แถว ' + TF_TRAIL); } catch (e) { }
+    return '⚽ talkfootball · ครึ่งแรกน่าจะมีสกอร์\n❌ อ่านตารางจากเว็บไม่ได้' +
+           (TF_TRAIL ? '\n🛣️ ทางที่ลอง: ' + TF_TRAIL : '') +
+           '\n(เจอ 200/0แถว = เว็บส่งหน้ากั้นมาให้ · ลองใหม่อีกทีได้)';
+  }
 
   var nowMs   = Date.now();
   var startMs = nowMs + TF_LEAD_MIN * 60 * 1000;        // จุดเริ่มตาราง = อีก 1 ชม.ข้างหน้า

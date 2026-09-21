@@ -94,6 +94,70 @@ function tgOffHook_() {
   return { ok: r.ok, error: r.error || '', 'ปิดแล้ว': r.ok === true };
 }
 
+/* ---------- โหมดรับสาย: "ดึงเอง" แทนให้เทเลแกรมยิงมา ----------
+   ทำไมต้องมี: Apps Script ตอบ POST เป็น 302 เสมอ เทเลแกรมนับว่าส่งไม่ถึง
+   เลยยิงใบเดิมซ้ำไม่เลิกจนคิวตัน = บอทเงียบ (ต้นเหตุเดียวกับที่ tgFixQueue_ คอยล้าง)
+   บอทเก่า (PIKTAX) ไม่เคยเจอปัญหานี้เลย เพราะมัน "ไม่มี webhook" —
+   มันเดินไปถามเทเลแกรมเองเป็นรอบ ๆ ฝั่งโน้นจึงไม่แคร์ว่าเราตอบโค้ดอะไรกลับ
+   ที่นี่ไม่มี trigger (ตั้งใจ ไม่ใส่สิทธิ์ script.scriptapp) จึงให้ตัวเฝ้าข้างนอก
+   (fb-watch บน GitHub Actions) เป็นคนกดนาฬิกาแทน: ยิง ?p=poll ทุก ~30 วินาที
+   กติกา:
+     - webhook กับ getUpdates อยู่ด้วยกันไม่ได้ (เทเลแกรมตอบ 409) เปิดโหมดนี้ = ถอนฮุกทิ้ง
+     - ถอนแบบ "ไม่ล้างคิว" เพราะของที่ค้างคือของที่ยังไม่ได้ตอบ ปล่อยให้ getUpdates มาเก็บ
+       (ใบที่ตอบไปแล้วมีด่าน tgFresh_ กันซ้ำอยู่)
+     - offset ต้องจด "ก่อน" ลงมือตอบ ไม่งั้นใบที่ทำให้พังจะวนกลับมาพังซ้ำทุกรอบตลอดกาล */
+var TG_POLL_MAX_ = 20;   /* ต่อรอบ — เหลือค้างก็รอบหน้ามาเก็บ ห้ามยาวจนชนเพดานเวลาของ GAS */
+
+function tgMode_() { return String(prop_('TG_MODE') || '') === 'poll' ? 'poll' : 'hook'; }
+
+/** เปิดโหมดดึงเอง — ถอน webhook ทิ้งแล้วจำโหมดไว้ */
+function tgPollOn_() {
+  if (!tgTok_()) return { ok: false, error: 'ยังไม่ได้ตั้ง TG_TOKEN ที่ Script Properties' };
+  var r = tgApi_('deleteWebhook', {});   /* ห้ามใส่ drop_pending_updates ของค้างยังไม่ได้ตอบ */
+  if (!r.ok) return { ok: false, error: r.error || 'ถอน webhook ไม่ได้' };
+  try { PropertiesService.getScriptProperties().setProperty('TG_MODE', 'poll'); } catch (e) {}
+  return { ok: true, 'โหมด': 'ดึงเอง' };
+}
+
+/** กลับไปโหมดให้เทเลแกรมยิงมา (ของเดิม) */
+function tgPollOff_() {
+  var u = String(prop_('EXEC_URL') || '');
+  if (!u) return { ok: false, error: 'ยังไม่รู้ที่อยู่เว็บแอป ยิง ?p=hook&url=... หนึ่งครั้งก่อน' };
+  try { PropertiesService.getScriptProperties().setProperty('TG_MODE', 'hook'); } catch (e) {}
+  var r = tgSetHook_(u);
+  return { ok: r.ok, error: r.error || '', 'โหมด': 'ฮุก' };
+}
+
+/** เดินไปถามเทเลแกรมเองหนึ่งรอบ แล้วตอบให้ครบทุกใบที่ค้าง */
+function tgPoll_() {
+  if (!tgTok_()) return { ok: false, error: 'ยังไม่ได้ตั้ง TG_TOKEN ที่ Script Properties' };
+  if (tgMode_() !== 'poll') return { ok: false, error: 'ยังไม่ได้เปิดโหมดดึงเอง (?p=pollon)' };
+  /* ตัวเฝ้าข้างนอกยิงถี่ ๆ ได้ ห้ามให้ 2 รอบทำงานทับกัน ไม่งั้นตอบซ้ำ */
+  var lock = null;
+  try { lock = LockService.getScriptLock(); } catch (e) { lock = null; }
+  if (lock && !lock.tryLock(2000)) return { ok: true, 'ข้าม': 'รอบก่อนยังไม่เสร็จ', 'อ่าน': 0 };
+  try {
+    var ps = PropertiesService.getScriptProperties();
+    var off = Number(ps.getProperty('TG_OFFSET') || 0) || 0;
+    var r = tgApi_('getUpdates', { offset: off, limit: TG_POLL_MAX_, timeout: 0,
+                                   allowed_updates: ['message'] });
+    if (!r.ok) return { ok: false, error: r.error || 'ถามเทเลแกรมไม่ได้' };
+    var ups = r.result || [], n = 0, bad = 0;
+    for (var i = 0; i < ups.length; i++) {
+      var u = ups[i], id = Number(u && u.update_id) || 0;
+      if (id >= off) { off = id + 1; try { ps.setProperty('TG_OFFSET', String(off)); } catch (e2) {} }
+      try { tgMark_('ดึงเอง'); tgHandle_(u, Date.now()); n++; }
+      catch (e3) { bad++; try { logEvent_('WARN', 'ตอบข้อความไม่สำเร็จ (ดึงเอง)'); } catch (e4) {} }
+    }
+    /* โปรเจกต์นี้ไม่มี trigger (ไม่ขอสิทธิ์ script.scriptapp) ตัวถามผลหวยจึงเกาะรอบนี้
+       ตัวมันเช็คเวลา/งวดค้างเอง ไม่มีงานก็คืนเงียบ และห้ามทำให้การดึงข้อความพัง */
+    try { lotAutoAsk_(); } catch (e6) {}
+    return { ok: true, 'อ่าน': n, 'พลาด': bad, 'ยังมีต่อ': ups.length >= TG_POLL_MAX_ };
+  } finally {
+    if (lock) { try { lock.releaseLock(); } catch (e5) {} }
+  }
+}
+
 /** สภาพ webhook ตอนนี้ — ตัด url ทิ้งก่อนคาย เพราะมีกุญแจอยู่ในนั้น */
 function tgHookInfo_() {
   var r = tgApi_('getWebhookInfo', {});
@@ -126,6 +190,8 @@ var TGQ_MIN_ = 5, TGQ_QUIET_MS_ = 3 * 60 * 1000, TGQ_COOL_MS_ = 10 * 60 * 1000;
 
 function tgFixQueue_(force) {
   if (!tgTok_()) return { ok: false, error: 'ยังไม่ได้ตั้ง TG_TOKEN ที่ Script Properties' };
+  /* โหมดดึงเองไม่มี webhook ให้ล้าง และถ้าขืนไปผูกใหม่ getUpdates จะโดน 409 ทันที */
+  if (tgMode_() === 'poll') return { ok: true, 'โหมด': 'ดึงเอง', 'ล้าง': false, 'เหตุผล': 'โหมดดึงเอง ไม่ได้ใช้ webhook' };
   var w = tgHookInfo_();
   if (!w.ok) return { ok: false, error: w.error || 'ถามสภาพ webhook ไม่ได้' };
 
@@ -182,7 +248,8 @@ function tgDiag_() {
   var d = {
     'ตั้งโทเคนแล้ว': !!tgTok_(),
     'ตั้งกุญแจฮุกแล้ว': !!prop_('TG_HOOK_KEY'),
-    'ตั้งเจ้าของแล้ว': !!tgChat_()
+    'ตั้งเจ้าของแล้ว': !!tgChat_(),
+    'โหมด': tgMode_() === 'poll' ? 'ดึงเอง' : 'ฮุก'
   };
   if (!d['ตั้งโทเคนแล้ว']) { d.ok = false; d.error = 'ยังไม่ได้ตั้ง TG_TOKEN'; return d; }
   var w = tgHookInfo_();
@@ -330,6 +397,7 @@ function tgHandle_(update, nowMs) {
   if (!tgFresh_(update && update.update_id)) { tgMark_('ข้อความซ้ำ'); return ''; }
   var chat = String((msg.chat && msg.chat.id) || '');
   var text = String(msg.text || '').trim();
+  text = tgAlias_(text);   // /lotthai -> หวยไทย (เมนู "/" ของเทเลแกรมรับได้แต่ a-z)
   if (!chat) return '';
 
   var owner = tgChat_();
@@ -380,7 +448,7 @@ function tgHandle_(update, nowMs) {
     try { out = tfText_(); }
     catch (e) { out = 'talkfootball ดึงไม่ได้: ' + truncate_(String(e && e.message ? e.message : e), 200); }
   }
-  else if (/^\/tfสถิติ(\s|$)/.test(text)) {
+  else if (/^\/?tfสถิติ(\s|$)/.test(text)) {
     var dArg = (text.split(/\s+/)[1] || '').replace(/[^0-9]/g, '');
     try { out = tfStatsText_(dArg || 30); }
     catch (e) { out = 'อ่านสถิติไม่ได้: ' + truncate_(String(e && e.message ? e.message : e), 200); }
@@ -501,6 +569,53 @@ function tgSetChat_(id) {
    ย้ายแนวคิดมาจาก PIKTAX `tgKeyboard_()` — เจ้าของอยู่บนมือถือ พิมพ์คำสั่งไทยทีละตัวช้า
    กฎเดิมจาก PIKTAX: ใส่เฉพาะปุ่มที่ "กดบ่อยจริง" ตัวที่นานๆ ใช้ทีให้พิมพ์เอา
    is_persistent = ปุ่มไม่หายหลังกด (ไม่งั้นต้องกดไอคอนเรียกคืนทุกที) */
+/* เมนู "/" ของเทเลแกรม (setMyCommands) รับได้แต่ a-z 0-9 _ เท่านั้น
+   คำสั่งจริงของบอทเป็นไทย เลยต้องมีชื่ออังกฤษคู่กันไว้ แล้วแปลงกลับตอนรับข้อความ
+   ปุ่มลัด (tgKeyboard_) กับเมนูตัวหนังสือ (TG_MENU_) ยังเป็นไทยเหมือนเดิม */
+var TG_CMDS_ = [
+  { command: 'help',         thai: '/help',        desc: 'เมนูคำสั่งทั้งหมด' },
+  { command: 'picktips',     thai: '/picktips',    desc: 'ทีเด็ดที่ผ่านเกณฑ์' },
+  { command: 'matches',      thai: '/คู่',          desc: 'คู่ที่ยังไม่เตะ' },
+  { command: 'bills',        thai: '/บิล',          desc: 'บิลที่ยังไม่รู้ผล' },
+  { command: 'summary',      thai: '/สรุป',         desc: 'กำไรขาดทุนสะสม' },
+  { command: 'settle',       thai: '/คิดผล',        desc: 'ไล่หาสกอร์จบเกม' },
+  { command: 'scan',         thai: '/หาคู่',        desc: 'สแกน Live coef. forebet' },
+  { command: 'talkfootball', thai: '/talkfootball', desc: 'คำทำนาย talkfootball' },
+  { command: 'tfstat',       thai: '/tfสถิติ',      desc: 'ความแม่น talkfootball' },
+  { command: 'report',       thai: '/รายงาน',       desc: 'หน้ารายงานรวม' },
+  { command: 'stocks',       thai: '/หุ้น',         desc: 'หุ้นเด่นวันนี้' },
+  { command: 'lotthai',      thai: 'หวยไทย',        desc: 'หวยไทย — ผล + ตำราเลขเด่น' },
+  { command: 'lotlao',       thai: 'หวยลาว',        desc: 'หวยลาว — ผล + ตำราเลขเด่น' },
+  { command: 'lotthaib',     thai: 'หวยไทยB',       desc: 'หวยไทย B — เลขฐาน 6 ตัว' },
+  { command: 'lotlaob',      thai: 'หวยลาวB',       desc: 'หวยลาว B — เลขฐาน 6 ตัว' },
+  { command: 'lotto',        thai: 'หวย',           desc: 'เมนูรวมหวย + ปฏิทินงวด' },
+  { command: 'id',           thai: '/id',           desc: 'เลขห้องแชตนี้' }
+];
+
+/** /lotthai -> หวยไทย  ·  /tfstat 7 -> /tfสถิติ 7  (ของเดิมที่พิมพ์ไทยอยู่แล้วไม่โดนแตะ) */
+function tgAlias_(text) {
+  var s = String(text || '').trim();
+  if (s.charAt(0) !== '/') return s;
+  var sp = s.search(/[\s]/);
+  var head = sp < 0 ? s.slice(1) : s.slice(1, sp);
+  var rest = sp < 0 ? '' : s.slice(sp);
+  var at = head.indexOf('@');
+  if (at >= 0) head = head.slice(0, at);
+  if (!/^[a-zA-Z0-9_]{1,32}$/.test(head)) return s;
+  var name = head.toLowerCase();
+  for (var i = 0; i < TG_CMDS_.length; i++) {
+    if (TG_CMDS_[i].command === name) return TG_CMDS_[i].thai + rest;
+  }
+  return s;
+}
+
+/** ลงทะเบียนเมนู "/" กับเทเลแกรม — สั่งจากลิงก์ ?p=setcmds เพราะโปรเจกต์นี้ไม่มี trigger */
+function tgSetCommands_() {
+  var cmds = TG_CMDS_.map(function (c) { return { command: c.command, description: c.desc }; });
+  var r = tgApi_('setMyCommands', { commands: JSON.stringify(cmds) });
+  return r;
+}
+
 function tgKeyboard_() {
   return {
     keyboard: [
@@ -509,6 +624,7 @@ function tgKeyboard_() {
       [{ text: '/คิดผล' }, { text: '/หาคู่' }],
       [{ text: '/talkfootball' }, { text: '/tfสถิติ' }],
       [{ text: '/รายงาน' }, { text: '/สถิติเตือน' }, { text: '/สถิติบอล' }],
+      [{ text: '/สถิติค่าคุ้ม' }, { text: '/หุ้น' }],
       [{ text: 'หวยไทย' }, { text: 'หวยลาว' }, { text: 'หวย' }],
       [{ text: 'หวยไทยB' }, { text: 'หวยลาวB' }],
       [{ text: '/help' }]

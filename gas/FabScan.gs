@@ -130,6 +130,41 @@ function fsKoMs_(s) {
 function fsI_(v) { var n = parseInt(String(v), 10); return isNaN(n) ? null : n; }
 function fsF_(v) { var n = parseFloat(String(v)); return isNaN(n) ? null : n; }
 
+var FS_TH_MON = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+                'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+/** ช่วงเวลาเป็นคำพูด — "45 นาที" / "2 ชม. 15 นาที" */
+function fsSpanTh_(min) {
+  var m = Math.max(0, Math.round(min));
+  if (m < 60) return m + ' นาที';
+  var h = Math.floor(m / 60), r = m % 60;
+  return h + ' ชม.' + (r ? ' ' + r + ' นาที' : '');
+}
+
+/** เวลาเตะแบบอ่านแล้วรู้เลย ไม่ต้องแปลเอง
+ *  วันนี้ 18:00 น. (อีก 2 ชม.) / พรุ่งนี้ 01:45 น. / 5 ก.ย. 20:00 น. / เตะไปแล้ว 40 นาที (18:00 น.) */
+function fsKoThai_(ms, nowMs) {
+  if (!ms) return '';
+  var now = nowMs || Date.now(), d = new Date(ms);
+  var hm = Utilities.formatDate(d, TZ, 'HH:mm') + ' น.';
+  var diff = Math.round((ms - now) / 60000);
+  if (diff < 0) return 'เตะไปแล้ว ' + fsSpanTh_(-diff) + ' (' + hm + ')';
+
+  var dKo = Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+  var d0  = Utilities.formatDate(new Date(now), TZ, 'yyyy-MM-dd');
+  var when = (dKo === d0) ? 'วันนี้'
+           : (dKo === fbDayShift_(d0, 1)) ? 'พรุ่งนี้'
+           : (Number(dKo.slice(8, 10)) + ' ' + (FS_TH_MON[Number(dKo.slice(5, 7)) - 1] || ''));
+  var left = (diff < 24 * 60) ? ' (อีก ' + fsSpanTh_(diff) + ')' : '';
+  return when + ' ' + hm + left;
+}
+
+/** นาฬิกาตอนนี้แบบไทย — 4 ก.ย. 18:09 น. */
+function fsNowThai_() {
+  var s = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm');
+  return Number(s.slice(8, 10)) + ' ' + (FS_TH_MON[Number(s.slice(5, 7)) - 1] || '') + ' ' + s.slice(11) + ' น.';
+}
+
 var FS_SIDE = { '1': 'เจ้าบ้าน', 'X': 'เสมอ', '2': 'ทีมเยือน' };
 var FS_IDX  = { '1': 0, 'X': 1, '2': 2 };
 
@@ -141,9 +176,10 @@ function fsCard_(v, m, b, d, o) {
 
   var L = [];
   var flag = (v.lc >= FS_LC_HOT) ? ' 💎' : (v.lc >= FS_LC_OK ? ' 🔥' : '');
-  var ko = String(m.DATE_BAH || '').slice(5, 16);
+  var ko = fsKoThai_(fsKoMs_(m.DATE_BAH));
   L.push('⚽ ' + (m.HOST_NAME || '') + ' vs ' + (m.GUEST_NAME || ''));
-  L.push('   ' + (m.short_tag || '') + ' · เตะ ' + ko + (v.lc ? ' · ค่าคุ้ม ' + v.lc + '%' + flag : ''));
+  L.push('   ' + (m.short_tag || '') + (v.lc ? ' · ค่าคุ้ม ' + v.lc + '%' + flag : ''));
+  L.push('   ⏰ เตะ ' + ko);
 
   var oi = FS_IDX[v.pred];
   var of_ = (o && oi !== undefined) ? fsF_([o.best_odd_1, o.best_odd_X, o.best_odd_2][oi]) : null;
@@ -216,8 +252,8 @@ function fsScanText_(opt) {
   }
   pick.sort(function (a, b) { return b.lc - a.lc; });
 
-  var head = '📊 Live coef. — ' + Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') +
-             '\nหน้าเว็บมี ' + vals.length + ' คู่ · อยู่ในช่วง -' + back + '/+' + ahead + ' ชม. ' + pick.length + ' คู่' +
+  var head = '📊 Live coef. — ดูตอน ' + fsNowThai_() +
+             '\nหน้าเว็บมี ' + vals.length + ' คู่ · เอาเฉพาะคู่ที่เตะไปแล้วไม่เกิน ' + back + ' ชม. จนถึงอีก ' + ahead + ' ชม. ข้างหน้า → ได้ ' + pick.length + ' คู่' +
              (pick.length > max ? ' (โชว์ ' + max + ')' : '') +
              '\n💎 = ค่าคุ้ม ' + FS_LC_HOT + '%+ · 🔥 = ' + FS_LC_OK + '%+';
 

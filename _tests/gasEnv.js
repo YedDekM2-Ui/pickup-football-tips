@@ -16,6 +16,7 @@ function formatDate(d, tz, fmt) {
     .replace(/HH/g, p(d.getHours()))
     .replace(/mm/g, p(d.getMinutes()))
     .replace(/ss/g, p(d.getSeconds()))
+    .replace(/H/g, d.getHours())
     /* d/M ตัวเดียว (ไม่เติม 0) — ต้องมาทีหลัง dd/MM เสมอ
        ของที่แทนไปแล้วเหลือแต่ตัวเลข จึงไม่ชนกัน */
     .replace(/M/g, d.getMonth() + 1)

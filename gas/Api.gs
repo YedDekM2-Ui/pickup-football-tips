@@ -312,10 +312,25 @@ function doGet(e) {
     if (p === 'setchat') return jsonOut_(tgSetChat_(String(q.id || '')));
   if (p === 'hook') return jsonOut_(tgSetHook_(String(q.url || '')));
     if (p === 'hookinfo') return jsonOut_(tgHookInfo_());
+    /* ลงทะเบียนเมนู "/" ในแอปเทเลแกรม — ชื่อคำสั่งเป็นอังกฤษ (เทเลแกรมรับแต่ a-z)
+       แล้ว tgAlias_ แปลงกลับเป็นคำสั่งไทยตอนรับข้อความ */
+    if (p === 'setcmds') return jsonOut_(tgSetCommands_());
     if (p === 'hookoff') return jsonOut_(tgOffHook_());   /* สวิตช์ปิดบอท กดจากมือถือได้ */
     /* ล้างคิวค้างเอง — ให้ตัวเฝ้าข้างนอก (fb-watch ทุก 5 นาที) เรียกซ้ำ ๆ ได้
        เงื่อนไขกันล้างมั่วอยู่ใน tgFixQueue_ เอง เรียกถี่แค่ไหนก็ไม่เสียหาย */
     if (p === 'hookfix') return jsonOut_(tgFixQueue_(String(q.force || '')));
+    /* โหมดดึงเอง — ทำแบบบอทเก่า คือเดินไปถามเทเลแกรมเอง ไม่รอให้มันยิงมา */
+    if (p === 'poll') return jsonOut_(tgPoll_());
+    if (p === 'pollon') return jsonOut_(tgPollOn_());
+    if (p === 'polloff') return jsonOut_(tgPollOff_());
+    /* หวย — สั่งถามผล/ยกผลย้อนหลังจากบอทเก่า จากมือถือได้ */
+    if (p === 'lotask') return jsonOut_(lotAskRun_(String(q.kind || ''), String(q.force || '') === '1'));
+    if (p === 'lotdue') return textOut_(lotDueDump_(String(q.kind || 'lao')));
+    if (p === 'lotrows') return textOut_(lotRowsText_(String(q.kind || 'lao'), Number(q.n || 10)));
+    if (p === 'lotdel') return textOut_(lotDelRow_(String(q.kind || 'lao'), String(q.d || '')));
+    if (p === 'lotcancel') return textOut_(lotCancelAsk_(String(q.kind || 'lao')));
+    if (p === 'lotimport') return jsonOut_(lotImportAll_(String(q.kind || '')));
+    if (p === 'lotb') return textOut_(lotbReportText_(String(q.kind || 'lao')));
     /* ตั้งค่าลับ/ดูว่าตั้งครบยัง จากลิงก์ — หน้า Script Properties กดไม่ได้บนมือถือ
        คายกลับแค่ชื่อกับความยาว ค่าจริงไม่วิ่งออกไป (ดู setProp_ ใน Compat.gs) */
     if (p === 'setprop') return jsonOut_(setProp_(q.n, q.v));

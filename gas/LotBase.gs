@@ -297,6 +297,10 @@ function lotbGrade_(acc) {
 function lotbReportText_(kind) {
   var lao = (kind === 'lao');
   var hist = lotbHistory_(kind);
+  // ผลย้อนหลังไม่พอ = ลองยกของจากบอทเก่ามาให้เองก่อน (วันละครั้ง) เจ้าของจะได้ไม่ต้องสั่งอะไรเพิ่ม
+  if (hist.length < LOTB.WARM + 5) {
+    try { if (lotImportIfThin_(kind)) hist = lotbHistory_(kind); } catch (e) { /* ยกมาไม่ได้ก็บอกตามตรงข้างล่าง */ }
+  }
   if (hist.length < LOTB.WARM + 5) {
     return '🤖 เลขฐาน B — ยังคำนวณไม่ได้\n' +
       'มีผลย้อนหลังแค่ ' + hist.length + ' งวด (ต้องการอย่างน้อย ' + (LOTB.WARM + 5) + ')\n' +

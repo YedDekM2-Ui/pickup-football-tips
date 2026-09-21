@@ -52,7 +52,7 @@ function handleLaoLottery_(chatId, t) {
   // ⛔ บอทนี้ไม่มี trigger (ไม่ขอสิทธิ์ script.scriptapp) — ตัวถามยิงจากข้างนอกผ่าน ?p=lotask
   if (/^(เตือน|ตั้งเตือน|setup|เปิดเตือน|ปิดเตือน|stop)/i.test(s))
     return tgSend_(chatId, '🔔 บอทนี้ไม่ตั้งเตือนเอง\nพิมพ์ "หวยลาว ถาม" เพื่อให้ถามงวดค้างเดี๋ยวนี้');
-  if (/^(ถาม|test|ทดสอบ)/i.test(s)) { askLaoLottery_(true); return; }
+  if (/^(ถาม|test|ทดสอบ)/i.test(s)) return lotAskCmd_(chatId, 'lao');
   if (/^(ดึง|โหลด|backfill|sync)/i.test(s)) {
     var nL = (s.match(/(\d{2,4})\s*$/) || [])[1];
     return tgSend_(chatId, laoBackfill(nL));
@@ -77,8 +77,10 @@ function askLaoLottery_(force) {
   if (!chatId) { logEvent_('WARN', 'askLaoLottery_: ไม่มี chat id'); return; }
   var todayISO = lotTodayISO_();
   var due = lotDueDraws_('lao', todayISO);
-  if (force !== true && !due.length) return;          // เสาร์-อาทิตย์ / บันทึกครบแล้ว = เงียบ
-  var iso = due.length ? due[0] : todayISO;           // ค้างเก่าสุดก่อน
+  /* ไม่มีงวดค้าง = เงียบ แม้ force ก็เงียบ
+     ของเดิม force แล้วตกมา todayISO คือถามงวดที่ยังไม่ออก เจ้าของตอบเลขงวดเก่า = บันทึกเบิ้ล */
+  if (!due.length) return;
+  var iso = due[0];                                  // ค้างเก่าสุดก่อน
   setLaoPending_({ date: iso, ts: Date.now() });
   var late = (iso !== todayISO)
     ? '\n(งวด ' + lotShortDate_(iso) + ' ยังไม่ได้บันทึก เลยตามถามย้อนให้ครับ)' : '';

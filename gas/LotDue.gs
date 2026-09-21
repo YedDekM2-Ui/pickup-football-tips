@@ -120,6 +120,16 @@ function lotRecordedISO_(kind) {
   return set;
 }
 
+/** งวด "วันนี้" ถึงเวลาออกผลหรือยัง
+    ยังไม่ถึง = ยังไม่มีเลขให้ตอบ ถามไปเจ้าของก็ตอบเลขงวดเก่า = บันทึกเบิ้ล
+    อ่านเวลาไม่ได้ = ถือว่าออกแล้ว (ห้ามทำให้เงียบถาวร) */
+function lotDrawnYet_(kind) {
+  var hour;
+  try { hour = Number(Utilities.formatDate(new Date(), TZ, 'H')); } catch (e) { return true; }
+  if (!(hour >= 0)) return true;
+  return hour >= ((kind === 'thai') ? THAI_LOT.ASK_HOUR : LAO.ASK_HOUR);
+}
+
 function lotDueDraws_(kind, todayISO, backDays) {
   var back = backDays || (kind === 'thai' ? LOT_DUE.THAI_BACK_DAYS : LOT_DUE.LAO_BACK_DAYS);
   var have = lotRecordedISO_(kind);
@@ -128,6 +138,7 @@ function lotDueDraws_(kind, todayISO, backDays) {
     var iso = lotISOShift_(todayISO, -i);
     if (!isLotDrawDay_(kind, iso)) continue;
     if (have[iso]) continue;
+    if (iso === todayISO && !lotDrawnYet_(kind)) continue;   // ผลยังไม่ออก อย่าเพิ่งถาม
     out.push(iso);
   }
   return out;
@@ -159,6 +170,88 @@ function lotDueText_(kind) {
     '\nพิมพ์ "' + name + ' ถาม" ให้บอทถามทีละงวด หรือใส่ผลพร้อมวันที่ได้เลย';
 }
 
+/** คำสั่ง "ถาม" จากแชท — มีงวดค้างก็ถาม ไม่มีต้องบอกด้วยว่าค้างกี่งวด
+    ห้ามเงียบ — สั่งแล้วไม่มีอะไรขึ้น เจ้าของจะอ่านว่าบอทตาย */
+function lotAskCmd_(chatId, kind) {
+  var due = [];
+  try { due = lotDueDraws_(kind, lotTodayISO_()); } catch (e) { due = []; }
+  if (!due.length) return tgSend_(chatId, lotDueText_(kind));
+  if (kind === 'thai') askThaiLottery_(true); else askLaoLottery_(true);
+}
+
+/* ============================================================
+ * ดู/ลบ งวดที่จดไว้แล้ว (จดผิด/จดเบิ้ล ต้องมีทางลบจากมือถือ)
+ * ============================================================ */
+
+/** แถวล่าสุด N งวด พร้อมเลข — เอาไว้ตรวจก่อนลบ */
+function lotRowsText_(kind, limit) {
+  var k = (kind === 'thai') ? 'thai' : 'lao';
+  var name = (k === 'thai') ? 'หวยไทย' : 'หวยลาว';
+  var n = Number(limit) > 0 ? Number(limit) : 10;
+  var rows;
+  try { rows = lotResultRows_(k); } catch (e) { return '❌ อ่านชีตไม่ได้: ' + e; }
+  var L = ['🗂 ' + name + ' — จดไว้ ' + rows.length + ' งวด (โชว์ล่าสุด ' + Math.min(n, rows.length) + ')'];
+  rows.slice(-n).reverse().forEach(function (r) {
+    L.push('  ' + r[0] + '  ' + r[2] + (r[3] ? '  (บน ' + r[3] + ' · ล่าง ' + r[4] + ')' : ''));
+  });
+  return L.join('\n');
+}
+
+/** ลบทุกแถวของงวดที่ระบุ — ใช้ตอนจดเบิ้ล/จดผิดวัน */
+function lotDelRow_(kind, isoIn) {
+  var k = (kind === 'thai') ? 'thai' : 'lao';
+  var cfg = (k === 'thai') ? THAI_LOT : LAO;
+  var name = (k === 'thai') ? 'หวยไทย' : 'หวยลาว';
+  var iso = String(isoIn || '').slice(0, 10);
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(iso))
+    return '❌ ใส่วันที่แบบ 2026-09-04 ด้วยครับ';
+  var sh = sheetIfExists_(cfg.SHEET);
+  if (!sh) return '❌ ยังไม่มีชีต ' + cfg.SHEET;
+  var v = sh.getDataRange().getValues(), hit = [], i;
+  for (i = 1; i < v.length; i++) {
+    var key = v[i][0];
+    if (!key) continue;
+    if (Object.prototype.toString.call(key) === '[object Date]') key = lotDateToISO_(key);
+    if (String(key).slice(0, 10) === iso) hit.push({ row: i + 1, num: String(v[i][2] || '') });
+  }
+  if (!hit.length) return 'ℹ️ ' + name + ' งวด ' + iso + ' — ไม่มีในชีตอยู่แล้ว';
+  for (i = hit.length - 1; i >= 0; i--) sh.deleteRow(hit[i].row);
+  return '🗑 ลบ ' + name + ' งวด ' + iso + ' แล้ว ' + hit.length + ' แถว (เลข ' +
+    hit.map(function (h) { return h.num; }).join(', ') + ')';
+}
+
+/** ?p=lotdue — ดูสถานะจริงจากข้างนอก: เวลาไทย / คำถามที่ค้าง / งวดค้าง / งวดท้ายๆ ที่จดไว้ */
+function lotDueDump_(kind) {
+  var k = (kind === 'thai') ? 'thai' : 'lao';
+  var name = (k === 'thai') ? 'หวยไทย' : 'หวยลาว';
+  var cfg = (k === 'thai') ? THAI_LOT : LAO;
+  var L = [];
+  L.push('🔎 ' + name + ' — สถานะตอนนี้');
+  L.push('เวลาไทย: ' + Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm') +
+         '  (หวยออก ' + cfg.ASK_HOUR + ':00 → ' + (lotDrawnYet_(k) ? 'ออกแล้ว' : 'ยังไม่ออก') + ')');
+  var pend = '';
+  try { pend = PropertiesService.getScriptProperties().getProperty(cfg.PROP_PENDING) || ''; } catch (e) {}
+  L.push('คำถามค้าง: ' + (pend || '(ไม่มี)'));
+  var due = [];
+  try { due = lotDueDraws_(k, lotTodayISO_()); } catch (e2) {}
+  L.push('งวดค้าง: ' + (due.length ? due.join(', ') : 'ไม่มี'));
+  try {
+    var have = lotRecordedISO_(k), keys = [];
+    for (var d in have) keys.push(d);
+    keys.sort();
+    L.push('จดไว้ ' + keys.length + ' งวด · ล่าสุด: ' + keys.slice(-5).join(', '));
+  } catch (e3) { L.push('อ่านชีตไม่ได้: ' + e3); }
+  return L.join('\n');
+}
+
+/** ?p=lotcancel — ลบคำถามที่ค้างทิ้ง (ตอบไปก็เบิ้ล) */
+function lotCancelAsk_(kind) {
+  var k = (kind === 'thai') ? 'thai' : 'lao';
+  if (k === 'thai') clearThaiPending_(); else clearLaoPending_();
+  return '🗑 ลบคำถาม' + ((k === 'thai') ? 'หวยไทย' : 'หวยลาว') +
+    'ที่ค้างอยู่แล้ว — ตอบเลขตอนนี้จะไม่ถูกบันทึก';
+}
+
 /**
  * "หวยไทย เพิ่มงวด 30/12"  /  "หวยลาว ตัดงวด 1/8"
  *   add=true  → บังคับให้เป็นวันงวด (ลบออกจากรายการตัดด้วย)
@@ -179,4 +272,56 @@ function lotEditDraw_(kind, s, add) {
   lotDrawListDel_(LOT_DUE.PROP_EXTRA, kind, iso);
   lotDrawListAdd_(LOT_DUE.PROP_SKIP, kind, iso);
   return '✅ ตัดงวด ' + name + ' วันที่ ' + lotShortDate_(iso) + ' แล้ว — บอทจะไม่ถามงวดนี้';
+}
+
+/* ── ตัวถามผลหวย ─────────────────────────────────────────────
+   บอทเก่ามี trigger รายชั่วโมงคอยถาม แต่บอทนี้ไม่มีสิทธิ์ตั้ง trigger (ไม่ขอ script.scriptapp
+   เพราะเจ้าของจะต้องกดอนุญาตใหม่ทั้งชุด) จึงเกาะรอบ "ดึงข้อความ" ที่ fb-watch ยิงเข้ามาทุก ~20 วิ
+   แทน — ผลลัพธ์เหมือนกันคือถึงเวลาแล้วบอทถามเอง                                        */
+
+/** สั่งถามจากลิงก์ — ?p=lotask[&kind=lao|thai][&force=1] */
+function lotAskRun_(kind, force) {
+  var kinds = (kind === 'lao' || kind === 'thai') ? [kind] : ['thai', 'lao'];
+  var out = {};
+  for (var i = 0; i < kinds.length; i++) {
+    var k = kinds[i];
+    try {
+      var due = lotDueDraws_(k, lotTodayISO_());
+      if (k === 'thai') askThaiLottery_(force === true); else askLaoLottery_(force === true);
+      var asked = due.length > 0;                       // force ไม่เสกงวดขึ้นมาเองได้อีกแล้ว
+      /* จดวันไว้ด้วย ไม่งั้นตัวถามอัตโนมัติ (lotAutoAsk_) จะถามซ้ำอีกใบตอนถึงชั่วโมงของมัน */
+      if (asked) { try { PropertiesService.getScriptProperties().setProperty('LOT_ASKED_' + k, lotTodayISO_()); } catch (e0) {} }
+      out[k] = { 'ค้างอยู่': due.length, 'ถาม': asked ? 'ถามแล้ว' : 'ไม่มีงวดค้าง เลยเงียบ' };
+    } catch (e) {
+      out[k] = { error: String(e && e.message ? e.message : e) };
+    }
+  }
+  return { ok: true, 'ผล': out };
+}
+
+/** ถามเองอัตโนมัติ — เรียกจาก tgPoll_ ทุกรอบ
+    จดวันไว้ "เฉพาะตอนมีงวดค้างจริง" ไม่งั้นวันที่ไม่มีงวด (เสาร์-อาทิตย์ของลาว) จะกินโควตาวันนั้นไปฟรี ๆ
+    จดก่อนถาม เพราะถ้าตัวถามพังกลางทางแล้วไม่จด มันจะวนถามใหม่ทุก 20 วินาที */
+function lotAutoAsk_() {
+  try {
+    var hour = Number(Utilities.formatDate(new Date(), TZ, 'H'));
+    var today = lotTodayISO_();
+    var ps = PropertiesService.getScriptProperties();
+    var list = [['thai', THAI_LOT.ASK_HOUR], ['lao', LAO.ASK_HOUR]];
+    for (var i = 0; i < list.length; i++) {
+      var k = list[i][0];
+      if (hour < list[i][1]) continue;                     // ยังไม่ถึงเวลาหวยออก
+      var key = 'LOT_ASKED_' + k;
+      if (ps.getProperty(key) === today) continue;         // วันนี้ถามไปแล้ว
+      var due = [];
+      try { due = lotDueDraws_(k, today); } catch (e2) { due = []; }
+      if (!due.length) continue;                           // ไม่มีงวดค้าง = เงียบ และไม่จดวัน
+      try { ps.setProperty(key, today); } catch (e3) { /* จดไม่ได้ก็ยังถาม แค่เสี่ยงถามซ้ำ */ }
+      try {
+        if (k === 'thai') askThaiLottery_(false); else askLaoLottery_(false);
+      } catch (e4) {
+        try { logEvent_('WARN', 'ถามผลหวยไม่สำเร็จ: ' + k); } catch (e5) {}
+      }
+    }
+  } catch (e) { /* หวยพังห้ามลามไปทำให้ดึงข้อความพัง */ }
 }

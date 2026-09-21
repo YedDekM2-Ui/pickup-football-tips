@@ -104,6 +104,40 @@ test('tfText_ เว็บล่ม กับ แกะตารางไม่�
   ok(junk.indexOf('อ่านตาราง') >= 0, junk);
 });
 
+/* ---------- 1b. หน้ากั้นของ Cloudflare (บั๊กจริง 21 ก.ย. 69) ---------- */
+
+test('ยิงตรงได้ 200 แต่ไม่มีแถว = ต้องอ้อมต่อ ไม่ใช่ยอมแพ้', () => {
+  /* ใส่ r.jina.ai ไว้คีย์แรก = ทางอ้อมได้ตารางจริง ส่วนทางตรงได้หน้ากั้นเปล่า */
+  const g = env({ 'r.jina.ai': page([row(at(5), 'A - B', 'L1', 95)]),
+                  'first-half-goals': '<html>Just a moment...</html>' });
+  const rows = g.tfFetchRows_(g.TF_URL_HT);
+  eq(rows.length, 1);
+  ok(g.TF_TRAIL.indexOf('ตรง:200/0แถว') >= 0, g.TF_TRAIL);
+  ok(g.TF_TRAIL.indexOf('อ้อม:200/1แถว') >= 0, g.TF_TRAIL);
+  /* ทางอ้อมต้องขอ html ไม่งั้นได้ markdown ที่ไม่มีตาราง */
+  const via = g.__http.filter((h) => h.url.indexOf('r.jina.ai') >= 0)[0];
+  eq(via.opt.headers['X-Return-Format'], 'html');
+});
+
+test('ทุกทางตัน = ข้อความบอกทางที่ลองด้วย', () => {
+  const t = env({ 'first-half-goals': '<html>blocked</html>',
+                  'r.jina.ai': '<html>blocked</html>' }).tfText_();
+  ok(t.indexOf('อ่านตาราง') >= 0, t);
+  ok(t.indexOf('ทางที่ลอง') >= 0, t);
+});
+
+test('tfParse_ กับหน้าจริงที่เซฟไว้', () => {
+  const html = require('fs').readFileSync(
+    require('path').join(__dirname, 'fixtures', 'talkfootball-real.html'), 'utf8');
+  const rows = env({}).tfParse_(html);
+  eq(rows.length, 4);                       /* หัวตารางไม่ถูกนับ */
+  eq(rows[0].match, 'KFUM II - Ready');
+  eq(rows[0].league, 'Norway 3rd Division, Group 1');
+  eq(rows[0].pct, 100);
+  /* เวลาต้องมาจาก microdata startDate (มีปีเต็ม) ไม่ใช่ข้อความ 09/21 */
+  eq(new Date(rows[0].kickUtc).toISOString(), '2026-09-21T17:00:00.000Z');
+});
+
 test('หน้าเสริมล่ม = คอลัมน์นั้นเป็น - ไม่ใช่ทั้งคำสั่งพัง', () => {
   const g = env({ 'first-half-goals': page([row(at(5), 'A - B', 'L1', 95)]) });
   eq(g.tfSideMap_(g.TF_URL_SH), null);

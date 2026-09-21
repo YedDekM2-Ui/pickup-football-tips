@@ -761,3 +761,129 @@ test('?p=hookfix ต้องมีกุญแจ', () => {
   const good = JSON.parse(g.doGet({ parameter: { p: 'hookfix', k: 'ss1234' } }).getContent());
   eq(good['ล้าง'], true);
 });
+
+/* ---------- โหมดดึงเอง (poll) ----------
+   ทำแบบบอทเก่า (PIKTAX): ไม่ใช้ webhook เลย เดินไปถามเทเลแกรมเองเป็นรอบ ๆ
+   ฝั่งเทเลแกรมจึงไม่มีวันได้ 302 จากเรา = ไม่มีวันยิงซ้ำจนคิวตัน
+   ข้อที่ต้องพิสูจน์: ถอนฮุกแบบไม่ทิ้งของค้าง · จด offset ก่อนตอบ ·
+   ตัวล้างคิวเก่าต้องไม่แอบผูก webhook กลับ (ผูกเมื่อไหร่ getUpdates โดน 409 ทันที) */
+
+/** mock เทเลแกรม: getUpdates คืนใบตามสั่ง · จดทุก method ที่ถูกเรียกไว้ที่ __calls */
+function tgp(props, ups) {
+  const g = env(Object.assign({ TG_TOKEN: 'T', TG_HOOK_KEY: 'k', TG_CHAT: '111' }, props || {}));
+  g.__calls = [];
+  g.__sent = [];
+  g.UrlFetchApp.fetch = (url, opt) => {
+    const u = String(url), b = JSON.parse((opt && opt.payload) || '{}');
+    const m = u.split('/').pop();
+    g.__calls.push({ m: m, b: b });
+    if (m === 'getUpdates') return fakeResponse(200, JSON.stringify({ ok: true, result: ups || [] }));
+    if (m === 'sendMessage') g.__sent.push({ url: u, body: b });
+    return fakeResponse(200, JSON.stringify({ ok: true, result: {} }));
+  };
+  return g;
+}
+function upd(id, text) { return { update_id: id, message: { chat: { id: 111 }, text: text } }; }
+
+test('ยังไม่เปิดโหมดดึงเอง = ไม่ยอมไปถามเทเลแกรม', () => {
+  const g = tgp({}, [upd(1, '/สรุป')]);
+  const r = g.tgPoll_();
+  eq(r.ok, false, 'ถ้า webhook ยังผูกอยู่แล้วไปเรียก getUpdates เทเลแกรมตอบ 409 ทั้งคู่พัง');
+  eq(g.__calls.length, 0, 'ห้ามยิงอะไรออกไปเลย');
+});
+
+test('เปิดโหมดดึงเอง = ถอน webhook แบบไม่ทิ้งของค้าง', () => {
+  const g = tgp({}, []);
+  const r = g.tgPollOn_();
+  eq(r.ok, true);
+  eq(g.__calls[0].m, 'deleteWebhook');
+  eq(!!g.__calls[0].b.drop_pending_updates, false, 'ของที่ค้างคือของที่ยังไม่ได้ตอบ ต้องปล่อยให้ getUpdates มาเก็บ');
+  eq(g.prop_('TG_MODE'), 'poll');
+});
+
+test('ดึงเองแล้วต้องตอบครบทุกใบ และเลื่อนหมุดไปใบสุดท้าย+1', () => {
+  const g = tgp({ TG_MODE: 'poll' }, [upd(10, '/สรุป'), upd(11, '/คู่')]);
+  const r = g.tgPoll_();
+  eq(r.ok, true);
+  eq(r['อ่าน'], 2);
+  eq(g.__calls[0].m, 'getUpdates');
+  eq(g.__calls[0].b.offset, 0, 'รอบแรกยังไม่มีหมุด');
+  eq(g.prop_('TG_OFFSET'), '12', 'หมุดต้องเป็นเลขใบสุดท้าย + 1');
+  eq(g.__sent.length, 2, 'ต้องตอบทั้งสองใบ');
+});
+
+test('รอบถัดไปต้องส่งหมุดเดิมไปด้วย ไม่งั้นได้ของเก่าซ้ำ', () => {
+  const g = tgp({ TG_MODE: 'poll', TG_OFFSET: '77' }, []);
+  g.tgPoll_();
+  eq(g.__calls[0].b.offset, 77);
+});
+
+test('ใบที่ตอบแล้วพัง ต้องไม่วนกลับมาพังซ้ำทุกรอบ', () => {
+  const g = tgp({ TG_MODE: 'poll' }, [upd(5, '/สรุป'), upd(6, '/คู่')]);
+  g.tgHandle_ = () => { throw new Error('พัง'); };
+  const r = g.tgPoll_();
+  eq(r.ok, true, 'ใบเดียวพังห้ามลากรอบทั้งรอบตาย');
+  eq(r['พลาด'], 2);
+  eq(g.prop_('TG_OFFSET'), '7', 'หมุดต้องเลื่อนถึงจะไม่ติดหล่ม');
+});
+
+test('ถามเทเลแกรมไม่ได้ = บอกเหตุ ห้ามเลื่อนหมุดทิ้งของ', () => {
+  const g = tgp({ TG_MODE: 'poll', TG_OFFSET: '20' }, []);
+  g.UrlFetchApp.fetch = () => fakeResponse(200, JSON.stringify({ ok: false, description: 'Conflict' }));
+  const r = g.tgPoll_();
+  eq(r.ok, false);
+  eq(g.prop_('TG_OFFSET'), '20', 'ของยังไม่ได้อ่าน ห้ามข้าม');
+});
+
+test('โหมดดึงเอง = ตัวล้างคิวต้องไม่แอบผูก webhook กลับ', () => {
+  const g = tgq({ EXEC_URL: 'https://example.com/exec', TG_MODE: 'poll' }, 12);
+  const r = g.tgFixQueue_();
+  eq(r.ok, true);
+  eq(r['ล้าง'], false);
+  eq(g.__sw.length, 0, 'ผูกกลับเมื่อไหร่ getUpdates โดน 409 บอทเงียบทันที');
+  eq(g.tgFixQueue_('1')['ล้าง'], false, 'ต่อให้ force ก็ห้ามผูก');
+});
+
+test('?p=poll / pollon / polloff ต้องมีกุญแจ', () => {
+  const g = tgp({ TG_MODE: 'poll', APP_KEY: 'ss1234' }, []);
+  ['poll', 'pollon', 'polloff'].forEach((p) => {
+    const bad = JSON.parse(g.doGet({ parameter: { p: p } }).getContent());
+    eq(bad.ok, false, p + ' ไม่มีกุญแจต้องไม่ผ่าน');
+  });
+  eq(g.__calls.length, 0);
+  const good = JSON.parse(g.doGet({ parameter: { p: 'poll', k: 'ss1234' } }).getContent());
+  eq(good.ok, true);
+});
+
+test('ทางดึงเองห้ามคายโทเคนออกมา', () => {
+  const g = tgp({ TG_MODE: 'poll', TG_TOKEN: 'โทเคนลับ' }, [upd(1, '/สรุป')]);
+  const j = JSON.stringify(g.tgPoll_()) + JSON.stringify(g.tgPollOn_()) + JSON.stringify(g.tgDiag_());
+  ok(j.indexOf('โทเคนลับ') < 0, 'ห้ามมีโทเคน');
+});
+
+test('เมนูกับปุ่มลัดมีหวยครบ 5 ตัว', () => {
+  const g = env({});
+  const want = ['หวยไทย', 'หวยลาว', 'หวยไทยB', 'หวยลาวB', 'หวย'];
+  const kb = JSON.stringify(g.tgKeyboard_());
+  want.forEach(w => {
+    ok(g.TG_MENU_.indexOf(w) >= 0, 'เมนู /help ขาด ' + w);
+    ok(kb.indexOf(w) >= 0, 'ปุ่มลัดขาด ' + w);
+  });
+});
+
+test('คำสั่งอังกฤษในเมนู "/" แปลงกลับเป็นคำสั่งไทยได้', () => {
+  const g = env({});
+  /* เทเลแกรมรับชื่อคำสั่งแต่ a-z 0-9 _ เท่านั้น */
+  g.TG_CMDS_.forEach(c => {
+    ok(/^[a-z0-9_]{1,32}$/.test(c.command), 'ชื่อคำสั่งผิดกติกา: ' + c.command);
+  });
+  eq(g.tgAlias_('/lotthai'), 'หวยไทย');
+  eq(g.tgAlias_('/lotlaob'), 'หวยลาวB');
+  eq(g.tgAlias_('/lotto'), 'หวย');
+  eq(g.tgAlias_('/tfstat 7'), '/tfสถิติ 7');
+  eq(g.tgAlias_('/matches@Mr_pickupx2nbOt'), '/คู่');
+  /* ของเดิมที่พิมพ์ไทยอยู่แล้วห้ามโดนแตะ */
+  eq(g.tgAlias_('หวยไทย ดึง 200'), 'หวยไทย ดึง 200');
+  eq(g.tgAlias_('/talkfootball'), '/talkfootball');
+  eq(g.tgAlias_('B7 2-1'), 'B7 2-1');
+});
