@@ -106,9 +106,9 @@ function isLotDrawDay_(kind, iso) {
  * งวดที่ยังไม่ได้บันทึก (เก่า → ใหม่)
  * ============================================================ */
 function lotRecordedISO_(kind) {
-  var sh = (kind === 'thai')
-    ? sheetEnsure_(THAI_LOT.SHEET, THAI_LOT.HEADERS)
-    : sheetEnsure_(LAO.SHEET, LAO.HEADERS);
+  /* ทางอ่านอย่างเดียว — ห้ามสร้างชีตเปล่า ไม่งั้นความพังจะถูกกลบเป็น "ไม่มีงวดค้าง" */
+  var sh = (kind === 'thai') ? sheetIfExists_(THAI_LOT.SHEET) : sheetIfExists_(LAO.SHEET);
+  if (!sh) return {};
   var v = sh.getDataRange().getValues();
   var set = {};
   for (var i = 1; i < v.length; i++) {

@@ -60,7 +60,7 @@ function fbToday_() {
  *  Cloudflare กั้นทั้ง IP ของกูเกิลและตัวดึงปกติของ jina (ตอบ 200 แต่เป็นหน้ากันบอท)
  *  วัดจริง 21 ก.ย. 69: engine browser เท่านั้นที่ได้หน้าจริง (359 KB / 44 คู่ / 9.4 วิ)
  *  ตั้ง FB_ENGINE='-' เพื่อปิด (จะกลับไปใช้ตัวดึงปกติ) */
-function cpJinaHead_(head, md) {
+function cpJinaHead_(head, md, noEng) {
   if (!md) head['X-Return-Format'] = 'html';
   var jk = '';
   try { jk = prop_('JINA_KEY'); } catch (e) { jk = ''; }
@@ -69,41 +69,93 @@ function cpJinaHead_(head, md) {
   var eng = '';
   try { eng = prop_('FB_ENGINE'); } catch (e2) { eng = ''; }
   if (!eng) eng = 'browser';
-  if (eng !== '-') head['X-Engine'] = eng;
+  if (eng !== '-' && !noEng) head['X-Engine'] = eng;
   return head;
+}
+
+/** ต่อที่อยู่ทางอ้อม + ติดหัวให้ถูกเจ้า — ตัวยิงทุกตัวต้องเรียกตัวนี้
+ *  ทำไม: jina หมดเงิน/โดนกั้น (15 ต.ค. 69 วัดแล้ว ทุกทางฟรีตาย) ต้องสลับไปบริการ
+ *  ดึงเว็บแบบมีคีย์ได้จากลิงก์ setprop FB_PROXY เลย ไม่ต้องแก้โค้ด
+ *  - ลงท้าย "=" (เช่น ...?x-api-key=KEY&url=) → เข้ารหัส url ก่อนต่อ
+ *  - หัวของ jina (Authorization/X-Engine) ติดไปเฉพาะตอนเป็น jina เท่านั้น
+ *    ไม่งั้นคีย์ jina หลุดไปบริการอื่น */
+function cpVia_(head, via, url, md, noEng) {
+  var v = String(via);
+  var target = /=$/.test(v) ? v + encodeURIComponent(url) : v + url;
+  if (v.indexOf('jina.ai') >= 0) cpJinaHead_(head, md, noEng);
+  return target;
 }
 
 /** ยิงเอา "ข้อความดิบ" มา 1 หน้า — ใช้กับฟีด JSON และหน้า markdown
  *  md=true  → ห้ามใส่ X-Return-Format:html เพราะตัวแกะของ FabScan อ่าน markdown
  *  ตรงก่อน แล้วค่อยอ้อม: ฟีด getrs.php ยิงตรงติดบ่อย (ไม่ใช่หน้าเว็บ Cloudflare ไม่ค่อยกั้น) */
-function cpGet_(url, via, md) {
+function cpGet_(url, via, md, noEng) {
   var head = { 'User-Agent': CP_UA, 'Accept': '*/*' };
   var target = url;
   if (via) {
-    target = via + url;
-    cpJinaHead_(head, md);
+    target = cpVia_(head, via, url, md, noEng);
   } else {
     head['Referer'] = 'https://www.forebet.com/';
   }
   var r = UrlFetchApp.fetch(target, { method: 'get', muteHttpExceptions: true,
                                       followRedirects: true, headers: head });
-  return { code: r.getResponseCode(), body: r.getContentText() };
+  return { code: r.getResponseCode(), body: cpUnwrap_(r.getContentText()) };
+}
+
+/** แกะห่อ HTML ที่ตัวดึงแบบเบราว์เซอร์ (ScrapingAnt) ครอบฟีด JSON มา
+ *  วัดจริง 15 ต.ค. 69: ได้ <html><head></head><body>[[{...}]]</body></html> 649 KB
+ *  ของครบแต่ fbFeedOk_ ตกเพราะไม่จบด้วย ']' — แกะเฉพาะใบที่ข้างในขึ้นต้นด้วย '[['
+ *  หน้าเว็บจริง (มี <head> ไม่ว่าง) ไม่แตะ */
+function cpUnwrap_(t) {
+  var s = String(t || '');
+  var A = '<html><head></head><body>', Z = '</body></html>';
+  var i = s.indexOf(A);
+  if (i < 0 || s.slice(0, i).trim() !== '') return s;
+  var j = s.lastIndexOf(Z);
+  if (j < i || s.slice(j + Z.length).trim() !== '') return s;
+  var x = s.slice(i + A.length, j).trim();
+  if (x.slice(0, 5).toLowerCase() === '<pre>') x = x.slice(5).trim();
+  if (x.slice(-6).toLowerCase() === '</pre>') x = x.slice(0, -6).trim();
+  if (x.slice(0, 2) !== '[[') return s;
+  return x.split('&lt;').join('<').split('&gt;').join('>')
+          .split('&nbsp;').join(' ').split('&amp;').join('&');
+}
+
+/** ฟีดครบใบไหม — HTTP 200 เชื่อไม่ได้
+ *  วัดจริง 21 ก.ย. 69: ทางอ้อมคายมาครึ่งใบ ~526 ไบต์ ตัดกลางคำ (`"insight_link`)
+ *  ตัวแกะเลยได้ 0 คู่ แล้วตัวเกรดไปฟ้อง "หาไม่เจอ" ทั้งที่ของมีอยู่
+ *  ใบจริงปิดท้ายด้วย ']' เสมอ — ใบขาดจบกลางคำ */
+function fbFeedOk_(t) {
+  var s = String(t || '').trim();
+  return s.indexOf('[[') >= 0 && s.charAt(s.length - 1) === ']';
 }
 
 /** ฟีด getrs.php — ยิงตรงก่อน (เร็ว) โดนกั้นค่อยอ้อม
- *  ✅ เช็ก '[[' ก่อนคืน ไม่งั้นหน้าเออเร่อ 200 จะถูกนับว่าสำเร็จ แล้วไปตายตอนแกะ */
+ *  ✅ วัดความครบทุกใบ ไม่ใช่แค่ code 200 (ดู fbFeedOk_)
+ *  ✅ ใบขาดยิงซ้ำได้ 1 ครั้ง — วัดแล้วมันพังเป็นใบ ๆ (09-17 ได้ 526 แล้วยิงซ้ำได้ 367,230) */
+/** ครึ่งใบที่ยาวที่สุดที่เก็บได้ — หน้าเออเร่อ/หน้ากันบอท (ไม่มี '[[') ไม่นับ */
+function fbFeedPart_(body, best) {
+  var s = String(body || '');
+  return (s.indexOf('[[') >= 0 && s.length > best.length) ? s : best;
+}
+
 function fbFetchJsonText_(url) {
+  var best = '';
   try {
     var r = cpGet_(url, '', true);
-    if (r.code === 200 && String(r.body).indexOf('[[') >= 0) return r.body;
+    if (r.code === 200 && fbFeedOk_(r.body)) return r.body;
+    if (r.code === 200) best = fbFeedPart_(r.body, best);
   } catch (e) { }
   var via = fbProxy_();
-  if (!via) return '';
-  try {
-    var r2 = cpGet_(url, via, true);
-    if (r2.code === 200) return r2.body;
-  } catch (e2) { }
-  return '';
+  if (!via) return best;
+  for (var i = 0; i < 2; i++) {
+    try {
+      var r2 = cpGet_(url, via, true, i === 1);
+      if (r2.code === 200 && fbFeedOk_(r2.body)) return r2.body;
+      if (r2.code === 200) best = fbFeedPart_(r2.body, best);
+    } catch (e2) { }
+  }
+  return best;   /* ได้ครึ่งใบดีกว่าไม่ได้เลย — แต่ไม่เงียบ ตัวเรียกเห็นของน้อยผิดปกติเอง */
 }
 
 /** หน้าเว็บ forebet แบบ markdown (ผ่านทางอ้อม) — ยิงตรงไม่มีประโยชน์ วัดแล้วโดน 403 ทุกครั้ง */
@@ -222,6 +274,28 @@ function ffAllowed_(url) {
   return host === FF_HOST || host.slice(-(FF_HOST.length + 1)) === '.' + FF_HOST;
 }
 
+/* ตรวจว่าทางดึงทางไหนพัง — คายแค่ code/ยาว/หัวข้อความ ห้ามคายกุญแจ */
+function ffDiag_(url) {
+  url = String(url || '').trim();
+  if (!ffAllowed_(url)) return { ok: false, เหตุ: 'BAD_URL' };
+  var via = fbProxy_(), out = [];
+  function one(name, v, noEng) {
+    var t0 = new Date().getTime();
+    try {
+      var r = cpGet_(url, v, true, noEng);
+      var b = String(r.body || '');
+      out.push({ ทาง: name, code: r.code, ยาว: b.length,
+                 ใบจริง: fbFeedOk_(b), หัว: b.slice(0, 120),
+                 วินาที: Math.round((new Date().getTime() - t0) / 1000) });
+    } catch (e) {
+      out.push({ ทาง: name, code: 0, หัว: String(e).slice(0, 120) });
+    }
+  }
+  one('ตรง', '', false);
+  if (via) { one('อ้อม+engine', via, false); one('อ้อมเปล่า', via, true); }
+  return { ok: true, มีกุญแจ: !!prop_('JINA_KEY'), ผล: out };
+}
+
 /** คืน "ข้อความดิบ" ของหน้า forebet · ล้มแล้วคืนป้ายสั้น ๆ
  *  ป้าย BAD_URL / FETCH_ERR คือสัญญาเดิมกับฝั่ง python (มันเช็กคำขึ้นต้นพวกนี้)
  *  และสั้นกว่า 500 ตัวอักษร ฝั่ง forebet_api จึงนับเป็นล้มแล้วยิงซ้ำเอง */
@@ -251,7 +325,7 @@ function notify_(text) {
    ⚠️ คายกลับได้แค่ "ตั้งแล้ว / ยาวกี่ตัว" ห้ามคายค่าจริงออกไป
    ⚠️ APP_KEY ไม่อยู่ในรายชื่อ — ทับกุญแจประตูตัวเองไม่ได้ */
 var CFG_ALLOW = ['GH_TOKEN', 'JINA_KEY', 'FB_PROXY', 'FB_ENGINE', 'FB_TZ_SHIFT', 'FOREBET_URL',
-                 'TG_TOKEN', 'TG_HOOK_KEY', 'SCRAPER_KEY'];
+                 'TG_TOKEN', 'TG_HOOK_KEY', 'SCRAPER_KEY', 'API_FOOTBALL_KEY'];
 
 /* ตั้งกุญแจใบที่ 2 (SCRAPER_KEY) ได้ "ครั้งเดียว" ตอนที่ยังว่างอยู่
    ทำไมต้องมี: กุญแจตัวจริง APP_KEY อยู่ใน Script Properties อ่านจากข้างนอกไม่ได้เลย
@@ -289,4 +363,27 @@ function cfgStat_() {
      ไม่โชว์ไว้ตรงนี้ เวลาบอทเงียบจะไล่ไม่ถูกว่าโหมดมันเปลี่ยนไปหรือเปล่า */
   try { o['TG_MODE'] = tgMode_(); } catch (e) { o['TG_MODE'] = '?'; }
   return { ok: true, ค่า: o };
+}
+
+/** ลองยิง API บอลเจ้าอื่นตรงจาก GAS (ไม่ผ่านพร็อกซี) — คายแค่ code/ขนาด/หัว 120 ตัว */
+function apiProbe_() {
+  var d = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+  var urls = {
+    sportscore: 'https://sportscore.com/api/v1/fixtures/?sport=football&status=finished&limit=5&date=' + d,
+    sportscore_live: 'https://sportscore.com/api/widget/matches/?sport=football&limit=3',
+    moviodds: 'https://moviodds.com/odds?groups=40',
+    moviodds_res: 'https://moviodds.com/results?sport=soccer'
+  };
+  var out = {};
+  Object.keys(urls).forEach(function (k) {
+    var t0 = new Date().getTime();
+    try {
+      var r = UrlFetchApp.fetch(urls[k], { muteHttpExceptions: true, followRedirects: true,
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } });
+      var b = r.getContentText();
+      out[k] = { code: r.getResponseCode(), ยาว: b.length, หัว: b.slice(0, 120),
+                 วินาที: Math.round((new Date().getTime() - t0) / 1000) };
+    } catch (e) { out[k] = { code: 0, หัว: String(e).slice(0, 120) }; }
+  });
+  return { ok: true, ผล: out };
 }

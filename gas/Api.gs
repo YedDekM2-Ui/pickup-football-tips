@@ -244,6 +244,9 @@ function doGet(e) {
        ที่กันไว้แทนคือรายชื่อโดเมน: ยิงได้แค่ forebet.com เท่านั้น (ดู ffAllowed_)
        ของที่ได้เป็นหน้าเว็บสาธารณะล้วน ไม่มีอะไรของเจ้าของอยู่ในนั้น */
     if (p === 'ff') return textOut_(ffFetch_(q.ff || q.url));
+    if (p === 'ffdiag') return jsonOut_(ffDiag_(q.url || fbtFeedUrl_(String(q.d || ''))));
+    /* ?p=apiprobe = ลองยิง API บอลเจ้าอื่นจาก IP ของ Google · ลิสต์ตายตัว ไม่รับ url จากข้างนอก */
+    if (p === 'apiprobe') return jsonOut_(apiProbe_());
     /* claimkey อยู่ "ก่อน" ด่านกุญแจโดยตั้งใจ — เป็นทางเดียวที่ตั้งกุญแจใบที่ 2 ได้โดยไม่ต้องรู้ APP_KEY
        ประตูนี้เปิดเฉพาะตอน SCRAPER_KEY ยังว่าง ตั้งแล้วปิดถาวร (ดู claimKey_) */
     if (p === 'claimkey') return jsonOut_(claimKey_(q.v));

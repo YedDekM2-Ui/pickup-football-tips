@@ -66,8 +66,7 @@ function tfGet_(url, via) {
   };
   var target = url;
   if (via) {
-    target = via + url;
-    cpJinaHead_(head, false);   /* หัวทางอ้อมรวมไว้ที่เดียว (Compat.gs) — ขาด X-Engine = ได้หน้ากันบอท 200 */
+    target = cpVia_(head, via, url, false);   /* หัวทางอ้อมรวมไว้ที่เดียว (Compat.gs) — ขาด X-Engine = ได้หน้ากันบอท 200 */
   }
   var res = UrlFetchApp.fetch(target, {
     method: 'get', muteHttpExceptions: true, followRedirects: true, headers: head

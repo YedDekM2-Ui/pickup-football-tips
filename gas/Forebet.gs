@@ -495,8 +495,7 @@ function fbFetch_(url, via) {
   };
   var target = url;
   if (via) {
-    target = via + url;
-    cpJinaHead_(head, false);   /* หัวทางอ้อมรวมไว้ที่เดียว (Compat.gs) — ขาด X-Engine = ได้หน้ากันบอท 200 */
+    target = cpVia_(head, via, url, false);   /* หัวทางอ้อมรวมไว้ที่เดียว (Compat.gs) — ขาด X-Engine = ได้หน้ากันบอท 200 */
   }
   var res = UrlFetchApp.fetch(target, {
     method: 'get',
@@ -1151,6 +1150,7 @@ function fbHistory_(pickRows, tmap, maxDays, maxRows) {
      • เขียนกลับทีเดียวต่อคอลัมน์ — setValue ทีละช่องไม่เคยจบใน 6 นาที
    ───────────────────────────────────────────────────────────── */
 var FB_DONE_MS  = 7200000;     /* นับจากเวลาเตะ 2 ชม. ถือว่าจบเกม (90 นาที + พักครึ่ง + เจ็บ) */
+var FB_GIVEUP_DAYS = 14;      /* เก่ากว่านี้ = เลิกตาม feed ย้อนหลังไม่มีให้ค้นแล้ว */
 var FB_GRADE_MS = 240000;      /* งบเวลาโหลด feed ต่อรอบ เหลือที่ให้เขียนชีตทัน 6 นาที */
 
 /** ตัดสิน 1X2: คืน 'ถูก'/'ผิด' หรือ '' ถ้าตัดสินไม่ได้ (ไม่ได้ทายผลไว้) */
@@ -1159,6 +1159,31 @@ function fbJudge1x2_(pick, h, a) {
   if (w !== '1' && w !== 'X' && w !== '2') return '';
   var real = h > a ? '1' : (h < a ? '2' : 'X');
   return w === real ? 'ถูก' : 'ผิด';
+}
+
+/* จดว่าต้องโหลด feed วันไหน พร้อมลำดับความสำคัญ (0 = วันเตะจริง น้อยกว่า = สำคัญกว่า) */
+function fbNeedPut_(need, d, tier) {
+  if (!(d in need) || tier < need[d]) need[d] = tier;
+}
+
+/* เรียงวันที่จะโหลด: วันตรงของคู่ก่อนทั้งหมด แล้วค่อยวันข้างเคียง
+   ต้นเหตุ 21 ก.ย. 69: เรียงตามวันใหม่ก่อน แล้วงบเวลาหมดก่อนถึงวันของคู่ที่หาไม่เจอ */
+function fbNeedOrder_(need) {
+  var a = Object.keys(need);
+  a.sort(function (x, y) {
+    if (need[x] !== need[y]) return need[x] - need[y];
+    return x < y ? 1 : (x > y ? -1 : 0);
+  });
+  return a;
+}
+
+/* ยังเหลือกี่คู่ที่ยังไม่ได้สกอร์ */
+function fbWantLeft_(want, scores) {
+  var n = 0;
+  for (var i = 0; i < want.length; i++) {
+    if (!fbLookupScore_(scores, want[i].home, want[i].away, '')) n++;
+  }
+  return n;
 }
 
 function fbGradePicks_(budgetMs) {
@@ -1178,7 +1203,8 @@ function fbGradePicks_(budgetMs) {
   var nRow = vals.length - 1;
 
   /* 1️⃣ จดว่าต้องโหลดผลของวันไหนบ้าง — เอาเฉพาะแถวที่ยังไม่มีสกอร์ และวันเตะผ่านไปแล้ว */
-  var colS = [], colR = [], need = {}, day = [], pend = 0;
+  var giveup = fbDayShift_(today, -FB_GIVEUP_DAYS);
+  var colS = [], colR = [], need = {}, day = [], want = [], pend = 0, old = 0;
   for (var i = 1; i <= nRow; i++) {
     colS.push([vals[i][cS]]);
     colR.push([vals[i][cR]]);
@@ -1190,15 +1216,22 @@ function fbGradePicks_(budgetMs) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;       /* ไม่รู้วัน = หาผลไม่ได้ */
     /* เกมยังไม่จบ = ยังไม่มีผล ห้ามนับเป็น "หาไม่เจอ"
        อ่านเวลาเตะไม่ออก (kick = 0) ค่อยยึดวันอย่างเดียว เหมือน fbUpcoming_ */
+    /* เก่าเกินกำหนด = เลิกตามถาวร (เลื่อน/ยกเลิก/ชื่อทีมจับไม่ติด)
+       ปล่อยไว้มันกินงบโหลด feed แล้วโผล่ "หาไม่เจอ" ทุกรอบไม่มีวันจบ */
+    if (d < giveup) { old++; continue; }
     var kick = fbKickMs_(o);
     if (kick ? now < kick + FB_DONE_MS : d > today) { pend++; continue; }
     day[i - 1] = d;
-    need[d] = 1;
-    need[fbDayShift_(d, 1)] = 1;                        /* คู่ดึกไปโผล่ feed ของวันถัดไป */
+    want.push({ j: i - 1, home: vals[i][idx['ทีมเหย้า']], away: vals[i][idx['ทีมเยือน']] });
+    fbNeedPut_(need, d, 0);
+    fbNeedPut_(need, fbDayShift_(d, -1), 1);            /* บอลยุโรปเตะตีสองเวลาไทย = ยังเป็นเมื่อวานของเขา
+                                                           วัดจริง 21 ก.ย. 69: Stuttgart-Viking FK ในชีตลง 09-10 แต่อยู่ใน feed ของ 09-09 */
+    fbNeedPut_(need, fbDayShift_(d, 1), 2);             /* คู่ดึกไปโผล่ feed ของวันถัดไป */
   }
 
-  /* 2️⃣ โหลด feed — วันใหม่ก่อน ชนงบเวลาแล้วหยุด รอบหน้าค่อยเก็บวันเก่าต่อ */
-  var scores = {}, dates = Object.keys(need).sort().reverse(), fetched = 0;
+  /* 2️⃣ โหลด feed — วันของคู่ก่อน ค่อยวันข้างเคียง
+     งบเวลาโหลดได้แค่ 4-5 วัน/รอบ ถ้าเรียงตามวันเฉย ๆ วันของคู่ที่ยังหาไม่เจอจะไม่มีวันถึง */
+  var scores = {}, dates = fbNeedOrder_(need), fetched = 0;
   var maxDate = fbDayShift_(today, 1);
   for (var u = 0; u < dates.length; u++) {
     if (new Date().getTime() - t0 > (budgetMs || FB_GRADE_MS)) break;
@@ -1206,10 +1239,25 @@ function fbGradePicks_(budgetMs) {
     var one = fbtParseFeed_(fbFetchJsonText_(fbtFeedUrl_(dates[u])));
     fetched++;
     for (var k in one) if (!(k in scores)) scores[k] = one[k];
+    if (!fbWantLeft_(want, scores)) break;              /* ครบทุกคู่แล้ว ไม่ต้องเผาโหลดต่อ */
+  }
+
+  /* 2️⃣½ สำรองจาก SportScore — เฉพาะคู่ที่ forebet ไม่มีผล (ไม่ต้องคีย์ · ต้องใส่เครดิต "Powered by SportScore")
+     เขาไม่มีสกอร์ครึ่งแรก ได้แค่ FT · วันที่ของเขาเป็น UTC เลยต้องไล่วันเดียวกับ forebet (d-1, d, d+1) */
+  var ssDays = 0, ssKeys = {};
+  if (fbWantLeft_(want, scores)) {
+    for (var u2 = 0; u2 < dates.length; u2++) {
+      if (new Date().getTime() - t0 > (budgetMs || FB_GRADE_MS)) break;
+      if (dates[u2] > maxDate) continue;
+      var ss = fbSportScoreFeed_(dates[u2]);
+      ssDays++;
+      for (var k2 in ss) if (!(k2 in scores)) { scores[k2] = ss[k2]; ssKeys[k2] = 1; }
+      if (!fbWantLeft_(want, scores)) break;
+    }
   }
 
   /* 3️⃣ ตัดสิน */
-  var found = 0, graded = 0, miss = 0, lost = [];
+  var found = 0, graded = 0, miss = 0, lost = [], ssFound = 0;
   for (var r = 1; r <= nRow; r++) {
     var j = r - 1;
     if (!day[j]) continue;                              /* รอบแรกคัดไว้แล้วว่าแถวไหนตัดสินได้ */
@@ -1221,6 +1269,7 @@ function fbGradePicks_(budgetMs) {
       continue;
     }
     found++;
+    if (fbScoreFrom_(ssKeys, scores, sc)) ssFound++;
     colS[j] = [sc[0] + '-' + sc[1] + (sc[2] != null ? ' (' + sc[2] + '-' + sc[3] + ')' : '')];
     var res = fbJudge1x2_(vals[r][idx['เดาผล']], sc[0], sc[1]);
     if (!res) continue;                                 /* ไม่ได้ทายผล → ใส่แค่สกอร์ */
@@ -1233,7 +1282,42 @@ function fbGradePicks_(budgetMs) {
 
   return 'เติมสกอร์ ' + found + ' คู่ · ตัดสินถูกผิด ' + graded + ' คู่ · โหลด ' + fetched +
          ' วัน = ' + Object.keys(scores).length + ' คีย์ · หาไม่เจอ ' + miss +
-         ' คู่ · ยังไม่เตะ ' + pend + ' คู่' + (lost.length ? ' · ที่หลุด: ' + lost.join(', ') : '');
+         ' คู่ · ยังไม่เตะ ' + pend + ' คู่' + (old ? ' · เลิกตาม ' + old + ' คู่' : '') + (lost.length ? ' · ที่หลุด: ' + lost.join(', ') : '') +
+         (ssFound ? ' · สำรองจาก SportScore ' + ssFound + ' คู่ (' + ssDays + ' วัน · Powered by SportScore)' : '');
+}
+
+/* สกอร์ที่ใช้มาจาก SportScore ไหม — เทียบตัวที่ lookup คืนกับของในถังที่เติมจาก SportScore */
+function fbScoreFrom_(ssKeys, scores, sc) {
+  for (var k in ssKeys) if (scores[k] === sc) return true;
+  return false;
+}
+
+/* ---------- SportScore (ไม่ต้องคีย์ · ต้องใส่เครดิต "Powered by SportScore") ----------
+   รูปคำตอบ: {matches:[{home, away, home_score:"4", away_score:"1", status:"finished", time:"...+00:00"}]}
+   คืน { fbNorm_(home)+fbNorm_(away): [ftH, ftA] } เหมือน fbtParseFeed_ แต่ไม่มีครึ่งแรก */
+function fbSportScoreParse_(text) {
+  var out = {}, j;
+  try { j = JSON.parse(String(text || '')); } catch (e) { return out; }
+  var m = (j && j.matches) || [];
+  for (var i = 0; i < m.length; i++) {
+    var x = m[i] || {};
+    if (String(x.status || '').toLowerCase() !== 'finished') continue;
+    var h = parseInt(x.home_score, 10), a = parseInt(x.away_score, 10);
+    if (isNaN(h) || isNaN(a)) continue;
+    var key = fbNorm_(x.home) + fbNorm_(x.away);
+    if (!fbNorm_(x.home) || !fbNorm_(x.away) || key in out) continue;
+    out[key] = [h, a];
+  }
+  return out;
+}
+
+function fbSportScoreFeed_(date) {
+  if (typeof cpGet_ !== 'function') return {};
+  try {
+    // ไม่ใส่ limit เขาตัดที่ 100 คู่/วัน (15 ต.ค. 69 มีจริง 124 หาย 24)
+    var r = cpGet_('https://sportscore.com/api/v1/fixtures/?sport=football&status=finished&limit=1000&date=' + date, '', true);
+    return r && r.code === 200 ? fbSportScoreParse_(r.body) : {};
+  } catch (e) { return {}; }
 }
 
 /* ---------- เกรดเองอัตโนมัติตอนเปิดหน้าเว็บ ----------

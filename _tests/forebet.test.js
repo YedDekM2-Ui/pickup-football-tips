@@ -980,7 +980,8 @@ test('ได้ 200 แต่ไม่ใช่หน้าจริง = ต้
 /* ── เกรดใบปักหมุดย้อนหลัง (fbGradePicks_) ────────────────────────────
    ตัวหาสกอร์จริงอยู่คนละไฟล์ (Compat.gs/FootballTips.gs) ที่นี่ไม่ได้โหลด
    จึงใส่ของปลอมแทนได้ตรง ๆ — เทสต์นี้พิสูจน์ "กติกาการตัดสิน" ไม่ใช่ตัวดึงเน็ต */
-function gradeEnv(picks, scoreTable, today) {
+function gradeEnv(picks, scoreTable, today, ssTable) {
+  const ssSeen = [];
   const app = new FakeSpreadsheetApp(bookOf(picks));
   const seen = [];
   const P = { SHEET_ID: 'S' };
@@ -999,7 +1000,12 @@ function gradeEnv(picks, scoreTable, today) {
     fbtFeedUrl_: (d) => { seen.push(d); return 'u/' + d; },
     fbFetchJsonText_: (u) => u,
     fbtParseFeed_: (u) => scoreTable[u.replace('u/', '')] || {},
-    fbLookupScore_: (scores, home, away) => scores[String(home) + '|' + String(away)] || null,
+    fbLookupScore_: (scores, home, away) => scores[String(home) + '|' + String(away)] ||
+      scores[ssNorm(home) + ssNorm(away)] || null,
+    fbNorm_: ssNorm,
+    /* SportScore: ไม่ส่ง ssTable = ไม่มี cpGet_ เลย (เหมือนของเดิม) */
+    cpGet_: ssTable ? (u) => { const d = u.split('date=')[1]; ssSeen.push(d);
+      return d in ssTable ? { code: 200, body: JSON.stringify(ssTable[d]) } : { code: 500, body: '' }; } : undefined,
     fbDayShift_: (d, k) => {
       /* บวกวันแบบ UTC ล้วน — toISOString ของเวลาท้องถิ่น +07 จะถอยกลับไปวันเดิม */
       const t = new Date(d + 'T00:00:00Z');
@@ -1007,9 +1013,10 @@ function gradeEnv(picks, scoreTable, today) {
       return t.toISOString().slice(0, 10);
     }
   });
-  g.__app = app; g.__days = seen; g.__props = P;
+  g.__app = app; g.__days = seen; g.__props = P; g.__ss = ssSeen;
   return g;
 }
+function ssNorm(x) { return String(x || '').toLowerCase().replace(/[^a-z0-9฀-๿]/g, ''); }
 /** อ่านค่าช่อง สกอร์จริง/ถูกผิด ของแถวที่ i (เริ่ม 0) */
 function gradeRow(g, i) {
   const r = g.readObjects_('PICKS')[i];
@@ -1041,12 +1048,12 @@ test('เกรดย้อนหลัง: แถวที่มีสกอร
 
 test('เกรดย้อนหลัง: คู่ที่ยังไม่ถึงวันเตะ = ไม่ยุ่ง และไม่ไปโหลดวันนั้น', () => {
   const g = gradeEnv([
-    pickRow({ 'วันที่': '2026-09-30', 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': '1' })
+    pickRow({ 'วันที่': '2099-09-30', 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': '1' })
   ], {});
 
   const msg = g.fbGradePicks_();
   eq(gradeRow(g, 0)[0], '');
-  eq(g.__days.indexOf('2026-09-30'), -1, 'ห้ามไปดึงผลของวันที่ยังไม่ถึง');
+  eq(g.__days.indexOf('2099-09-30'), -1, 'ห้ามไปดึงผลของวันที่ยังไม่ถึง');
   ok(msg.indexOf('ยังไม่เตะ 1 คู่') >= 0, 'ต้องรายงานว่ามีคู่ค้างอยู่');
 });
 
@@ -1085,6 +1092,42 @@ test('เกรดย้อนหลัง: ไม่ได้ทายผลไ
   eq(gradeRow(g, 0)[1], '', 'ไม่มีคำทาย = ตัดสินไม่ได้');
 });
 
+
+/* บอลยุโรปเตะตีหนึ่ง-ตีสองเวลาไทย = เมื่อวานของฝั่งโน้น
+   วัดจริง 21 ก.ย. 69: Stuttgart-Viking FK ชีตลง 09-10 แต่ feed มันอยู่ 09-09 → โดนนับเป็น "หาไม่เจอ" ทุกรอบ */
+test('เรียงคิวโหลด feed: วันของคู่กับวันก่อนหน้าต้องมาก่อนวันที่ไม่เกี่ยว', () => {
+  const g = gradeEnv([
+    pickRow({ 'วันที่': '2026-08-20', 'ทีมเหย้า': 'A', 'ทีมเยือน': 'B', 'เดาผล': '1' }),
+    pickRow({ 'วันที่': '2026-08-24', 'ทีมเหย้า': 'C', 'ทีมเยือน': 'D', 'เดาผล': '1' })
+  ], {}, '2026-08-26');
+  g.fbGradePicks_();
+  const d = g.__days;
+  /* วันของคู่เอง (08-24, 08-20) ต้องมาก่อนวันข้างเคียงทั้งหมด */
+  eq(d[0], '2026-08-24', 'วันของคู่ใหม่สุดก่อน');
+  eq(d[1], '2026-08-20', 'ตามด้วยวันของคู่อีกคู่');
+  ok(d.indexOf('2026-08-23') > 1, 'วันข้างเคียงต้องอยู่ทีหลัง');
+  ok(d.indexOf('2026-08-19') > 1, 'วันก่อนหน้าของคู่เก่าต้องมี แต่อยู่ทีหลัง');
+});
+
+test('เจอครบทุกคู่แล้วหยุดโหลด ไม่เผางบต่อ', () => {
+  const g = gradeEnv([
+    pickRow({ 'วันที่': '2026-08-24', 'ทีมเหย้า': 'C', 'ทีมเยือน': 'D', 'เดาผล': '1' })
+  ], { '2026-08-24': { 'C|D': [1, 0] } }, '2026-08-26');
+  g.fbGradePicks_();
+  eq(g.__days.length, 1, 'เจอแล้วต้องหยุดทันที');
+  eq(gradeRow(g, 0)[1], 'ถูก');
+});
+
+test('เกรดย้อนหลัง: บอลเตะตีสองต้องเผื่อไปดูผลของวันก่อนหน้าด้วย', () => {
+  const g = gradeEnv([
+    pickRow({ 'วันที่': '2026-08-25', 'ทีมเหย้า': 'Stuttgart', 'ทีมเยือน': 'Viking FK', 'เดาผล': '1' })
+  ], { '2026-08-24': { 'Stuttgart|Viking FK': [2, 0] } });
+
+  g.fbGradePicks_();
+  eq(gradeRow(g, 0)[0], '2-0', 'ผลไปโผล่ feed วันก่อนก็ต้องเจอ');
+  eq(gradeRow(g, 0)[1], 'ถูก');
+  ok(g.__days.indexOf('2026-08-24') >= 0, 'ต้องสั่งโหลด feed วันก่อนหน้าจริง ๆ');
+});
 test('เกรดย้อนหลัง: คู่ดึกต้องเผื่อไปดูผลของวันถัดไปด้วย', () => {
   const g = gradeEnv([
     pickRow({ 'วันที่': '2026-08-24', 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': 'X' })
@@ -1132,4 +1175,39 @@ test('เกรดอัตโนมัติ: เกรดพัง = ห้า
   const g = gradeEnv([autoRow({ 'วันที่':'2026-08-25', 'เวลาเตะ':'20:00' })], {}, '2026-08-26');
   g.fbGradePicks_ = () => { throw new Error('feed ล่ม'); };
   eq(g.fbAutoGrade_(g.readObjects_('PICKS'), T('2026-08-26T12:00:00+07:00')), false);
+});
+
+/* ---------- SportScore = แหล่งสกอร์สำรองของตัวเกรด ---------- */
+test('SportScore: แกะเฉพาะเกมที่จบแล้ว สกอร์ข้อความกลายเป็นเลข', () => {
+  const g = gradeEnv([], {}, undefined, {});
+  const out = g.fbSportScoreParse_(JSON.stringify({ matches: [
+    { home: 'Arsenal', away: 'Leeds', home_score: '2', away_score: '1', status: 'finished' },
+    { home: 'Chelsea', away: 'Everton', home_score: '0', away_score: '0', status: 'live' },
+    { home: 'Spurs', away: 'Fulham', home_score: '', away_score: '', status: 'finished' }
+  ] }));
+  eq(JSON.stringify(out[g.fbNorm_('Arsenal') + g.fbNorm_('Leeds')]), '[2,1]');
+  eq(Object.keys(out).length, 1, 'เกมสด/ไม่มีสกอร์ ห้ามเข้า');
+  eq(JSON.stringify(g.fbSportScoreParse_('<html>')), '{}', 'ไม่ใช่ JSON = ว่าง ไม่ล้ม');
+});
+
+test('SportScore: forebet หาไม่เจอ = เติมจาก SportScore พร้อมเครดิต', () => {
+  const g = gradeEnv([
+    pickRow({ 'วันที่': '2026-08-25', 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': '1' })
+  ], {}, undefined, { '2026-08-25': { matches: [
+    { home: 'Arsenal', away: 'Leeds', home_score: '2', away_score: '1', status: 'finished' }
+  ] } });
+  const msg = g.fbGradePicks_();
+  eq(gradeRow(g, 0)[0], '2-1', 'SportScore ไม่มีครึ่งแรก = สกอร์เต็มอย่างเดียว');
+  eq(gradeRow(g, 0)[1], 'ถูก');
+  ok(msg.indexOf('Powered by SportScore') >= 0, 'ต้องมีเครดิตตามเงื่อนไขเขา');
+});
+
+test('SportScore: forebet เจอครบแล้ว = ไม่ไปถาม SportScore', () => {
+  const g = gradeEnv([
+    pickRow({ 'วันที่': '2026-08-25', 'ทีมเหย้า': 'Arsenal', 'ทีมเยือน': 'Leeds', 'เดาผล': '1' })
+  ], { '2026-08-25': { 'Arsenal|Leeds': [2, 0, 1, 0] } }, undefined, { '2026-08-25': { matches: [] } });
+  const msg = g.fbGradePicks_();
+  eq(gradeRow(g, 0)[0], '2-0 (1-0)');
+  eq(g.__ss.length, 0, 'ห้ามยิงเปล่า');
+  ok(msg.indexOf('SportScore') < 0);
 });

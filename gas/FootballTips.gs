@@ -442,7 +442,7 @@ function fbtStatLine_(label, o) {
 function fbtStatsText_(days) {
   days = parseInt(days, 10) || 30;
   var sh = sheetIfExists_(SHEETS.FBT);
-  if (!sh || sh.getLastRow() < 2) return '📊 ยังไม่มีข้อมูลทีเด็ดในชีต';
+  if (!sh || sh.getLastRow() < 2) return '📊 ยังไม่มีข้อมูลทีเด็ดในชีต — ตัวคัดทีเด็ดยังไม่เคยยิงใบเข้ามา (ยังไม่ได้ต่อท่อ)';
 
   var since = Utilities.formatDate(new Date(Date.now() - days * 86400000), 'Asia/Bangkok', 'yyyy-MM-dd');
   var data = sh.getRange(2, 1, sh.getLastRow() - 1, 14).getValues();
