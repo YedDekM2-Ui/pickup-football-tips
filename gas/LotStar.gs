@@ -112,11 +112,43 @@ function stPayload_() {
   return { ok: true, at: nowIso_(), charts: stCharts_(), lao: lao, thai: thai };
 }
 
-/** ลงผลจากหน้าแอป — ใช้ทางเดิมของบอท (ผ่าน lotSetText_ อยู่แล้ว) */
-function stResult_(kind, iso, a, b) {
+/** ลงผลจากหน้าแอป — ใช้ทางเดิมของบอท (ผ่าน lotSetText_ อยู่แล้ว)
+ *  หวยไทยส่งรางวัลที่ 1 เต็ม 6 หลักมาได้ (a = 6 หลัก → 4 ตัวบน = 4 ตัวท้าย)
+ *  พ่วงหน้า 3 / ท้าย 3 (คั่น /) มาด้วย = เติมแถวให้ครบเหมือนงวดที่ดึงจาก thairath */
+function stResult_(kind, iso, a, b, f3, b3) {
   iso = String(iso || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return { ok: false, error: 'วันที่ไม่ถูก' };
+  var six = '';
+  if (kind === 'thai') {
+    var t = String(a || '').replace(/\D/g, '');
+    if (t.length === 6) { six = t; a = t.slice(-4); }
+  }
   var msg = kind === 'thai' ? recordThaiResult_(a, b, iso) : recordLaoResult_(a, iso);
   var bad = /^❌/.test(String(msg));
-  return { ok: !bad, ข้อความ: String(msg).slice(0, 300) };
+  if (!bad && six) {
+    var fr = lotPadList_(String(f3 || '').replace(/[^0-9\/ ]/g, '').trim().replace(/\s+/g, '/'), 3);
+    var bk = lotPadList_(String(b3 || '').replace(/[^0-9\/ ]/g, '').trim().replace(/\s+/g, '/'), 3);
+    lotMergeRows_(THAI_LOT.SHEET, THAI_LOT.HEADERS,
+      [[iso, 'งวด ' + lotThaiDateLabel_(iso), six.slice(-4), lotPad_(b, 2), six, fr, bk]]);
+  }
+  return { ok: !bad, ข้อความ: String(msg).slice(0, 300), รางวัลที่1: six };
+}
+
+/** กุญแจของหน้าแกะดาว: STAR_KEY (ใบเฉพาะ เปิดได้แค่ทางของแกะดาว) หรือกุญแจหลักใบไหนก็ได้
+ *  มีใบเฉพาะเพราะเจ้าของลืม APP_KEY และจะยัดลิงก์ไว้หน้าโฮม — หลุดไปก็เห็นแค่สมุดดวง ไม่ถึงบอล/บิล
+ *  ยังไม่ตั้ง STAR_KEY = ใช้ได้เฉพาะกุญแจหลัก (ไม่เปิดโล่ง) */
+function stKeyOk_(q) {
+  var want = prop_('STAR_KEY'), got = String((q && q.k) || '');
+  if (want && got && got === want) return true;
+  return keyOk_(q);
+}
+
+/** ทางของแกะดาวทั้งหมด — คืน null = ไม่ใช่ทางของแกะดาว ให้ไหลต่อไปด่านปกติ */
+function stRoute_(p, q, body) {
+  if (['star', 'starsave', 'stardel', 'starresult'].indexOf(p) < 0) return null;
+  if (!stKeyOk_(q)) return { ok: false, needKey: true, error: 'กุญแจไม่ถูก' };
+  if (p === 'star') return stPayload_();
+  if (p === 'starsave') return stSave_(body.chart);
+  if (p === 'stardel') return stDel_(body.date);
+  return stResult_(String(body.kind || ''), body.date, body.a, body.b, body.f3, body.b3);
 }

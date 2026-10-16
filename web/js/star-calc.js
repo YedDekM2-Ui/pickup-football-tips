@@ -19,10 +19,15 @@ var SC_ZOD = ['ชวด', 'ฉลู', 'ขาล', 'เถาะ', 'มะโ�
 
 /* หวยลาว ออก 20:30 (พุธ = กลางคืน) · หวยไทย ออก ~16:00 (พุธ = กลางวัน) */
 var SC_KIND = {
+  /* เจ้าของสั่ง 16 ต.ค. 69: ลาวคิดจาก 4 ตัวเหมือนไทย แล้วแยกบน/ล่างให้ชัด
+     4 ตัว ABCD → บน = 3 ตัวบน BCD · 2 ตัวบน CD · ล่าง = 2 ตัวล่าง AB (ตามตารางลาวพัฒนา "225-92") */
   lao: { name: 'หวยลาว', pos: ['พัน', 'ร้อย', 'สิบ', 'หน่วย'], night: true,
-         sets: [['2 ตัวบน', [2, 3]], ['2 ตัวล่าง', [0, 1]], ['3 ตัวบน', [1, 2, 3]]] },
+         tag: ['ล่าง', 'บน·ล่าง', 'บน', 'บน'],
+         sets: [['4 ตัว', [0, 1, 2, 3]], ['3 ตัวบน', [1, 2, 3]], ['2 ตัวบน', [2, 3]], ['2 ตัวล่าง', [0, 1]]] },
   thai: { name: 'หวยไทย', pos: ['พัน', 'ร้อย', 'สิบ', 'หน่วย', 'ล่างสิบ', 'ล่างหน่วย'], night: false,
-          sets: [['2 ตัวล่าง', [4, 5]], ['2 ตัวบน', [2, 3]], ['3 ตัวบน', [1, 2, 3]]] }
+          tag: ['บน', 'บน', 'บน', 'บน', 'ล่าง', 'ล่าง'],
+          /* เจ้าของสั่ง 16 ต.ค. 69: หวยไทยคิดเฉพาะ 4 ตัวบน + 2 ตัวล่าง เท่านั้น */
+          sets: [['4 ตัวบน', [0, 1, 2, 3]], ['2 ตัวล่าง', [4, 5]]] }
 };
 /* กาลกิณีดับแรงที่หลักสิบ-หน่วย หลักร้อยยังโผล่ได้ (ตามตำรา "สูตรดับบน-ดับล่าง") */
 var SC_KAL_POSW = { 'พัน': 0.4, 'ร้อย': 0.5, 'สิบ': 1, 'หน่วย': 1, 'ล่างสิบ': 1, 'ล่างหน่วย': 1 };
@@ -328,7 +333,7 @@ function scPredict_(kind, chart, iso, results, weights) {
     var idx = st[1], combos = [{ n: '', s: 0 }];
     idx.forEach(function (pi) {
       var nx = [];
-      combos.forEach(function (c) { pos[pi].rank.slice(0, idx.length === 3 ? 2 : 3).forEach(function (r) { nx.push({ n: c.n + r.d, s: c.s + r.s }); }); });
+      combos.forEach(function (c) { pos[pi].rank.slice(0, idx.length >= 3 ? 2 : 3).forEach(function (r) { nx.push({ n: c.n + r.d, s: c.s + r.s }); }); });
       combos = nx;
     });
     /* เลขซ้ำในชุด (เบิ้ล/ตอง) ลดคะแนน — ยกเว้นวันที่ดวงชี้ว่าเบิ้ลแรง ค่อยให้ขึ้นเอง */
@@ -375,7 +380,8 @@ function scPredict_(kind, chart, iso, results, weights) {
 }
 
 function scDoubleRate_(kind, results, iso) {
-  var idx = SC_KIND[kind].sets[0][1];
+  /* เบิ้ลวัดที่ชุด 2 ตัว (ลาว 2 ตัวบน · ไทย 2 ตัวล่าง) */
+  var idx = SC_KIND[kind].sets.filter(function (x) { return x[1].length === 2; })[0][1];
   var dates = Object.keys(results).filter(function (d) { return d < iso; }).sort().slice(-30), hit = 0;
   dates.forEach(function (d) { if (results[d][idx[0]] === results[d][idx[1]]) hit++; });
   return { n: dates.length, hit: hit, rate: dates.length ? hit / dates.length : 0 };
@@ -427,7 +433,11 @@ function scStats_(kind, results, lastN) {
   });
   var sets = K.sets.map(function (st) {
     var dbl = 0, idx = st[1];
-    use.forEach(function (d) { var r = results[d]; if (idx.length === 2 ? r[idx[0]] === r[idx[1]] : (r[idx[0]] === r[idx[1]] || r[idx[1]] === r[idx[2]] || r[idx[0]] === r[idx[2]])) dbl++; });
+    use.forEach(function (d) {
+      var r = results[d], seen = {}, rep = false;
+      idx.forEach(function (i) { if (seen[r[i]]) rep = true; seen[r[i]] = 1; });
+      if (rep) dbl++;
+    });
     return { name: st[0], dbl: dbl };
   });
   return { n: use.length, total: dates.length, pos: out, sets: sets, from: use[0] || '', to: use[use.length - 1] || '' };

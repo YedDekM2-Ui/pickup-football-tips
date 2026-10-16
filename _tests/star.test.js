@@ -84,10 +84,12 @@ test('ทำนายคืนครบทุกหลัก + เลขชุ�
   const pr = C.scPredict_('lao', charts[9], '2026-10-16', lao, w);
   eq(pr.pos.length, 4);
   pr.pos.forEach((p) => { eq(p.top.length, 3); eq(p.closed.length, 2); eq(p.rank.length, 10); });
-  eq(pr.sets.map((s) => s.name), ['2 ตัวบน', '2 ตัวล่าง', '3 ตัวบน']);
+  eq(pr.sets.map((s) => s.name), ['4 ตัว', '3 ตัวบน', '2 ตัวบน', '2 ตัวล่าง'], 'ลาวคิดจาก 4 ตัว แยกบน/ล่าง');
   pr.sets.forEach((s) => ok(s.list.length === 6 && s.list.every((n) => /^\d+$/.test(n))));
   const pt = C.scPredict_('thai', charts[9], '2026-10-16', thai, null);
   eq(pt.pos.map((p) => p.name), ['พัน', 'ร้อย', 'สิบ', 'หน่วย', 'ล่างสิบ', 'ล่างหน่วย']);
+  eq(pt.sets.map((s) => s.name), ['4 ตัวบน', '2 ตัวล่าง'], 'ไทยคิดแค่ 4 ตัวบน + 2 ตัวล่าง');
+  ok(pt.sets[0].list.every((n) => n.length === 4) && pt.sets[1].list.every((n) => n.length === 2));
 });
 
 test('น้ำหนักไม่โกงอนาคต: วัดก่อนดวงแรก = ไม่มีข้อมูล ทุกวิธีเท่าสุ่ม', () => {
@@ -155,4 +157,46 @@ test('แถวชีต ↔ ดวง ไปกลับไม่เพี้�
   const c = g.stClean_(Object.assign({}, charts[2]));
   const back = g.stParse_(g.stRowOf_(c));
   eq(back.rasi, c.rasi); eq(back.date, c.date); eq(back.center, '18/28'); eq(back.lunar, c.lunar);
+});
+
+/* ---------------- ชุดวันหวยไทยออก (รูปเจ้าของ 16 ต.ค. 69 · 16 พ.ค.–1 ต.ค. 69) ---------------- */
+const TH = require('./fixtures/star-truth-thai.js').map((t) => ({ date: t.date, rasi: t.rasi, lagna: t.lagna,
+  center: t.center.join('/'), lunar: t.lunar, moved: t.moved }));
+
+test('ดวงหวยไทย: ดาวครบ 10 ดวงไม่ซ้ำ + ลัคนาอยู่ในวง', () => {
+  TH.forEach((c) => {
+    const all = c.rasi.flat().sort().join('');
+    eq(all, '0123456789', c.date);
+    ok(c.lagna >= 0 && c.lagna <= 11, c.date);
+  });
+});
+
+test('อ่านจันทรคติเดือนแปดหลังได้ (เดือน 8 ซ้ำปีอธิกมาส)', () => {
+  eq(C.scLunarParse_('ขึ้น 2 ค่ำ เดือน 8 (แปดหลัง)'), { side: 'ขึ้น', day: 2, month: 8 });
+});
+
+test('วัดย้อนหลังหวยไทยครบ 10 งวด · 60 หลัก (4 ตัวบน + 2 ตัวล่าง)', () => {
+  const bt = C.scBacktest_('thai', TH, thai);
+  eq(bt.rows.length, 10);
+  eq(bt.n, 60);
+  eq(bt.rows[9].real, '270170');
+});
+
+test('stResult_ หวยไทย 6 หลัก → 4 ตัวบน = 4 ตัวท้าย + เติมหน้า/ท้าย 3 ตัวครบแถว', () => {
+  const calls = [], merged = [];
+  const g = loadGas(['gas/LotStar.gs'], {
+    recordThaiResult_: (a, b, iso) => { calls.push([a, b, iso]); return '✅ บันทึก'; },
+    recordLaoResult_: () => '✅',
+    lotMergeRows_: (sh, h, rows) => merged.push(rows[0]),
+    lotPad_: (v, n) => String(v).padStart(n, '0'),
+    lotPadList_: (v) => String(v),
+    lotThaiDateLabel_: () => '1 ตุลาคม 2569',
+    THAI_LOT: { SHEET: 'Thai_Lottery', HEADERS: [] }
+  });
+  const r = g.stResult_('thai', '2026-10-01', '402701', '70', '791/912', '058 396');
+  ok(r.ok);
+  eq(calls[0], ['2701', '70', '2026-10-01']);
+  eq(merged[0], ['2026-10-01', 'งวด 1 ตุลาคม 2569', '2701', '70', '402701', '791/912', '058/396']);
+  g.stResult_('thai', '2026-10-01', '2701', '70');
+  eq(merged.length, 1, 'ส่งมา 4 หลัก = ไม่แตะคอลัมน์รางวัลที่ 1');
 });

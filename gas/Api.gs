@@ -250,6 +250,9 @@ function doGet(e) {
     /* claimkey อยู่ "ก่อน" ด่านกุญแจโดยตั้งใจ — เป็นทางเดียวที่ตั้งกุญแจใบที่ 2 ได้โดยไม่ต้องรู้ APP_KEY
        ประตูนี้เปิดเฉพาะตอน SCRAPER_KEY ยังว่าง ตั้งแล้วปิดถาวร (ดู claimKey_) */
     if (p === 'claimkey') return jsonOut_(claimKey_(q.v));
+    /* หน้าแกะดาว (star.html) มีกุญแจของตัวเอง STAR_KEY — ด่านอยู่ใน stRoute_ */
+    var stG = (typeof stRoute_ === 'function') ? stRoute_(p, q, {}) : null;
+    if (stG) return jsonOut_(stG);
     if (!keyOk_(q)) return jsonOut_({ ok: false, needKey: true, error: 'ต้องใส่กุญแจ' });
     /* 2 ทางนี้ต้องอยู่หลังด่านกุญแจ — มันยิงเน็ตออกและเขียนชีต ไม่ใช่ทางอ่านเฉยๆ */
     if (p === 'snap') {
@@ -342,8 +345,6 @@ function doGet(e) {
     if (p === 'lotb') return textOut_(lotbReportText_(String(q.kind || 'lao')));
     /* ตั้งค่าลับ/ดูว่าตั้งครบยัง จากลิงก์ — หน้า Script Properties กดไม่ได้บนมือถือ
        คายกลับแค่ชื่อกับความยาว ค่าจริงไม่วิ่งออกไป (ดู setProp_ ใน Compat.gs) */
-    /* สมุดดวงปฏิทินโหร (หน้า star.html) — ทางอ่านก้อนเดียว */
-    if (p === 'star') return jsonOut_(stPayload_());
     if (p === 'setprop') return jsonOut_(setProp_(q.n, q.v));
     if (p === 'cfgstat') return jsonOut_(cfgStat_());
     /* เปิดหน้าเว็บ = ถือโอกาสไล่คิดผลบิลที่เตะจบแล้ว (มีตัวหน่วง 10 นาทีในตัว)
@@ -388,15 +389,13 @@ function doPost(e) {
       return jsonOut_({ ok: true });
     }
 
+    var stP = (typeof stRoute_ === 'function') ? stRoute_(String(q.p || body.p || ''), { k: q.k || body.k || '' }, body) : null;
+    if (stP) return jsonOut_(stP);
     if (!keyOk_({ k: q.k || body.k || '' })) {
       return jsonOut_({ ok: false, needKey: true, error: 'ต้องใส่กุญแจ' });
     }
     var p = String(q.p || body.p || '');
     if (p === 'ocr') return jsonOut_(betOcr_(body.image));
-    /* สมุดดวง: บันทึก/ลบดวง + ลงผลหวยจากหน้า star.html */
-    if (p === 'starsave') return jsonOut_(stSave_(body.chart));
-    if (p === 'stardel') return jsonOut_(stDel_(body.date));
-    if (p === 'starresult') return jsonOut_(stResult_(String(body.kind || ''), body.date, body.a, body.b));
     if (p === 'bet') return jsonOut_(betAdd_(body.bet || {}, { force: !!body.force }));
     /* ใส่สกอร์จากหน้าเว็บ — ทางเดียวกับ ?p=score แต่ยิงจากหน้าจอมือถือได้ตรงๆ */
     if (p === 'score') return jsonOut_(stlWrite_(body.id, body.h, body.a, { force: !!body.force }));
