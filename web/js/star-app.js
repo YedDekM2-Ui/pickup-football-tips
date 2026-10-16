@@ -377,7 +377,7 @@ function viewUpload_() {
     '</div>' +
     '<label class="fld" style="margin-top:8px">สถานะในแอป (เช่น ดาวเกษตร มี)<input id="f_special" value="' + esc(d.special) + '"></label>' +
     '<label class="fld" style="margin-top:8px">หมายเหตุ<input id="f_note" value="' + esc(d.note) + '"></label>' +
-    '<button class="btn" id="save"' + (missing.length || open ? ' disabled' : '') + '>' + (open ? 'ตอบตัวเลขด้านบนให้ครบก่อน' : 'เก็บดวงนี้') + '</button>' +
+    '<button class="btn" id="save"' + (missing.length || open ? ' disabled' : '') + '>' + (open ? 'ตอบตัวเลขด้านบนให้ครบก่อน' : 'เก็บดาวนี้') + '</button>' +
     '<button class="btn ghost" id="cancel">ยกเลิก</button></div>');
   return h.join('');
 }
@@ -555,7 +555,7 @@ function saveDraft_() {
       /* ใส่ในแคชทันที เปิดแท็บทำนายไม่ต้องรอโหลดใหม่ */
       if (S.data) { S.data.charts = charts_().filter(function (c) { return !(c.date === chart.date && (c.kind || '') === chart.kind) && !(c.date === chart.date && !c.kind); }).concat([chart]).sort(function (a, c) { return a.date < c.date ? -1 : 1; }); saveCache_(S.data); }
       S.draft = null; S.tab = 'predict'; render_(); refresh_();
-    } else { b.disabled = false; b.textContent = 'เก็บดวงนี้'; toast((r && r.error) || 'เก็บดวงไม่สำเร็จ — ลองอีกครั้ง'); }
+    } else { b.disabled = false; b.textContent = 'เก็บดาวนี้'; toast((r && r.error) || 'เก็บดวงไม่สำเร็จ — ลองอีกครั้ง'); }
   });
 }
 
