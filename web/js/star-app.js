@@ -176,6 +176,7 @@ function viewPredict_() {
     var lbl = st.name;
     if (kind === 'lao' && st.name === '2 ตัวล่าง') lbl += ' · หลักพัน-ร้อย';
     if (st.name === '3 ตัวบน') lbl += ' · หลักร้อย-สิบ-หน่วย';
+    if (kind === 'lao' && st.name === '3 ตัวล่าง') lbl += ' · หลักพัน-ร้อย-สิบ';
     if (kind === 'lao' && st.name === '2 ตัวบน') lbl += ' · หลักสิบ-หน่วย';
     return '<div class="set"><div class="lbl">' + esc(lbl) + '</div><div class="chips">' +
       st.list.map(function (n, k) { return '<span class="chip ' + cls + (k === 0 ? ' first' : '') + '">' + n + '</span>'; }).join('') + '</div></div>';
@@ -527,7 +528,7 @@ function resultCard_(kind, res) {
   h.push('<div class="grid2"><label class="fld">งวดวันที่<input type="date" id="r_date" value="' + last + '"></label>');
   if (kind === 'lao') {
     h.push('<label class="fld">ผล 4 ตัว<input id="r_a" inputmode="numeric" maxlength="4" placeholder="เช่น 6261"></label></div>' +
-           '<div class="muted" style="margin-top:6px">ระบบแยกให้เอง: 3 ตัวบน = 3 ตัวท้าย · 2 ตัวบน = 2 ตัวท้าย · 2 ตัวล่าง = 2 ตัวหน้า</div>');
+           '<div class="muted" style="margin-top:6px">ระบบแยกให้เอง: 3 ตัวบน = 3 ตัวท้าย · 2 ตัวบน = 2 ตัวท้าย · 3 ตัวล่าง = 3 ตัวหน้า · 2 ตัวล่าง = 2 ตัวหน้า</div>');
   } else {
     h.push('<label class="fld">รางวัลที่ 1 (6 หลัก)<input id="r_a" inputmode="numeric" maxlength="6" placeholder="เช่น 402701"></label></div>' +
            '<div class="grid2" style="margin-top:8px"><label class="fld">2 ตัวล่าง<input id="r_b" inputmode="numeric" maxlength="2" placeholder="70"></label>' +
@@ -560,7 +561,7 @@ function resultsFold_(kind, res) {
     var r = res[d], raw = rawRow_(kind, d) || [];
     if (kind === 'lao') {
       h.push('<div class="rrow"><div class="rd">' + esc(thDate(d)) + '</div><div class="rn"><b>' + r.join('') + '</b></div>' +
-             '<div class="rs"><span class="up">บน ' + r.slice(1).join('') + '</span> · <span class="lo">ล่าง ' + r.slice(0, 2).join('') + '</span></div></div>');
+             '<div class="rs"><span class="up">3 บน ' + r.slice(1).join('') + ' · 2 บน ' + r.slice(2).join('') + '</span> · <span class="lo">3 ล่าง ' + r.slice(0, 3).join('') + ' · 2 ล่าง ' + r.slice(0, 2).join('') + '</span></div></div>');
     } else {
       var extra = [];
       if (raw[3]) extra.push('รางวัลที่ 1 <b>' + esc(raw[3]) + '</b>');

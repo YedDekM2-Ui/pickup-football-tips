@@ -84,7 +84,7 @@ test('ทำนายคืนครบทุกหลัก + เลขชุ�
   const pr = C.scPredict_('lao', charts[9], '2026-10-16', lao, w);
   eq(pr.pos.length, 4);
   pr.pos.forEach((p) => { eq(p.top.length, 3); eq(p.closed.length, 2); eq(p.rank.length, 10); });
-  eq(pr.sets.map((s) => s.name), ['4 ตัว', '3 ตัวบน', '2 ตัวบน', '2 ตัวล่าง'], 'ลาวคิดจาก 4 ตัว แยกบน/ล่าง');
+  eq(pr.sets.map((s) => s.name), ['4 ตัว', '3 ตัวบน', '2 ตัวบน', '3 ตัวล่าง', '2 ตัวล่าง'], 'ลาวคิดจาก 4 ตัว แยกบน/ล่าง');
   pr.sets.forEach((s) => ok(s.list.length === 6 && s.list.every((n) => /^\d+$/.test(n))));
   const pt = C.scPredict_('thai', charts[9], '2026-10-16', thai, null);
   eq(pt.pos.map((p) => p.name), ['พัน', 'ร้อย', 'สิบ', 'หน่วย', 'ล่างสิบ', 'ล่างหน่วย']);
