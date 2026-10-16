@@ -61,6 +61,7 @@ function starPost_(p, body) {
 
 function refresh_() {
   return fetchStar_().then(function (d) {
+    if (S.tab === 'upload' && S.draft) syncFields_();   /* ข้อมูลมาตอนกำลังแก้ดวง = เก็บค่าที่พิมพ์ก่อนวาดใหม่ */
     if (d && d.ok) { S.data = d; S.src = 'สด'; saveCache_(d); }
     else if (d && d.needKey) S.src = 'กุญแจ';
     else S.src = S.data ? 'แคช' : 'ไม่มีเน็ต';
@@ -261,8 +262,11 @@ function viewPredict_() {
     return '<div class="set"><div class="lbl">' + esc(lbl) + '</div><div class="chips">' +
       st.list.map(function (n, k) { return '<span class="chip ' + cls + (k === 0 ? ' first' : '') + '">' + n + '</span>'; }).join('') + '</div></div>';
   };
-  var up = pr.sets.filter(function (st) { return st.name.indexOf('ล่าง') < 0; });
+  /* ลาว "4 ตัว" ไม่ใช่ทั้งบนและล่าง — แยกไว้บรรทัดของตัวเอง ไม่ยัดลงกล่องบน */
+  var full = pr.sets.filter(function (st) { return st.name === '4 ตัว'; });
+  var up = pr.sets.filter(function (st) { return st.name !== '4 ตัว' && st.name.indexOf('ล่าง') < 0; });
   var lo = pr.sets.filter(function (st) { return st.name.indexOf('ล่าง') >= 0; });
+  if (full.length) h.push(full.map(function (st) { return chipRow(st, ''); }).join(''));
   h.push('<div class="grp up"><div class="gt">บน</div>' + up.map(function (st) { return chipRow(st, ''); }).join('') + '</div>');
   h.push('<div class="grp lo"><div class="gt">ล่าง</div>' + lo.map(function (st) { return chipRow(st, ''); }).join('') + '</div>');
   h.push('<div class="set"><div class="lbl">เลขวิ่ง</div><div class="chips">' + pr.run.map(function (d, k) { return '<span class="chip' + (k === 0 ? ' first' : '') + '">' + d + '</span>'; }).join('') + '</div></div>');
@@ -452,6 +456,8 @@ function readPic_(file) {
 function gotRead_(r, diag) {
   var iso = (S.draft && S.draft.date) || defaultChartDate_();
   var d = blankDraft_(iso), cv = r.cv;
+  /* อ่านรูปใหม่ระหว่างแก้ฟอร์ม = เก็บชนิด/เวลาที่เลือกไว้ ไม่รีเซ็ต */
+  if (S.draft) { d.kind = S.draft.kind || d.kind; d.time = S.draft.time || d.time; }
   if (r.ok) {
     d.rasi = r.rasi; d.lagna = r.lagna;
     if (r.center.a && r.center.b) d.center = r.center.a + '/' + r.center.b;
@@ -675,14 +681,14 @@ function resultsFold_(kind, res) {
 /** ทายย้อนหลังพร้อมเหตุผล: งวดที่มีดวง — ตอนนั้นสูตรทายอะไร เพราะอะไร ออกจริงอะไร
     คิดใหม่จากดวง+ผลในชีตทุกครั้ง (น้ำหนักใช้แค่ข้อมูลก่อนงวดนั้น = เหมือนที่ทายจริงตอนนั้น) */
 function historyFold_(kind, res) {
-  var charts = charts_().filter(function (c) { return scFits_(c, kind) && res[c.date]; })
-    .sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+  /* ใช้แถวของ scBacktest_ (คิดน้ำหนักต่อเนื่องรอบเดียว) — ของเดิมคิดน้ำหนักใหม่ทุกงวด ช้าแบบกำลังสอง */
+  var rows = scBacktest_(kind, charts_(), res).rows.slice().reverse();
   var K = SC_KIND[kind];
-  var h = ['<details class="card fold"><summary><h3>ทายย้อนหลังพร้อมเหตุผล<span class="sub">' + charts.length + ' งวดที่มีดวง · แตะเพื่อเปิด</span></h3></summary>'];
-  if (!charts.length) { h.push('<div class="muted">ยังไม่มีงวดที่มีทั้งดวงและผล</div></details>'); return h.join(''); }
+  var h = ['<details class="card fold"><summary><h3>ทายย้อนหลังพร้อมเหตุผล<span class="sub">' + rows.length + ' งวดที่มีดวง · แตะเพื่อเปิด</span></h3></summary>'];
+  if (!rows.length) { h.push('<div class="muted">ยังไม่มีงวดที่มีทั้งดวงและผล</div></details>'); return h.join(''); }
   h.push('<div class="scrollbox">');
-  charts.forEach(function (c) {
-    var real = res[c.date], w = scWeights_(kind, charts_(), res, c.date), pr = scPredict_(kind, c, c.date, res, w);
+  rows.forEach(function (row) {
+    var c = row.chart, real = res[c.date], w = row.w, pr = row.pr;
     var marks = pr.pos.map(function (p, i) {
       var t = p.top.map(function (x) { return x.d; }), m = t[0] === real[i] ? 1 : (t.indexOf(real[i]) >= 0 ? 3 : 0);
       return '<span class="mk' + m + '">' + real[i] + '</span>';
@@ -751,7 +757,10 @@ function bindLog_() {
     go.disabled = true; go.textContent = 'กำลังลงผล…';
     starPost_('starresult', body).then(function (r) {
       go.disabled = false; go.textContent = 'บันทึกผล';
-      if (r && r.ok) { toast('ลงผลงวด ' + thDate(iso) + ' แล้ว'); refresh_(); }
+      if (r && r.ok) {
+        ['r_a', 'r_b', 'r_f3', 'r_b3'].forEach(function (id) { if ($(id)) $(id).value = ''; });
+        toast('ลงผลงวด ' + thDate(iso) + ' แล้ว'); refresh_();
+      }
       else toast((r && (r['ข้อความ'] || r.error)) || 'ลงผลไม่สำเร็จ — เช็คตัวเลขอีกที');
     });
   };
@@ -793,7 +802,25 @@ function bindLog_() {
 }
 
 /* ---------------- โครงหลัก ---------------- */
+/** เก็บค่าที่กำลังพิมพ์ไว้ข้ามการวาดหน้าใหม่ (ข้อมูลโหลดเสร็จตอนกำลังกรอก = ช่องเคยหายหมด) */
+function keepInputs_() {
+  var keep = {};
+  Array.prototype.forEach.call(document.querySelectorAll('#app input[id], #app select[id]'), function (el) {
+    if (el.type !== 'file') keep[el.id] = el.value;
+  });
+  return keep;
+}
+function restoreInputs_(keep) {
+  Object.keys(keep).forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el && el.type !== 'file' && keep[id] !== '' && el.value !== keep[id]) el.value = keep[id];
+  });
+}
+
 function render_() {
+  /* แท็บส่งดวงเก็บสถานะใน S.draft อยู่แล้ว (restore ทับจะกลบค่าที่ฟอร์มคำนวณใหม่ เช่น จันทรคติตอนเปลี่ยนวัน) */
+  var keep = (render_.tab === S.tab && render_.kind === S.kind && S.tab !== 'upload') ? keepInputs_() : {};
+  render_.tab = S.tab; render_.kind = S.kind;
   /* ดูอย่างเดียว: ไม่มีแท็บส่งดวง · แท็บกรอกผลกลายเป็น "ผล" */
   var navUp = document.querySelector('#nav a[data-t="upload"]'), navLog = document.querySelector('#nav a[data-t="log"]');
   if (navUp) navUp.style.display = ro_() ? 'none' : '';
@@ -803,6 +830,7 @@ function render_() {
   if (S.src === 'กุญแจ') v = keySheet_() + (S.data ? v : '');
   else if (!S.data && S.tab !== 'upload') v = '<div class="card hero"><div class="d">กำลังดูดวงดาว…</div><div class="muted">ครั้งแรกต้องต่อเน็ต ครั้งต่อไปเปิดได้ทันที</div></div>';
   $('app').innerHTML = v;
+  restoreInputs_(keep);
   var kg = $('keygo');
   if (kg) kg.onclick = function () {
     var k = ($('keyin').value || '').replace(/\s+/g, '');

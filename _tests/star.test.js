@@ -274,3 +274,37 @@ test('เวลาของรูปปฏิทินเก็บ/อ่าน�
   eq(g.stHm_(new Date(1899, 11, 30, 15, 30)), '15:30');
   eq(g.stHm_('9:05'), '09:05');
 });
+
+/* ---------------- ตรวจบั๊กรอบใหญ่ 16 ต.ค. 69 ---------------- */
+test('น้ำหนักแบบนับต่อเนื่อง ได้ค่าเดียวกับคิดใหม่ทีละวันทุกดวง', () => {
+  const all = charts.concat(TH.map((c) => Object.assign({ kind: 'thai' }, c)));
+  ['lao', 'thai'].forEach((k) => {
+    const res = k === 'lao' ? lao : thai, seq = C.scWeightsSeq_(k, all, res);
+    Object.keys(seq).forEach((d) => eq(JSON.stringify(seq[d]), JSON.stringify(C.scWeights_(k, all, res, d)), k + ' ' + d));
+  });
+});
+
+test('จันทรคติเลื่อนตามวันออก เมื่อใช้ดวงคนละวัน', () => {
+  const c15 = charts[9];                                   /* 15 ต.ค. ขึ้น 4 ค่ำ เดือน 11 */
+  eq(C.scLunarFor_(c15, '2026-10-15'), { side: 'ขึ้น', day: 4, month: 11 });
+  eq(C.scLunarFor_(c15, '2026-10-16'), { side: 'ขึ้น', day: 5, month: 11 });
+  const c09 = charts[5];                                   /* 9 ต.ค. แรม 13 ค่ำ เดือน 10 → 12 ต.ค. ขึ้น 1 เดือน 11 */
+  eq(C.scLunarFor_(c09, '2026-10-12'), { side: 'ขึ้น', day: 1, month: 11 });
+});
+
+test('ข้อความชงบอกเลขที่หักจริง (กุน 12 → 2) ไม่โชว์ 12 เฉยๆ', () => {
+  for (let i = 0; i < 12; i++) {
+    const iso = C.scAddDays_('2026-10-01', i), dz = C.scDead_(C.scCtx_('lao', charts[0], iso, lao)).slice(-1)[0];
+    ok(/^[0-9]$/.test(dz.d));
+    if (/= ลำดับ 1[0-2]/.test(dz.why)) ok(dz.why.indexOf('→ เลข ' + dz.d) > 0, dz.why);
+  }
+});
+
+test('ดวงสะสม 300 ใบ วัดย้อนหลังทั้งชุดยังเร็ว (ไม่ช้าแบบกำลังสอง)', () => {
+  const dates = Object.keys(lao).sort().slice(-200), many = dates.map((d) => Object.assign({}, charts[9], { date: d, kind: 'lao' }));
+  const t0 = Date.now();
+  const bt = C.scBacktest_('lao', many, lao);
+  const ms = Date.now() - t0;
+  eq(bt.rows.length, 200);
+  ok(ms < 4000, 'ใช้ ' + ms + ' ms');
+});
