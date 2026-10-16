@@ -325,7 +325,7 @@ function notify_(text) {
    ⚠️ คายกลับได้แค่ "ตั้งแล้ว / ยาวกี่ตัว" ห้ามคายค่าจริงออกไป
    ⚠️ APP_KEY ไม่อยู่ในรายชื่อ — ทับกุญแจประตูตัวเองไม่ได้ */
 var CFG_ALLOW = ['GH_TOKEN', 'JINA_KEY', 'FB_PROXY', 'FB_ENGINE', 'FB_TZ_SHIFT', 'FOREBET_URL',
-                 'TG_TOKEN', 'TG_HOOK_KEY', 'SCRAPER_KEY', 'API_FOOTBALL_KEY', 'STAR_KEY'];
+                 'TG_TOKEN', 'TG_HOOK_KEY', 'SCRAPER_KEY', 'API_FOOTBALL_KEY', 'STAR_KEY', 'STAR_VIEW_KEY'];
 
 /* ตั้งกุญแจใบที่ 2 (SCRAPER_KEY) ได้ "ครั้งเดียว" ตอนที่ยังว่างอยู่
    ทำไมต้องมี: กุญแจตัวจริง APP_KEY อยู่ใน Script Properties อ่านจากข้างนอกไม่ได้เลย

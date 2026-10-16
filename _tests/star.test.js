@@ -232,3 +232,25 @@ test('ตัวอ่านเลือกคู่เส้นที่เป�
   eq([sq.x.p1, sq.x.p2, sq.y.p1, sq.y.p2], [377, 494, 968, 1087]);
   eq(R.srPickSquare_({ cand: [{ pos: 31, len: 900 }] }, hy), null);
 });
+
+test('กุญแจดูอย่างเดียว (ลิงก์ของแม่): อ่านได้ ติดป้าย readOnly · เขียน/ลบ/ลงผล ไม่ได้ทุกทาง', () => {
+  const props = { STAR_VIEW_KEY: 'view1', STAR_KEY: 'own1' };
+  let wrote = 0;
+  const g = loadGas(['gas/LotStar.gs'], {
+    prop_: (k) => props[k] || '',
+    keyOk_: () => false
+  });
+  g.stPayload_ = () => ({ ok: true, charts: [] });
+  g.stSave_ = () => { wrote++; return { ok: true }; };
+  g.stDel_ = () => { wrote++; return { ok: true }; };
+  g.stResult_ = () => { wrote++; return { ok: true }; };
+  const r = g.stRoute_('star', { k: 'view1' }, {});
+  ok(r.ok && r.readOnly === true);
+  ['starsave', 'stardel', 'starresult'].forEach((p) => {
+    const w = g.stRoute_(p, { k: 'view1' }, { chart: {} });
+    ok(!w.ok && w.readOnly, p);
+  });
+  eq(wrote, 0, 'ห้ามเขียนชีตเลย');
+  ok(g.stRoute_('star', { k: 'own1' }, {}).readOnly === undefined, 'กุญแจเจ้าของไม่ติดป้ายดูอย่างเดียว');
+  ok(g.stRoute_('star', { k: 'xx' }, {}).needKey);
+});

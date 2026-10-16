@@ -157,9 +157,19 @@ function stKeyOk_(q) {
   return keyOk_(q);
 }
 
+/** กุญแจดูอย่างเดียว (STAR_VIEW_KEY) — ลิงก์ให้แม่ เปิดดูได้ แต่เขียนอะไรไม่ได้เลย (เจ้าของสั่ง 16 ต.ค. 69) */
+function stViewOnly_(q) {
+  var v = prop_('STAR_VIEW_KEY'), got = String((q && q.k) || '');
+  return !!v && !!got && got === v;
+}
+
 /** ทางของแกะดาวทั้งหมด — คืน null = ไม่ใช่ทางของแกะดาว ให้ไหลต่อไปด่านปกติ */
 function stRoute_(p, q, body) {
   if (['star', 'starsave', 'stardel', 'starresult'].indexOf(p) < 0) return null;
+  if (stViewOnly_(q)) {
+    if (p !== 'star') return { ok: false, readOnly: true, error: 'ลิงก์นี้ดูได้อย่างเดียว' };
+    var pv = stPayload_(); pv.readOnly = true; return pv;
+  }
   if (!stKeyOk_(q)) return { ok: false, needKey: true, error: 'กุญแจไม่ถูก' };
   if (p === 'star') return stPayload_();
   if (p === 'starsave') return stSave_(body.chart);

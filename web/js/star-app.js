@@ -60,7 +60,7 @@ function refresh_() {
 }
 
 function note_() {
-  var t = S.src === 'สด' ? '<span class="pill live">LIVE</span> อัปเดต ' + esc((S.data.at || '').slice(11, 16)) + ' น.' :
+  var t = S.src === 'สด' ? '<span class="pill live">LIVE</span> อัปเดต ' + esc((S.data.at || '').slice(11, 16)) + ' น.' + (ro_() ? ' · <span class="pill off">ดูอย่างเดียว</span>' : '') :
           S.src === 'กุญแจ' ? '<span class="pill off">LOCKED</span> ใส่กุญแจก่อน แล้วข้อมูลจะมาเอง' :
           S.src === 'แคช' ? '<span class="pill off">OFFLINE</span> โชว์ของที่จำไว้ ต่อเน็ตแล้วจะอัปเดตเอง' :
           '<span class="pill off">…</span> กำลังเปิดสมุดดวง';
@@ -74,6 +74,9 @@ function keySheet_() {
     '<input id="keyin" class="keyin" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="วางกุญแจตรงนี้">' +
     '<button class="btn" id="keygo">ปลดล็อก</button></div>';
 }
+
+/** ลิงก์ดูอย่างเดียว (ของแม่) — หลังบ้านบอกมาเองใน payload ห้ามเดาจากหน้าเว็บ */
+function ro_() { return !!(S.data && S.data.readOnly); }
 
 function charts_() { return (S.data && S.data.charts) || []; }
 function results_(kind) { return scResultMap_(kind, (S.data && S.data[kind]) || []); }
@@ -534,10 +537,25 @@ function resultCard_(kind, res) {
   return h.join('');
 }
 
+/** ผลล่าสุดอย่างเดียว (โหมดดูอย่างเดียว) */
+function resultList_(kind, res) {
+  var recent = Object.keys(res).sort().reverse().slice(0, 12);
+  if (!recent.length) return '';
+  return '<div class="card"><h3>ผล' + esc(SC_KIND[kind].name) + 'ล่าสุด</h3><table class="tbl"><tr><th>งวด</th>' +
+    (kind === 'lao' ? '<th>4 ตัว</th><th>บน</th><th>ล่าง</th>' : '<th>4 ตัวบน</th><th>ล่าง</th>') + '</tr>' +
+    recent.map(function (d) {
+      var r = res[d];
+      return '<tr><td>' + esc(thDate(d)) + '</td>' + (kind === 'lao'
+        ? '<td><b>' + r.join('') + '</b></td><td class="up">' + r.slice(1).join('') + '</td><td class="lo">' + r.slice(0, 2).join('') + '</td>'
+        : '<td class="up"><b>' + r.slice(0, 4).join('') + '</b></td><td class="lo"><b>' + r.slice(4).join('') + '</b></td>') + '</tr>';
+    }).join('') + '</table></div>';
+}
+
 function viewLog_() {
   var kind = S.kind, K = SC_KIND[kind], res = results_(kind), h = [];
   var charts = charts_().filter(function (c) { return scFits_(c, kind); }).slice().reverse();
-  h.push(resultCard_(kind, res));
+  if (!ro_()) h.push(resultCard_(kind, res));
+  else h.push(resultList_(kind, res));
   h.push('<div class="card"><h3>บันทึกปฏิทิน 100 ปี<span class="sub">ดวง' + esc(K.name) + ' ' + charts.length + ' วัน</span></h3>');
   if (!charts.length) h.push('<div class="muted">ยังไม่มีดวงของ' + esc(K.name) + ' — ส่งรูปที่แท็บ "ส่งดวง"</div>');
   charts.forEach(function (c) {
@@ -546,9 +564,9 @@ function viewLog_() {
     var tag = c.kind ? '<span class="ktag">' + (c.kind === 'lao' ? 'ลาว 20:20' : 'ไทย 15:30') + '</span>' : '';
     h.push('<div class="ent"><div><div class="dt">' + esc(thDate(c.date)) + ' ' + tag + '</div><div class="muted">' + esc(c.lunar) + (c.center ? ' · กลาง ' + esc(c.center) : '') + '</div>' +
       '<div class="muted" style="margin-top:3px">' + esc(sum) + '</div>' +
-      '<div class="btns" style="margin-top:8px"><button class="btn ghost" data-edit="' + key + '">แก้ดวง</button><button class="btn ghost" data-del="' + key + '">ลบ</button></div></div>' +
+      (ro_() ? '' : '<div class="btns" style="margin-top:8px"><button class="btn ghost" data-edit="' + key + '">แก้ดวง</button><button class="btn ghost" data-del="' + key + '">ลบ</button></div>') + '</div>' +
       '<div style="min-width:96px">' + (r ? '<div class="res">' + r.slice(0, 4).join('') + (kind === 'thai' ? '<br><small>' + r.slice(4).join('') + '</small>' : '') + '</div>'
-        : '<div class="res none">' + (scIsDraw_(kind, c.date) ? 'ยังไม่มีผล<br>กรอกด้านบน' : 'ไม่ใช่วันออก') + '</div>') + '</div></div>');
+        : '<div class="res none">' + (scIsDraw_(kind, c.date) ? 'ยังไม่มีผล' + (ro_() ? '' : '<br>กรอกด้านบน') : 'ไม่ใช่วันออก') + '</div>') + '</div></div>');
   });
   h.push('</div>');
   return h.join('');
@@ -620,6 +638,11 @@ function bindLog_() {
 
 /* ---------------- โครงหลัก ---------------- */
 function render_() {
+  /* ดูอย่างเดียว: ไม่มีแท็บส่งดวง · แท็บกรอกผลกลายเป็น "ผล" */
+  var navUp = document.querySelector('#nav a[data-t="upload"]'), navLog = document.querySelector('#nav a[data-t="log"]');
+  if (navUp) navUp.style.display = ro_() ? 'none' : '';
+  if (navLog) navLog.innerHTML = '<b>☰</b>' + (ro_() ? 'ผลย้อนหลัง' : 'กรอกผล');
+  if (ro_() && S.tab === 'upload') S.tab = 'predict';
   var v = S.tab === 'upload' ? viewUpload_() : S.tab === 'stats' ? viewStats_() : S.tab === 'log' ? viewLog_() : viewPredict_();
   if (S.src === 'กุญแจ') v = keySheet_() + (S.data ? v : '');
   else if (!S.data && S.tab !== 'upload') v = '<div class="card hero"><div class="d">กำลังเปิดสมุดดวง…</div><div class="muted">ครั้งแรกต้องต่อเน็ต ครั้งต่อไปเปิดได้ทันที</div></div>';
