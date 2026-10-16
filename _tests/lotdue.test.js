@@ -55,3 +55,28 @@ test('lotDueDraws_ — งวดเก่าที่ค้างไม่โด
   const due = env(6).lotDueDraws_('lao', '2026-09-04', 2);
   eq(due, ['2026-09-02', '2026-09-03']);
 });
+
+/** lotAutoAsk_ — ถามในแชทช้ากว่าเวลาออก ให้เวลากรอกในหน้าดาวก่อน (16 ต.ค. 69 บอทถาม 16:00 ก่อนเจ้าของกรอก) */
+function askEnv(hour) {
+  const s = env(hour);
+  const asked = [];
+  s.PropertiesService = { getScriptProperties: () => ({ getProperty: () => null, setProperty: () => {} }) };
+  s.lotTodayISO_ = () => '2026-10-16';
+  s.lotDueDraws_ = () => ['2026-10-16'];
+  s.askThaiLottery_ = () => asked.push('thai');
+  s.askLaoLottery_ = () => asked.push('lao');
+  s.logEvent_ = () => {};
+  s.lotAutoAsk_();
+  return asked;
+}
+
+test('lotAutoAsk_ — หวยไทย 16:00-17:59 ยังไม่ถามในแชท · 18:00 ถาม', () => {
+  eq(askEnv(16).indexOf('thai'), -1);
+  eq(askEnv(17).indexOf('thai'), -1);
+  ok(askEnv(18).indexOf('thai') >= 0, '18:00 ต้องถาม');
+});
+
+test('lotAutoAsk_ — หวยลาว 21:00 ยังไม่ถาม · 22:00 ถาม', () => {
+  eq(askEnv(21).indexOf('lao'), -1);
+  ok(askEnv(22).indexOf('lao') >= 0, '22:00 ต้องถาม');
+});

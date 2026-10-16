@@ -20,7 +20,9 @@ var LOT_DUE = {
   THAI_BACK_DAYS: 20,             // ไทยออกทุก ~15 วัน → ย้อน 20 วันครอบคลุม 1 งวดเต็ม
   LAO_BACK_DAYS: 7,
   PROP_EXTRA: 'LOT_EXTRA_DRAWS',
-  PROP_SKIP: 'LOT_SKIP_DRAWS'
+  PROP_SKIP: 'LOT_SKIP_DRAWS',
+  // ถามในแชทช้ากว่าเวลาหวยออก — ให้เวลากรอกในหน้าดาวก่อน (16 ต.ค. 69 กรอกหลัง 16:00 แต่บอทถามไปแล้ว)
+  ASK_AT: { thai: 18, lao: 22 }
 };
 
 /** งวดที่กองสลากเลื่อนเป็นประจำ (MM-DD) — ตัดวันปกติออก ไปออกวันแทนแทน */
@@ -307,7 +309,8 @@ function lotAutoAsk_() {
     var hour = Number(Utilities.formatDate(new Date(), TZ, 'H'));
     var today = lotTodayISO_();
     var ps = PropertiesService.getScriptProperties();
-    var list = [['thai', THAI_LOT.ASK_HOUR], ['lao', LAO.ASK_HOUR]];
+    var at = LOT_DUE.ASK_AT || {};
+    var list = [['thai', Math.max(THAI_LOT.ASK_HOUR, at.thai || 0)], ['lao', Math.max(LAO.ASK_HOUR, at.lao || 0)]];
     for (var i = 0; i < list.length; i++) {
       var k = list[i][0];
       if (hour < list[i][1]) continue;                     // ยังไม่ถึงเวลาหวยออก

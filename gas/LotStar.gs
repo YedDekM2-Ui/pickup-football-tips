@@ -154,12 +154,20 @@ function stResult_(kind, iso, a, b, f3, b3) {
     var t = String(a || '').replace(/\D/g, '');
     if (t.length === 6) { six = t; a = t.slice(-4); }
   }
+  var asked = null;   // บอทถามในแชทค้างอยู่ไหม — ถ้าใช่ บอกในแชทว่าได้ผลแล้ว ไม่ต้องตอบ
+  try { asked = (kind === 'thai') ? getThaiPending_() : getLaoPending_(); } catch (e0) { asked = null; }
   var msg = kind === 'thai' ? recordThaiResult_(a, b, iso) : recordLaoResult_(a, iso);
   var bad = /^❌/.test(String(msg));
   if (!bad && six) {
     var fr = lotPadList_(stTrip_(f3), 3), bk = lotPadList_(stTrip_(b3), 3);
     lotMergeRows_(THAI_LOT.SHEET, THAI_LOT.HEADERS,
       [[iso, 'งวด ' + lotThaiDateLabel_(iso), six.slice(-4), lotPad_(b, 2), six, fr, bk]]);
+  }
+  if (!bad && asked) {
+    try {
+      var cid = getTgChatId_();
+      if (cid) tgSend_(cid, '✅ ได้ผล' + (kind === 'thai' ? 'หวยไทย' : 'หวยลาว') + ' งวด ' + iso + ' จากหน้าดาวแล้ว — คำถามด้านบนไม่ต้องตอบครับ');
+    } catch (e1) { /* ส่งแชทไม่ได้ ไม่ทำให้การลงผลล้ม */ }
   }
   return { ok: !bad, ข้อความ: String(msg).slice(0, 300), รางวัลที่1: six };
 }
