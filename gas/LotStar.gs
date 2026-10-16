@@ -121,7 +121,8 @@ function stPayload_() {
     lotResultRows_('lao').forEach(function (r) { if (r[2] && r[2].length === 4) lao.push([r[0], r[2]]); });
   } catch (e) { /* ไม่มีชีตลาวก็โชว์แค่ดวง */ }
   try {
-    lotResultRows_('thai').forEach(function (r) { if (r[2] && r[2].length === 4) thai.push([r[0], r[2], r[3] || '']); });
+    /* [iso, 4ตัวบน, 2ตัวล่าง, รางวัลที่1, หน้า3, ท้าย3] — คำนวณใช้แค่ 2 ช่องแรก ที่เหลือไว้โชว์ */
+    lotResultRows_('thai').forEach(function (r) { if (r[2] && r[2].length === 4) thai.push([r[0], r[2], r[3] || '', r[4] || '', r[5] || '', r[6] || '']); });
   } catch (e) { /* เหมือนกัน */ }
   return { ok: true, at: nowIso_(), charts: stCharts_(), lao: lao, thai: thai };
 }
