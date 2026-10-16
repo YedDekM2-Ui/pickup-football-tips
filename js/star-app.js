@@ -101,9 +101,10 @@ function dateSelect_(id, list, sel) {
     return '<option value="' + d + '"' + (d === sel ? ' selected' : '') + '>' + esc(thDate(d)) + '</option>';
   }).join('') + '</select>';
 }
-/** งวดย้อนหลังของหวยชนิดนี้ (ล่าสุดก่อน) */
+/** งวดของหวยชนิดนี้ เริ่มจากวันนี้ (ล่าสุดก่อน) — วันออกวันนี้ต้องอยู่ในรายการเสมอ
+    แม้ยังไม่ถึงเวลาตัด เจ้าของกรอกผลทันทีที่ประกาศ (scLastDraw_ ใช้แค่ตั้งค่าเริ่มต้น) */
 function drawDateList_(kind) {
-  var out = [], d = scLastDraw_(kind);
+  var out = [], d = todayIso();
   for (var i = 0; i < 400 && out.length < (kind === 'lao' ? 60 : 36); i++) {
     var x = scAddDays_(d, -i);
     if (scIsDraw_(kind, x)) out.push(x);
