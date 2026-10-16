@@ -548,6 +548,13 @@ function saveDraft_() {
 }
 
 /* ---------------- แท็บ: สถิติ ---------------- */
+/** ไทยมีช่องคั่นระหว่าง "หน่วย" กับ "ล่างสิบ" (เจ้าของขอ: แยกบน/ล่างให้เห็นชัด) */
+function sepCell_(kind, i, tag) { return (kind === 'thai' && i === 4) ? '<' + tag + ' class="sep"></' + tag + '>' : ''; }
+function groupHead_(kind, lead) {
+  if (kind !== 'thai') return '';
+  return '<tr class="grp">' + lead + '<th colspan="4" class="gup">4 ตัวบน</th><th class="sep"></th><th colspan="2" class="glo">2 ตัวล่าง</th></tr>';
+}
+
 function viewStats_() {
   var kind = S.kind, K = SC_KIND[kind], res = results_(kind), h = [];
   var st = scStats_(kind, res, S.statN || 0);
@@ -556,14 +563,16 @@ function viewStats_() {
   h.push('<div class="seg" id="segN">' + [[10, '10 งวด'], [30, '30 งวด'], [100, '100 งวด'], [0, 'ทั้งหมด ' + st.total]].map(function (x) {
     return '<button data-n="' + x[0] + '" class="' + ((S.statN || 0) === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div>');
   var max = 1; st.pos.forEach(function (p) { p.cnt.forEach(function (c) { if (c > max) max = c; }); });
-  h.push('<div class="scroll"><table class="heat"><tr><th></th>' + st.pos.map(function (p) { return '<th>' + esc(p.name) + '</th>'; }).join('') + '</tr>');
+  h.push('<div class="scroll"><table class="heat">' + groupHead_(kind, '<th></th>') + '<tr><th></th>' +
+    st.pos.map(function (p, i) { return sepCell_(kind, i, 'th') + '<th>' + esc(p.name) + '</th>'; }).join('') + '</tr>');
   for (var d = 0; d < 10; d++) {
     h.push('<tr><td class="d">' + d + '</td>');
-    st.pos.forEach(function (p) {
+    st.pos.forEach(function (p, i) {
+      h.push(sepCell_(kind, i, 'td'));
       var a = p.cnt[d] / max, hot = p.hot.indexOf(d) >= 0, cold = p.cold.indexOf(d) >= 0;
       var bg = 'rgba(230,192,99,' + (0.06 + a * 0.6).toFixed(2) + ')';
       h.push('<td class="' + (hot ? 'hot' : (cold ? 'dead' : '')) + '" style="background:' + bg + ';color:' + (a > 0.6 ? '#1a1406' : 'var(--ink)') + '">' + p.cnt[d] +
-             '<span class="g">' + (hot ? 'เด่น · ' : (cold ? 'ดับ · ' : '')) + 'ค้าง ' + p.gap[d] + '</span></td>');
+             (hot ? '<span class="g tagh">เด่น</span>' : (cold ? '<span class="g tagd">ดับ</span>' : '')) + '<span class="g">ค้าง ' + p.gap[d] + '</span></td>');
     });
     h.push('</tr>');
   }
@@ -588,19 +597,19 @@ function viewStats_() {
   h.push('<div class="kpi"><div><b>' + Math.round(bt.top1 / bt.n * 100) + '%</b><span>อันดับ 1 ตรงหลัก<br>(สุ่ม 10%)</span></div>' +
     '<div><b>' + Math.round(bt.top3 / bt.n * 100) + '%</b><span>ติด 3 อันดับ<br>(สุ่ม 30%)</span></div>' +
     '<div><b>' + bt.rows.filter(function (r) { return r.runHit; }).length + '/' + bt.rows.length + '</b><span>เลขวิ่ง 2 ตัว<br>เข้าในเลขผล</span></div></div>');
-  h.push('<div class="scroll" style="margin-top:10px"><table class="tbl"><tr><th>วัน</th><th>ผล</th>' + K.pos.map(function (p) { return '<th>' + esc(p) + '</th>'; }).join('') + '<th>ชุด</th></tr>');
+  h.push('<div class="scroll" style="margin-top:10px"><table class="tbl"><tr><th>วัน</th><th>ผล</th>' + K.pos.map(function (p, i) { return sepCell_(kind, i, 'th') + '<th>' + esc(p) + '</th>'; }).join('') + '<th>ชุด</th></tr>');
   bt.rows.slice().reverse().forEach(function (r) {
     h.push('<tr><td>' + esc(thDate(r.date)) + '</td><td><b>' + r.real + '</b></td>' +
-      r.marks.map(function (m) { return '<td class="mk' + m.m + '">' + m.top.join('') + '</td>'; }).join('') +
+      r.marks.map(function (m, i) { return sepCell_(kind, i, 'td') + '<td class="mk' + m.m + '">' + m.top.join('') + '</td>'; }).join('') +
       '<td>' + r.sets.filter(function (s) { return s.hit; }).map(function (s) { return esc(s.name); }).join('<br>') + '</td></tr>');
   });
   h.push('</table></div><div class="muted" style="margin-top:6px"><span class="mk1">เขียว</span> = อันดับ 1 ตรง · <span class="mk3">ส้ม</span> = ติด 3 อันดับ · <span class="bad">แดง = หลุด</span> (ไม่เข้าทั้ง 3 อันดับ)</div>');
   var w = scWeights_(kind, charts_(), res);
-  h.push('<div class="scroll" style="margin-top:12px"><table class="tbl"><tr><th>วิธีค้น</th>' + K.pos.map(function (p) { return '<th>' + esc(p) + '</th>'; }).join('') + '</tr>' +
+  h.push('<div class="scroll" style="margin-top:12px"><table class="tbl"><tr><th>วิธีค้น</th>' + K.pos.map(function (p, i) { return sepCell_(kind, i, 'th') + '<th>' + esc(p) + '</th>'; }).join('') + '</tr>' +
     SC_METHODS.map(function (m) {
-      return '<tr><td>' + esc(m[1]) + '</td>' + w.w[m[0]].map(function (x) {
+      return '<tr><td>' + esc(m[1]) + '</td>' + w.w[m[0]].map(function (x, i) {
         var c = x.w >= 1.3 ? 'mk1' : (x.w <= 0.7 ? 'bad' : '');
-        return '<td class="' + c + '">×' + x.w.toFixed(1) + '<br><span class="muted">' + x.top + '/' + x.k + '</span></td>';
+        return sepCell_(kind, i, 'td') + '<td class="' + c + '">×' + x.w.toFixed(1) + '<br><span class="muted">' + x.top + '/' + x.k + '</span></td>';
       }).join('') + '</tr>';
     }).join('') + '</table></div><div class="muted" style="margin-top:6px">×น้ำหนักที่ใช้คิดงวดหน้า (1 = เท่าสุ่ม) · เขียว = แม่นกว่าสุ่ม · ตัวล่าง = เข้าอันดับ 1 กี่ครั้ง/กี่ดวง</div></div>');
   return h.join('');

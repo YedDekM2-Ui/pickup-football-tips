@@ -234,3 +234,15 @@ details.hist .hm { font-weight: 800; letter-spacing: .12em; font-size: 14px; }
 /* ช่องวันที่ของไอโฟนกว้างเกินกรอบ (ล้นทับช่องข้าง) */
 .fld input[type="date"], .fld input[type="time"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; display: block; }
 .fld { min-width: 0; }
+
+/* หวยไทย: ช่องคั่นระหว่างหน่วย กับ ล่างสิบ + หัวกลุ่ม 4 ตัวบน / 2 ตัวล่าง */
+.heat th.sep, .heat td.sep { width: 10px; min-width: 10px; padding: 0; background: none !important; border-left: 2px dashed rgba(111,183,255,.45); }
+.tbl th.sep, .tbl td.sep { width: 8px; padding: 0; border-left: 2px dashed rgba(111,183,255,.45); }
+tr.grp th { font-size: 11px; font-weight: 800; letter-spacing: .08em; padding-bottom: 2px; }
+tr.grp th.gup { color: var(--gold); border-bottom: 2px solid rgba(230,192,99,.45); }
+tr.grp th.glo { color: var(--sky); border-bottom: 2px solid rgba(111,183,255,.45); }
+.heat td .g.tagh { font-weight: 800; opacity: 1; }
+.heat td .g.tagd { font-weight: 800; opacity: 1; color: var(--red); }
+
+.heat { table-layout: fixed; }
+.heat tr > *:first-child { width: 22px; }
