@@ -83,3 +83,4 @@
 `git subtree push --prefix=web` ช้าลงเรื่อยๆ (ไล่ประวัติทั้ง repo) เคยค้าง 25+ นาที และพ่นโทเคนออกจอ — **เลิกใช้**
 ใช้แทน: `git fetch origin gh-pages` → `git worktree add --detach <tmp> origin/gh-pages` → `cp -r web/. <tmp>/` → commit → `git push origin HEAD:gh-pages` → `git worktree remove`
 (gh-pages ตอนนี้ไม่ใช่ประวัติ split แล้ว — ห้ามกลับไปใช้ subtree push จะโดน non-fast-forward)
+⚠️ `git push` ค้างเป็นพักๆ (Windows credential manager) → ส่งด้วยโทเคนตรง: `-c credential.helper= -c http.extraHeader="Authorization: Basic <base64 x-access-token:TOKEN>"` (โทเคนจาก `D:\Projects\.gas-creds\github-pickup.token.txt` ห้ามพิมพ์ออกจอ) แล้วเช็คบรรทัด `a..b -> branch` ทุกครั้ง
