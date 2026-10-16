@@ -226,3 +226,11 @@ details.hist .hm { font-weight: 800; letter-spacing: .12em; font-size: 14px; }
 
 .help .howto > b { display: block; margin-top: 10px; color: var(--gold); }
 .help .howto > b:first-child { margin-top: 0; }
+
+/* กรอกผลไทย: หน้า 3 | 2 ตัวล่าง (เล็ก กลาง) | ท้าย 3 */
+.grid3 { display: grid; grid-template-columns: 1fr 64px 1fr; gap: 6px; }
+.grid3 .fld.mid input { text-align: center; padding: 8px 4px; font-weight: 800; color: var(--sky); }
+.grid3 .fld.mid { text-align: center; }
+/* ช่องวันที่ของไอโฟนกว้างเกินกรอบ (ล้นทับช่องข้าง) */
+.fld input[type="date"], .fld input[type="time"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; display: block; }
+.fld { min-width: 0; }
