@@ -282,43 +282,100 @@ function scLocOf_(d) {
   return loc;
 }
 
+/** วาดรูปลงผืนผ้าใบตามขนาดที่สั่ง แล้วนับความสว่าง (ไว้รู้ว่าวาดติดจริงไหม) */
+function drawAt_(src, w, h, sc) {
+  var cv = document.createElement('canvas');
+  cv.width = Math.round(w * sc); cv.height = Math.round(h * sc);
+  var cx = cv.getContext('2d');
+  cx.fillStyle = '#000'; cx.fillRect(0, 0, cv.width, cv.height);   /* PNG โปร่งใส = พื้นดำเหมือนแอปต้นทาง */
+  cx.drawImage(src, 0, 0, cv.width, cv.height);
+  var img = cx.getImageData(0, 0, cv.width, cv.height), d = img.data, lit = 0;
+  for (var i = 0; i < d.length; i += 64) if (d[i] + d[i + 1] + d[i + 2] > 300) lit++;
+  return { cv: cv, img: img, lit: lit / (d.length / 64) };
+}
+
+/** อ่านรูปหลายทางจนกว่าจะเจอตาราง — ไอโฟนเคยขึ้น "หาตารางไม่เจอ" กับรูปที่ Chrome อ่านผ่าน (16 ต.ค. 69)
+    ทางที่ลอง: ปรับกว้าง 870 (ทางหลัก ตรงกับแม่แบบ) → ขนาดเดิม → ถอดรูปด้วย createImageBitmap
+    พลาดทุกทาง = คายตัวเลขวินิจฉัยให้เจ้าของแคปส่งมา ไม่ต้องเดาอีก */
+function readTries_(srcs) {
+  var diag = [], best = null;
+  for (var a = 0; a < srcs.length; a++) {
+    var s = srcs[a], scales = [870 / s.w, 1];
+    for (var b = 0; b < scales.length; b++) {
+      var dr, r;
+      try { dr = drawAt_(s.el, s.w, s.h, scales[b]); }
+      catch (e) { diag.push(s.name + '×' + scales[b].toFixed(2) + ' วาดไม่ได้: ' + e.message); continue; }
+      try { r = starRead(dr.img, STAR_TPL); }
+      catch (e) { r = { ok: false, error: 'อ่านพัง: ' + e.message }; }
+      var lx = srLines_(dr.img, 'x'), ly = srLines_(dr.img, 'y');
+      diag.push(s.name + ' ' + s.w + '×' + s.h + '→' + dr.cv.width + ' สว่าง ' + (dr.lit * 100).toFixed(1) + '% เส้นตั้ง ' +
+                lx.lines.map(Math.round).join('/') + ' ยาว ' + lx.len + ' เส้นนอน ' + ly.lines.map(Math.round).join('/') + ' ยาว ' + ly.len);
+      if (r.ok) { r.cv = dr.cv; return { r: r, diag: diag }; }
+      best = r;
+    }
+  }
+  return { r: best || { ok: false, error: 'เปิดรูปไม่ได้' }, diag: diag };
+}
+
+/** สัญญาที่ต้องจบภายใน ms — ค้าง/พัง = คืน null (ห้ามทำให้การอ่านรูปค้างทั้งหน้า) */
+function withTimeout_(p, ms) {
+  return new Promise(function (ok) {
+    var done = false, t = setTimeout(function () { if (!done) { done = true; ok(null); } }, ms);
+    Promise.resolve(p).then(function (v) { if (!done) { done = true; clearTimeout(t); ok(v); } },
+                            function () { if (!done) { done = true; clearTimeout(t); ok(null); } });
+  });
+}
+
 function readPic_(file) {
   var msg = $('readmsg');
   msg.textContent = 'กำลังแกะดาวจากรูป…';
   var url = URL.createObjectURL(file), im = new Image();
   im.onload = function () {
-    /* ปรับให้กว้าง 870 เท่ารูปที่ใช้ฝึกแม่แบบเสมอ (ทั้งย่อและขยาย)
-       วัดแล้ว: ปล่อยขนาดเดิม 1.35 เท่า อ่าน 4 เป็น 5 · ปรับกลับ 870 ก่อน อ่านถูก */
-    var sc = 870 / im.naturalWidth;
-    var cv = document.createElement('canvas');
-    cv.width = Math.round(im.naturalWidth * sc); cv.height = Math.round(im.naturalHeight * sc);
-    var cx = cv.getContext('2d'); cx.drawImage(im, 0, 0, cv.width, cv.height);
-    URL.revokeObjectURL(url);
-    var r;
-    try { r = starRead(cx.getImageData(0, 0, cv.width, cv.height), STAR_TPL); }
-    catch (e) { r = { ok: false, error: 'อ่านรูปพัง: ' + e.message }; }
-    var iso = (S.draft && S.draft.date) || defaultChartDate_();
-    var d = blankDraft_(iso);
-    if (r.ok) {
-      d.rasi = r.rasi; d.lagna = r.lagna;
-      if (r.center.a && r.center.b) d.center = r.center.a + '/' + r.center.b;
-      d.read = { unsure: r.unsure };
-      /* ตัวที่ตัวอ่านไม่ชัวร์ → ตัดรูปตัวนั้นมาถามเจ้าของ ต้องตอบครบก่อนบันทึก */
-      d.ask = (r.ask || []).map(function (q) {
-        var pad = 8, w = q.x1 - q.x0 + 1 + pad * 2, h = q.y1 - q.y0 + 1 + pad * 2, z = 3;
-        var c2 = document.createElement('canvas'); c2.width = w * z; c2.height = h * z;
-        var x2 = c2.getContext('2d'); x2.imageSmoothingEnabled = false;
-        x2.drawImage(cv, q.x0 - pad, q.y0 - pad, w, h, 0, 0, w * z, h * z);
-        return { r: q.r, cur: q.ch, guess: q.ch, alt: q.alt, why: q.why, img: c2.toDataURL('image/png'), done: false };
-      });
-      var n = 0; r.rasi.forEach(function (c) { n += c.length; });
-      toast(d.ask.length ? 'แกะได้ ' + n + '/10 ดวง มี ' + d.ask.length + ' ตัวต้องให้ช่วยดู' : 'แกะครบ ' + n + '/10 ดวง' + (r.lagna >= 0 ? ' + ลัคนา' : '') + ' ตรวจแล้วกดเก็บได้เลย');
-    } else toast(r.error);
-    S.draft = d; render_();
-    if (!r.ok) $('readmsg').textContent = r.error;
+    /* Safari บางทีวาดรูปก่อนถอดรูปเสร็จ = ได้ผืนดำ → รอ decode() ให้จบก่อนเสมอ */
+    /* ทั้ง decode() และ createImageBitmap ค้างเงียบได้ในบางเบราว์เซอร์ (เจอใน Chrome headless) → จับเวลา 2 วิ ค้างก็ไปต่อ */
+    var ready = withTimeout_(im.decode ? im.decode() : Promise.resolve(), 2000);
+    var bmp = ready.then(function () {
+      return (typeof createImageBitmap === 'function') ? withTimeout_(createImageBitmap(file), 2000) : null;
+    });
+    bmp.then(function (bm) {
+      var srcs = [{ name: 'img', el: im, w: im.naturalWidth, h: im.naturalHeight }];
+      if (bm) srcs.push({ name: 'bmp', el: bm, w: bm.width, h: bm.height });
+      var out = readTries_(srcs);
+      URL.revokeObjectURL(url);
+      gotRead_(out.r, out.diag);
+    });
   };
   im.onerror = function () { msg.textContent = 'เปิดรูปนี้ไม่ได้ ลองแคปใหม่อีกที'; };
   im.src = url;
+}
+
+function gotRead_(r, diag) {
+  var iso = (S.draft && S.draft.date) || defaultChartDate_();
+  var d = blankDraft_(iso), cv = r.cv;
+  if (r.ok) {
+    d.rasi = r.rasi; d.lagna = r.lagna;
+    if (r.center.a && r.center.b) d.center = r.center.a + '/' + r.center.b;
+    d.read = { unsure: r.unsure };
+    /* ตัวที่ตัวอ่านไม่ชัวร์ → ตัดรูปตัวนั้นมาถามเจ้าของ ต้องตอบครบก่อนบันทึก */
+    d.ask = (r.ask || []).map(function (q) {
+      var pad = 8, w = q.x1 - q.x0 + 1 + pad * 2, h = q.y1 - q.y0 + 1 + pad * 2, z = 3;
+      var c2 = document.createElement('canvas'); c2.width = w * z; c2.height = h * z;
+      var x2 = c2.getContext('2d'); x2.imageSmoothingEnabled = false;
+      x2.drawImage(cv, q.x0 - pad, q.y0 - pad, w, h, 0, 0, w * z, h * z);
+      return { r: q.r, cur: q.ch, guess: q.ch, alt: q.alt, why: q.why, img: c2.toDataURL('image/png'), done: false };
+    });
+    var n = 0; r.rasi.forEach(function (c) { n += c.length; });
+    toast(d.ask.length ? 'แกะได้ ' + n + '/10 ดวง มี ' + d.ask.length + ' ตัวต้องให้ช่วยดู' : 'แกะครบ ' + n + '/10 ดวง' + (r.lagna >= 0 ? ' + ลัคนา' : '') + ' ตรวจแล้วกดเก็บได้เลย');
+    S.draft = d; render_();
+    return;
+  }
+  /* อ่านไม่ได้: ไม่เปิดตารางเปล่าให้งง — บอกตรงๆ + ตัวเลขวินิจฉัย + ทางไปต่อ */
+  toast('แกะดาวจากรูปนี้ไม่ได้');
+  S.draft = null; render_();
+  $('readmsg').innerHTML = '<div class="warn">' + esc(r.error) + '</div>' +
+    '<div class="diag">แคปข้อความนี้ส่งมาได้เลย:<br>' + diag.map(esc).join('<br>') + '</div>' +
+    '<a href="#" id="manual2" class="btn ghost" style="line-height:44px;text-decoration:none;text-align:center">กรอกดวงเองไม่ใช้รูป</a>';
+  $('manual2').onclick = function (e) { e.preventDefault(); S.draft = blankDraft_(iso); render_(); };
 }
 
 function defaultChartDate_() {

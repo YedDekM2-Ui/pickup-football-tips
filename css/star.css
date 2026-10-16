@@ -189,3 +189,5 @@ details.acc .body { padding-bottom: 10px; font-size: 13px; }
 .grp.up { background: rgba(230,192,99,.05); } .grp.up .gt { color: var(--gold); }
 .grp.lo { background: rgba(111,183,255,.06); border-color: rgba(111,183,255,.3); } .grp.lo .gt { color: var(--sky); }
 .grp.lo .chip.first { border-color: var(--sky); color: var(--sky); }
+
+.diag { margin-top: 8px; font-size: 11px; color: var(--dim); background: #0a0d17; border: 1px dashed var(--line); border-radius: 10px; padding: 8px; word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
