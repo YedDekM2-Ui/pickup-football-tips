@@ -246,3 +246,8 @@ tr.grp th.glo { color: var(--sky); border-bottom: 2px solid rgba(111,183,255,.45
 
 .heat { table-layout: fixed; }
 .heat tr > *:first-child { width: 22px; }
+/* สถานะดาว: แถวละสถานะ กดเลขดาว */
+.stat .srow { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.stat .srow b { min-width: 76px; font-size: 13px; font-weight: 600; }
+.chip.pick { min-width: 30px; text-align: center; cursor: pointer; font-size: 13px; padding: 4px 6px; }
+.chip.pick.on { background: var(--gold); border-color: var(--gold); color: #0a0d17; font-weight: 700; }
