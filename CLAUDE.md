@@ -78,3 +78,8 @@
 | `gas/Setup.gs` | `setupSheets()` รันครั้งเดียวตอนตั้งระบบ |
 | `web/js/fmt.js` | ฟอร์แมตทุกอย่างที่โชว์บนจอ |
 | `web/js/page-*.js` | ปั้น HTML ของแต่ละหน้า (คืนเป็น string เพื่อให้เทสต์ได้) |
+
+## ดันหน้าเว็บ (gh-pages) — วิธีใหม่ 16 ต.ค. 69
+`git subtree push --prefix=web` ช้าลงเรื่อยๆ (ไล่ประวัติทั้ง repo) เคยค้าง 25+ นาที และพ่นโทเคนออกจอ — **เลิกใช้**
+ใช้แทน: `git fetch origin gh-pages` → `git worktree add --detach <tmp> origin/gh-pages` → `cp -r web/. <tmp>/` → commit → `git push origin HEAD:gh-pages` → `git worktree remove`
+(gh-pages ตอนนี้ไม่ใช่ประวัติ split แล้ว — ห้ามกลับไปใช้ subtree push จะโดน non-fast-forward)
