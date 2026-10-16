@@ -546,10 +546,7 @@ function saveDraft_() {
   /* กันดวงทับกันเงียบ ๆ: วัน+ชนิดนี้มีดวงอยู่แล้ว และไม่ได้กดแก้ดวงนั้นมา = ถามก่อนเสมอ */
   var old = charts_().filter(function (c) { return c.date === d.date && (c.kind || '') === d.kind; })[0];
   if (old && d.editOf !== d.date + '|' + d.kind &&
-      !confirm(thDate(d.date) + ' มีดวง' + SC_KIND[d.kind].name + 'อยู่แล้ว (เวลา ' + chartTime_(old) + ')
-เก็บอันนี้ทับของเดิมไหม?
-
-ถ้าเป็นดวงของวันอื่น กด "ยกเลิก" แล้วเปลี่ยน "วันที่ของดวง" ก่อน')) return;
+      !confirm(thDate(d.date) + ' มีดวง' + SC_KIND[d.kind].name + 'อยู่แล้ว (เวลา ' + chartTime_(old) + ') — เก็บอันนี้ทับของเดิมไหม? ถ้าเป็นดวงของวันอื่น กด "ยกเลิก" แล้วเปลี่ยน "วันที่ของดวง" ก่อน')) return;
   b.disabled = true; b.textContent = 'กำลังเก็บ…';
   var chart = { date: d.date, kind: d.kind, time: d.time, rasi: d.rasi, lagna: d.lagna, center: d.center, lunar: d.lunar, moved: d.moved, special: d.special, note: d.note };
   starPost_('starsave', { chart: chart }).then(function (r) {
