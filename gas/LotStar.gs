@@ -139,6 +139,13 @@ function stPayload_() {
 /** ลงผลจากหน้าแอป — ใช้ทางเดิมของบอท (ผ่าน lotSetText_ อยู่แล้ว)
  *  หวยไทยส่งรางวัลที่ 1 เต็ม 6 หลักมาได้ (a = 6 หลัก → 4 ตัวบน = 4 ตัวท้าย)
  *  พ่วงหน้า 3 / ท้าย 3 (คั่น /) มาด้วย = เติมแถวให้ครบเหมือนงวดที่ดึงจาก thairath */
+/** หน้า 3/ท้าย 3 → "402/392" · เลขติดกัน 6 ตัว (หน้าเว็บเก่าที่ค้างในมือถือส่งมาแบบนี้ 16 ต.ค. 69) = ตัด 3+3 ให้เอง */
+function stTrip_(v) {
+  var s = String(v || '').replace(/[^0-9\/ ]/g, '').trim().replace(/\s+/g, '/');
+  if (/^\d{6}$/.test(s)) s = s.slice(0, 3) + '/' + s.slice(3);
+  return s;
+}
+
 function stResult_(kind, iso, a, b, f3, b3) {
   iso = String(iso || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return { ok: false, error: 'วันที่ไม่ถูก' };
@@ -150,8 +157,7 @@ function stResult_(kind, iso, a, b, f3, b3) {
   var msg = kind === 'thai' ? recordThaiResult_(a, b, iso) : recordLaoResult_(a, iso);
   var bad = /^❌/.test(String(msg));
   if (!bad && six) {
-    var fr = lotPadList_(String(f3 || '').replace(/[^0-9\/ ]/g, '').trim().replace(/\s+/g, '/'), 3);
-    var bk = lotPadList_(String(b3 || '').replace(/[^0-9\/ ]/g, '').trim().replace(/\s+/g, '/'), 3);
+    var fr = lotPadList_(stTrip_(f3), 3), bk = lotPadList_(stTrip_(b3), 3);
     lotMergeRows_(THAI_LOT.SHEET, THAI_LOT.HEADERS,
       [[iso, 'งวด ' + lotThaiDateLabel_(iso), six.slice(-4), lotPad_(b, 2), six, fr, bk]]);
   }
