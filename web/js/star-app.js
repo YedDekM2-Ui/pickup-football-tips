@@ -635,9 +635,9 @@ function resultCard_(kind, res) {
   } else {
     h.push('<label class="fld" style="margin-top:8px">รางวัลที่ 1 (6 หลัก)<input id="r_a" inputmode="numeric" maxlength="6" placeholder="เช่น 402701"></label>' +
            '<div class="grid3" style="margin-top:8px">' +
-           '<label class="fld">หน้า 3 ตัว<input id="r_f3" inputmode="numeric" placeholder="791 912"></label>' +
+           '<label class="fld">หน้า 3 ตัว<input id="r_f3" class="trip" inputmode="numeric" maxlength="7" placeholder="791912"></label>' +
            '<label class="fld mid">2 ตัวล่าง<input id="r_b" inputmode="numeric" maxlength="2" placeholder="70"></label>' +
-           '<label class="fld">ท้าย 3 ตัว<input id="r_b3" inputmode="numeric" placeholder="058 396"></label></div>' +
+           '<label class="fld">ท้าย 3 ตัว<input id="r_b3" class="trip" inputmode="numeric" maxlength="7" placeholder="058396"></label></div>' +
            '<div class="muted" style="margin-top:6px">คำนวณใช้แค่ 4 ตัวบน (4 ตัวท้ายของรางวัลที่ 1) กับ 2 ตัวล่าง</div>');
   }
   h.push('<button class="btn" id="r_go">บันทึกผล</button>');
@@ -735,7 +735,13 @@ function viewLog_() {
   return h.join('');
 }
 
+/* หน้า 3/ท้าย 3: ปุ่มตัวเลขไอโฟนไม่มีเว้นวรรค → พิมพ์รวด 6 ตัว ระบบตัดทีละ 3 ให้เอง */
+function trip_(v) { return (String(v || '').replace(/\D/g, '').slice(0, 6).match(/\d{1,3}/g) || []); }
+
 function bindLog_() {
+  Array.prototype.forEach.call(document.querySelectorAll('input.trip'), function (el) {
+    el.oninput = function () { el.value = trip_(el.value).join(' '); };
+  });
   Array.prototype.forEach.call(document.querySelectorAll('[data-miss]'), function (b) {
     b.onclick = function () { $('r_date').value = b.getAttribute('data-miss'); $('r_a').focus(); };
   });
@@ -750,9 +756,10 @@ function bindLog_() {
       var b2 = ($('r_b').value || '').replace(/\D/g, '');
       if (a.length !== 6 && a.length !== 4) { toast('รางวัลที่ 1 ต้อง 6 หลัก (หรือ 4 ตัวบน)'); return; }
       if (b2.length !== 2) { toast('2 ตัวล่างต้อง 2 หลัก'); return; }
+      var f3 = trip_($('r_f3').value), b3 = trip_($('r_b3').value);
+      if ((f3.length && f3.join('').length !== 6) || (b3.length && b3.join('').length !== 6)) { toast('หน้า 3 / ท้าย 3 ต้อง 6 ตัว (2 ชุด ชุดละ 3)'); return; }
       body = { kind: 'thai', date: iso, a: a, b: b2,
-               f3: ($('r_f3').value || '').trim().split(/\D+/).filter(String).join('/'),
-               b3: ($('r_b3').value || '').trim().split(/\D+/).filter(String).join('/') };
+               f3: f3.join('/'), b3: b3.join('/') };
     }
     if (!scIsDraw_(S.kind, iso) && !confirm(thDate(iso) + ' ไม่ใช่วันออกปกติของ' + SC_KIND[S.kind].name + ' — ลงต่อไหม?')) return;
     go.disabled = true; go.textContent = 'กำลังลงผล…';
