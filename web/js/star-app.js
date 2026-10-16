@@ -488,8 +488,9 @@ function gotRead_(r, diag) {
 }
 
 /* สถานะดาวในแอปต้นทาง (เช่น "ดาวเกษตร 2,6,8 นิจ 1,3") — เจ้าของสั่งให้กดเลือกเลขได้ ไม่ต้องพิมพ์
-   ชื่อยาวต้องจับก่อนชื่อสั้น ไม่งั้น "อุจ" กิน "อุจจาภิมุข" */
-var ST_STAT = ['เกษตร', 'อุจ', 'มหาอุจจ์', 'นิจ', 'ประ', 'อุจจาภิมุข', 'นิจจาภิมุข', 'ประกิณโชค', 'จตุสดัย'];
+   เจ้าของสั่งใช้แต่คำเต็มตามแอป (ตัดคำย่อ อุจ/นิจ/ประ ทิ้ง) · ชื่อยาวต้องจับก่อนชื่อสั้น
+   ข้อความที่ปุ่มไม่รู้จัก (เช่น "ดาวเกษตร มี" ของเก่า) เก็บไว้ท้าย ไม่หายตอนกดปุ่ม */
+var ST_STAT = ['เกษตร', 'มหาอุจจ์', 'อุจจาภิมุข', 'นิจจาภิมุข', 'ประกิณโชค', 'จตุสดัย', 'ราชาโชค'];
 function statParse_(s) {
   var m = {}, rest = String(s || '');
   ST_STAT.slice().sort(function (a, b) { return b.length - a.length; }).forEach(function (n) {
@@ -499,14 +500,16 @@ function statParse_(s) {
     m[n] = PL_ORDER.filter(function (x) { return hit[1].indexOf(x) >= 0; });
     rest = rest.replace(hit[0], ' ');
   });
+  m._rest = rest.replace(/\s+/g, ' ').trim();
   return m;
 }
-function statText_(m) {
-  return ST_STAT.filter(function (n) { return m[n] && m[n].length; })
+function statText_(m, rest) {
+  var t = ST_STAT.filter(function (n) { return m[n] && m[n].length; })
     .map(function (n) { return (n === 'เกษตร' ? 'ดาวเกษตร' : n) + ' ' + m[n].join(','); }).join(' ');
+  return rest ? (t ? t + ' ' + rest : rest) : t;
 }
 function statPicker_(s) {
-  var m = statParse_(s), h = ['<div class="stat" style="margin-top:10px"><div class="muted">สถานะดาว — กดเลขดาวที่แอปบอก (กดซ้ำ = เอาออก)</div>'];
+  var m = statParse_(s), h = ['<div class="stat" style="margin-top:10px" data-rest="' + esc(m._rest) + '"><div class="muted">สถานะดาว — กดเลขดาวที่แอปบอก (กดซ้ำ = เอาออก)</div>'];
   ST_STAT.forEach(function (n) {
     h.push('<div class="srow"><b>' + esc(n) + '</b><div class="chips">' + PL_ORDER.map(function (x) {
       return '<button type="button" class="chip pick' + ((m[n] || []).indexOf(x) >= 0 ? ' on' : '') + '" data-st="' + esc(n) + '" data-x="' + x + '">' + x + '</button>';
@@ -542,7 +545,8 @@ function bindUpload_() {
       Array.prototype.forEach.call(document.querySelectorAll('button[data-st].on'), function (x) {
         var n = x.getAttribute('data-st'); (m[n] = m[n] || []).push(x.getAttribute('data-x'));
       });
-      $('f_special').value = statText_(m);
+      var box = document.querySelector('.stat[data-rest]');
+      $('f_special').value = statText_(m, box ? box.getAttribute('data-rest') : '');
     };
   });
   var sp = $('f_special');
