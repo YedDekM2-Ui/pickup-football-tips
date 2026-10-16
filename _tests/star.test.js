@@ -1,0 +1,158 @@
+// _tests/star.test.js — สมุดดวงแกะดาว: สูตร (web/js/star-calc.js) + หลังบ้าน (gas/LotStar.gs)
+'use strict';
+const C = require('../web/js/star-calc.js');
+const R = require('../web/js/star-read.js');
+const TPL = require('../web/js/star-tpl.js');
+const TRUTH = require('./fixtures/star-truth.js');
+const RES = require('./fixtures/star-results.json');
+const { loadGas } = require('./gasEnv');
+
+const charts = TRUTH.map((t) => ({ date: t.date, rasi: t.rasi, lagna: t.lagna, center: t.center.join('/'),
+  lunar: t.lunar, moved: t.moved, special: t.special }));
+const lao = C.scResultMap_('lao', RES.lao);
+const thai = C.scResultMap_('thai', RES.thai);
+
+test('วันในสัปดาห์ + นักษัตรประจำวัน (1 ม.ค. 2000 = วันมะเมีย)', () => {
+  eq(C.scWd_('2026-10-16'), 5);
+  eq(C.scDayBranch_('2000-01-01'), 6);
+  eq(C.scDayBranch_('2000-01-02'), 7);
+});
+
+test('ดาวประจำวัน — หวยลาวพุธกลางคืนเป็นราหู 8 · หวยไทยพุธกลางวันเป็น 4', () => {
+  eq(C.scDayStar_(3, true), '8');
+  eq(C.scDayStar_(3, false), '4');
+  eq(C.scDayStar_(0, true), '1');
+  eq(C.scDayStar_(6, false), '7');
+});
+
+test('กาลกิณีตามตารางในสูตร (พุธกลางวัน 3 · พุธกลางคืน 5)', () => {
+  eq([0, 1, 2, 4, 5, 6].map((w) => C.scKalakini_(w, false)), ['6', '1', '2', '8', '7', '4']);
+  eq(C.scKalakini_(3, false), '3');
+  eq(C.scKalakini_(3, true), '5');
+});
+
+test('จันทรคติที่เดาเอง ตรงกับรูปจริงทั้ง 10 วัน', () => {
+  TRUTH.forEach((t) => {
+    const g = C.scLunarGuess_(t.date), real = C.scLunarParse_(t.lunar);
+    eq([g.side, g.day, g.month], [real.side, real.day, real.month], t.date);
+  });
+});
+
+test('อ่านจันทรคติเลขไทยได้', () => {
+  eq(C.scLunarParse_('แรม ๑๓ ค่ำ เดือน ๑๐'), { side: 'แรม', day: 13, month: 10 });
+  eq(C.scLunarParse_('ขึ้น 4 ค่ำ'), { side: 'ขึ้น', day: 4, month: 0 });
+  eq(C.scLunarParse_(''), null);
+});
+
+test('ผลหวย → เลขแยกหลัก (ลาว 4 · ไทย 4+2) เลข 0 หน้าไม่หาย', () => {
+  eq(lao['2026-10-14'], ['0', '3', '5', '8']);
+  eq(thai['2026-10-01'], ['2', '7', '0', '1', '7', '0']);
+  eq(C.scResultMap_('lao', [['2026-01-01', '123']]), {});
+});
+
+test('งวดถัดไป: ลาว จ-ศ ก่อน 20:30 · ไทย 1/16 ก่อน 16:00', () => {
+  /* 16 ต.ค. 69 ศุกร์ 10:00 ไทย = 03:00Z */
+  eq(C.scNextDraw_('lao', new Date('2026-10-16T03:00:00Z')), '2026-10-16');
+  eq(C.scNextDraw_('lao', new Date('2026-10-16T14:00:00Z')), '2026-10-19');
+  eq(C.scNextDraw_('thai', new Date('2026-10-16T03:00:00Z')), '2026-10-16');
+  eq(C.scNextDraw_('thai', new Date('2026-10-16T10:00:00Z')), '2026-11-01');
+});
+
+test('ดวงที่ใช้ทาย = ดวงวันนั้น ไม่งั้นดวงล่าสุดก่อนหน้า', () => {
+  eq(C.scPickChart_(charts, '2026-10-16').date, '2026-10-15');
+  eq(C.scPickChart_(charts, '2026-10-12').date, '2026-10-12');
+  eq(C.scPickChart_(charts, '2026-09-01'), null);
+});
+
+test('เลขเสีย: คู่ศัตรู 2-5 ในกรกฎ (5 ต.ค.) ถูกจับ', () => {
+  const ctx = C.scCtx_('lao', charts[1], '2026-10-05', lao);
+  const why = C.scDead_(ctx).map((x) => x.d + ':' + x.why).join('|');
+  ok(/2:คู่ศัตรู 2-5/.test(why) && /5:คู่ศัตรู 2-5/.test(why), why);
+  ok(/^1:กาลกิณีวันจันทร์/.test(why), why);
+});
+
+test('วิธีค้นใช้ข้อมูลจริงของดวง (ศุกร์ 9 ต.ค.: ศุกร์ 6 ดาววัน · จันทร์กุมอาทิตย์ในกันย์)', () => {
+  const m = C.scMethods_(C.scCtx_('lao', charts[5], '2026-10-09', lao));
+  ok(m.day['6'] && m.day['6'].s >= 1);
+  ok(m.moon['1'] && /กุมจันทร์ในกันย์/.test(m.moon['1'].why.join()));
+  ok(m.power['2'] && /ย้ายราศีวันนี้/.test(m.power['2'].why.join()));
+  ok(m.center['7'], 'กลางดวง 21+26=47 → 7');
+});
+
+test('ทำนายคืนครบทุกหลัก + เลขชุด + เลขปิด 2 ตัว', () => {
+  const w = C.scWeights_('lao', charts, lao, '2026-10-16');
+  const pr = C.scPredict_('lao', charts[9], '2026-10-16', lao, w);
+  eq(pr.pos.length, 4);
+  pr.pos.forEach((p) => { eq(p.top.length, 3); eq(p.closed.length, 2); eq(p.rank.length, 10); });
+  eq(pr.sets.map((s) => s.name), ['2 ตัวบน', '2 ตัวล่าง', '3 ตัวบน']);
+  pr.sets.forEach((s) => ok(s.list.length === 6 && s.list.every((n) => /^\d+$/.test(n))));
+  const pt = C.scPredict_('thai', charts[9], '2026-10-16', thai, null);
+  eq(pt.pos.map((p) => p.name), ['พัน', 'ร้อย', 'สิบ', 'หน่วย', 'ล่างสิบ', 'ล่างหน่วย']);
+});
+
+test('น้ำหนักไม่โกงอนาคต: วัดก่อนดวงแรก = ไม่มีข้อมูล ทุกวิธีเท่าสุ่ม', () => {
+  const w = C.scWeights_('lao', charts, lao, '2026-10-02');
+  eq(w.n, 0);
+  C.SC_METHODS.forEach((m) => w.w[m[0]].forEach((x) => eq(x.w, 1)));
+  eq(C.scWeights_('lao', charts, lao).n, 10);
+});
+
+test('วัดย้อนหลังครบ 10 ดวงที่มีผลลาว · 40 หลัก', () => {
+  const bt = C.scBacktest_('lao', charts, lao);
+  eq(bt.rows.length, 10);
+  eq(bt.n, 40);
+  eq(bt.rows[0].real, '4693');
+});
+
+test('สถิติแยกหลัก นับครบตามจำนวนงวด', () => {
+  const st = C.scStats_('lao', lao, 30);
+  eq(st.n, 30);
+  st.pos.forEach((p) => eq(p.cnt.reduce((a, b) => a + b, 0), 30));
+  eq(C.scStats_('thai', thai, 0).total, Object.keys(thai).length);
+});
+
+test('ตำแหน่ง → ราศี ตามผังดวง (มุมแบ่งด้วยเส้นทแยง)', () => {
+  const g = { x1: 377, x2: 494, y1: 968, y2: 1086 };
+  eq(R.srRasiAt_(g, 435, 800), 0);
+  eq(R.srRasiAt_(g, 320, 835), 1);
+  eq(R.srRasiAt_(g, 237, 917), 2);
+  eq(R.srRasiAt_(g, 220, 1030), 3);
+  eq(R.srRasiAt_(g, 237, 1143), 4);
+  eq(R.srRasiAt_(g, 343, 1188), 5);
+  eq(R.srRasiAt_(g, 548, 1229), 7);
+  eq(R.srRasiAt_(g, 632, 918), 10);
+  eq(R.srRasiAt_(g, 548, 834), 11);
+  eq(R.srRasiAt_(g, 435, 1027), -1);
+});
+
+test('แม่แบบตัวเลขครบ 0-9 + ลัคนา + / ', () => {
+  const chs = [...new Set(TPL.map((t) => t.ch))].sort().join('');
+  eq(chs, '/0123456789ล');
+});
+
+/* ---------------- หลังบ้าน ---------------- */
+function gas() {
+  return loadGas(['gas/LotStar.gs'], { lotIso_: (v) => String(v).slice(0, 10), nowIso_: () => '2026-10-16T10:00:00+07:00' });
+}
+
+test('stClean_ รับดวงถูกรูป ตัดช่องแปลกทิ้ง', () => {
+  const c = gas().stClean_({ date: '2026-10-15', rasi: charts[9].rasi, lagna: 1, center: '27/24x', lunar: 'ขึ้น 4 ค่ำ' });
+  eq(c.center, '27/24');
+  eq(c.lagna, 1);
+  eq(c.rasi[6], ['9', '6', '4']);
+});
+
+test('stClean_ ปฏิเสธดวงผิดรูป (ดาวซ้ำ 2 ราศี / วันที่ผิด / ไม่ครบ 12 ช่อง)', () => {
+  const g = gas();
+  const dup = charts[9].rasi.map((c) => c.slice()); dup[0].push('9');
+  throws(() => g.stClean_({ date: '2026-10-15', rasi: dup }), /อยู่ 2 ราศี/);
+  throws(() => g.stClean_({ date: '15/10/69', rasi: charts[9].rasi }), /วันที่/);
+  throws(() => g.stClean_({ date: '2026-10-15', rasi: [[]] }), /12 ช่อง/);
+});
+
+test('แถวชีต ↔ ดวง ไปกลับไม่เพี้ยน', () => {
+  const g = gas();
+  const c = g.stClean_(Object.assign({}, charts[2]));
+  const back = g.stParse_(g.stRowOf_(c));
+  eq(back.rasi, c.rasi); eq(back.date, c.date); eq(back.center, '18/28'); eq(back.lunar, c.lunar);
+});
