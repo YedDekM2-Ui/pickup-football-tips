@@ -130,14 +130,15 @@ function chartSvg_(c, opt) {
 /* ---------------- แท็บ: ทำนาย ---------------- */
 function viewPredict_() {
   var kind = S.kind, K = SC_KIND[kind], iso = scNextDraw_(kind), charts = charts_();
-  var chart = scPickChart_(charts, iso);
+  var chart = scPickChart_(charts, iso, kind);
   if (!chart) return '<div class="card hero"><div class="d">ยังไม่มีดวงให้คำนวณ</div><div class="muted">แคปหน้าปฏิทินโหรของวันนี้ แล้วส่งที่แท็บ "ส่งดวง"</div></div>';
   var res = results_(kind), w = scWeights_(kind, charts, res, iso);
   var pr = scPredict_(kind, chart, iso, res, w);
   var h = [];
   h.push('<div class="card hero"><div class="k">' + esc(K.name) + ' · งวดถัดไป</div><div class="d">' + esc(thDate(iso)) + '</div>' +
          '<div class="meta">ดาวประจำวัน ' + esc(SC_PL[pr.dayStar]) + ' (' + pr.dayStar + ') · ' + esc(scLunarText_(pr.lunar)) + '</div>' +
-         (chart.date !== iso ? '<div class="warn" style="margin-top:6px">ใช้ดวงวันที่ ' + esc(thDate(chart.date)) + ' — ยังไม่ได้ส่งดวงวันออก</div>' : '') +
+         (chart.date !== iso ? '<div class="warn" style="margin-top:6px">ใช้ดวงวันที่ ' + esc(thDate(chart.date)) + ' — ยังไม่ได้ส่งดวงวันออก</div>' :
+          (chart.kind && chart.kind !== kind ? '<div class="warn" style="margin-top:6px">ใช้ดวงของหวย' + (chart.kind === 'lao' ? 'ลาว' : 'ไทย') + 'วันนี้ไปก่อน — ยังไม่ได้ส่งดวงเวลาออกของ' + esc(K.name) + '</div>' : '')) +
          '</div>');
 
   /* ช่องเลขแยกหลัก */
@@ -221,7 +222,7 @@ function whyBox_(p) {
 function blankDraft_(iso) {
   var r = []; for (var i = 0; i < 12; i++) r.push([]);
   var lu = scLunarGuess_(iso);
-  return { date: iso, rasi: r, lagna: -1, center: '', lunar: scLunarText_(lu), moved: '', special: '', note: '', read: null, ask: [] };
+  return { date: iso, kind: S.kind, rasi: r, lagna: -1, center: '', lunar: scLunarText_(lu), moved: '', special: '', note: '', read: null, ask: [] };
 }
 
 function viewUpload_() {
@@ -264,6 +265,8 @@ function viewUpload_() {
   h.push('</div>');
   h.push('<div class="grid2" style="margin-top:10px">' +
     '<label class="fld">วันที่ของดวง<input type="date" id="f_date" value="' + esc(d.date) + '"></label>' +
+    '<label class="fld">ดวงนี้ใช้กับ<select id="f_kind"><option value="lao"' + (d.kind === 'lao' ? ' selected' : '') + '>หวยลาว (ดวง 20:20)</option>' +
+      '<option value="thai"' + (d.kind === 'thai' ? ' selected' : '') + '>หวยไทย (ดวง 15:30)</option></select></label>' +
     '<label class="fld">เลขกลางดวง (เช่น 27/24)<input id="f_center" inputmode="numeric" value="' + esc(d.center) + '"></label>' +
     '<label class="fld">จันทรคติ<input id="f_lunar" value="' + esc(d.lunar) + '"></label>' +
     '<label class="fld">ดาวย้ายวันนี้<select id="f_moved"><option value="">ไม่มีดาวย้าย</option>' +
@@ -424,19 +427,19 @@ function syncFields_() {
   var d = S.draft; if (!d || !$('f_date')) return;
   d.date = $('f_date').value || d.date; d.center = $('f_center').value.trim();
   d.lunar = $('f_lunar').value.trim(); d.moved = $('f_moved').value;
-  d.special = $('f_special').value.trim(); d.note = $('f_note').value.trim();
+  d.special = $('f_special').value.trim(); d.note = $('f_note').value.trim(); d.kind = $('f_kind').value;
 }
 
 function saveDraft_() {
   syncFields_();
   var d = S.draft, b = $('save');
   b.disabled = true; b.textContent = 'กำลังเก็บ…';
-  var chart = { date: d.date, rasi: d.rasi, lagna: d.lagna, center: d.center, lunar: d.lunar, moved: d.moved, special: d.special, note: d.note };
+  var chart = { date: d.date, kind: d.kind, rasi: d.rasi, lagna: d.lagna, center: d.center, lunar: d.lunar, moved: d.moved, special: d.special, note: d.note };
   starPost_('starsave', { chart: chart }).then(function (r) {
     if (r && r.ok) {
       toast(r['ทับของเดิม'] ? 'แก้ดวงวันที่ ' + thDate(chart.date) + ' แล้ว' : 'เก็บดวงวันที่ ' + thDate(chart.date) + ' แล้ว');
       /* ใส่ในแคชทันที เปิดแท็บทำนายไม่ต้องรอโหลดใหม่ */
-      if (S.data) { S.data.charts = charts_().filter(function (c) { return c.date !== chart.date; }).concat([chart]).sort(function (a, c) { return a.date < c.date ? -1 : 1; }); saveCache_(S.data); }
+      if (S.data) { S.data.charts = charts_().filter(function (c) { return !(c.date === chart.date && (c.kind || '') === chart.kind) && !(c.date === chart.date && !c.kind); }).concat([chart]).sort(function (a, c) { return a.date < c.date ? -1 : 1; }); saveCache_(S.data); }
       S.draft = null; S.tab = 'predict'; render_(); refresh_();
     } else { b.disabled = false; b.textContent = 'เก็บดวงนี้'; toast((r && r.error) || 'เก็บดวงไม่สำเร็จ — ลองอีกครั้ง'); }
   });
@@ -457,15 +460,15 @@ function viewStats_() {
     st.pos.forEach(function (p) {
       var a = p.cnt[d] / max, hot = p.hot.indexOf(d) >= 0, cold = p.cold.indexOf(d) >= 0;
       var bg = 'rgba(230,192,99,' + (0.06 + a * 0.6).toFixed(2) + ')';
-      h.push('<td style="background:' + bg + ';color:' + (a > 0.6 ? '#1a1406' : 'var(--ink)') + (cold ? ';outline:1px dashed rgba(111,183,255,.6)' : '') + '">' + p.cnt[d] +
-             '<span class="g">' + (hot ? '🔥' : '') + 'ค้าง ' + p.gap[d] + '</span></td>');
+      h.push('<td class="' + (hot ? 'hot' : (cold ? 'dead' : '')) + '" style="background:' + bg + ';color:' + (a > 0.6 ? '#1a1406' : 'var(--ink)') + '">' + p.cnt[d] +
+             '<span class="g">' + (hot ? 'เด่น · ' : (cold ? 'ดับ · ' : '')) + 'ค้าง ' + p.gap[d] + '</span></td>');
     });
     h.push('</tr>');
   }
-  h.push('</table></div><div class="muted" style="margin-top:6px">ตัวเลข = ออกกี่ครั้ง · ค้าง = ไม่ออกมากี่งวดแล้ว · 🔥 ร้อนสุด 3 ตัว · กรอบฟ้า = เย็นสุด</div></div>');
+  h.push('</table></div><div class="muted" style="margin-top:6px">ตัวเลข = ออกกี่ครั้ง · ค้าง = ไม่ออกมากี่งวดแล้ว · <span class="good">กรอบทอง = เลขเด่น</span> (ออกบ่อยสุด 3 ตัว) · <span class="bad">กรอบแดง = เลขดับ</span> (ออกน้อยสุด 3 ตัว)</div></div>');
 
-  h.push('<div class="card"><h3>คู่/คี่ และเบิ้ล</h3><table class="tbl"><tr><th>หลัก</th><th>คู่</th><th>คี่</th><th>ร้อน</th><th>เย็น</th></tr>' +
-    st.pos.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td>' + Math.round(p.even / p.n * 100) + '%</td><td>' + Math.round((p.n - p.even) / p.n * 100) + '%</td><td>' + p.hot.join(' ') + '</td><td>' + p.cold.join(' ') + '</td></tr>'; }).join('') +
+  h.push('<div class="card"><h3>คู่/คี่ · เลขเด่น · เลขดับ</h3><table class="tbl"><tr><th>หลัก</th><th>คู่</th><th>คี่</th><th>เด่น</th><th>ดับ</th></tr>' +
+    st.pos.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td>' + Math.round(p.even / p.n * 100) + '%</td><td>' + Math.round((p.n - p.even) / p.n * 100) + '%</td><td class="mk1">' + p.hot.join(' ') + '</td><td class="bad">' + p.cold.join(' ') + '</td></tr>'; }).join('') +
     '</table><div class="muted" style="margin-top:8px">' + st.sets.map(function (s) { return esc(s.name) + ' มีเลขซ้ำ ' + s.dbl + '/' + st.n + ' งวด'; }).join(' · ') + '</div></div>');
 
   /* วัดสูตรกับของจริง */
@@ -484,7 +487,7 @@ function viewStats_() {
       r.marks.map(function (m) { return '<td class="mk' + m.m + '">' + m.top.join('') + '</td>'; }).join('') +
       '<td>' + r.sets.filter(function (s) { return s.hit; }).map(function (s) { return esc(s.name); }).join('<br>') + '</td></tr>');
   });
-  h.push('</table></div><div class="muted" style="margin-top:6px"><span class="mk1">เขียว</span> = อันดับ 1 ตรง · <span class="mk3">ส้ม</span> = ติด 3 อันดับ</div>');
+  h.push('</table></div><div class="muted" style="margin-top:6px"><span class="mk1">เขียว</span> = อันดับ 1 ตรง · <span class="mk3">ส้ม</span> = ติด 3 อันดับ · <span class="bad">แดง = หลุด</span> (ไม่เข้าทั้ง 3 อันดับ)</div>');
   var w = scWeights_(kind, charts_(), res);
   h.push('<div class="scroll" style="margin-top:12px"><table class="tbl"><tr><th>วิธีค้น</th>' + K.pos.map(function (p) { return '<th>' + esc(p) + '</th>'; }).join('') + '</tr>' +
     SC_METHODS.map(function (m) {
@@ -497,40 +500,103 @@ function viewStats_() {
 }
 
 /* ---------------- แท็บ: บันทึก ---------------- */
+/** การ์ดกรอกผลหวย — กรอกได้ทุกงวด ไม่ต้องมีดวง · ลงชีตผลเดียวกับบอท = สถิติต่อเนื่อง */
+function resultCard_(kind, res) {
+  var K = SC_KIND[kind], last = scLastDraw_(kind), miss = scMissingDraws_(kind, res, kind === 'lao' ? 21 : 62);
+  var h = ['<div class="card resin"><h3>กรอกผล' + esc(K.name) + '<span class="sub">ลงแล้วเข้าสถิติทันที</span></h3>'];
+  h.push('<div class="grid2"><label class="fld">งวดวันที่<input type="date" id="r_date" value="' + last + '"></label>');
+  if (kind === 'lao') {
+    h.push('<label class="fld">ผล 4 ตัว<input id="r_a" inputmode="numeric" maxlength="4" placeholder="เช่น 6261"></label></div>' +
+           '<div class="muted" style="margin-top:6px">ระบบแยกให้เอง: 3 ตัวบน = 3 ตัวท้าย · 2 ตัวบน = 2 ตัวท้าย · 2 ตัวล่าง = 2 ตัวหน้า</div>');
+  } else {
+    h.push('<label class="fld">รางวัลที่ 1 (6 หลัก)<input id="r_a" inputmode="numeric" maxlength="6" placeholder="เช่น 402701"></label></div>' +
+           '<div class="grid2" style="margin-top:8px"><label class="fld">2 ตัวล่าง<input id="r_b" inputmode="numeric" maxlength="2" placeholder="70"></label>' +
+           '<label class="fld">หน้า 3 ตัว (ไม่ใส่ก็ได้)<input id="r_f3" inputmode="numeric" placeholder="791 912"></label></div>' +
+           '<label class="fld" style="margin-top:8px">ท้าย 3 ตัว (ไม่ใส่ก็ได้)<input id="r_b3" inputmode="numeric" placeholder="058 396"></label>' +
+           '<div class="muted" style="margin-top:6px">คำนวณใช้แค่ 4 ตัวบน (4 ตัวท้ายของรางวัลที่ 1) กับ 2 ตัวล่าง</div>');
+  }
+  h.push('<button class="btn" id="r_go">บันทึกผล</button>');
+  if (miss.length) {
+    h.push('<div class="muted" style="margin-top:12px">งวดที่ยังไม่ได้กรอก — แตะเพื่อเลือก</div><div class="chips" style="margin-top:6px">' +
+      miss.map(function (d) { return '<button class="chip miss" data-miss="' + d + '">' + esc(thDate(d)) + '</button>'; }).join('') + '</div>');
+  } else h.push('<div class="muted good" style="margin-top:10px">กรอกครบทุกงวดแล้ว</div>');
+  var recent = Object.keys(res).sort().reverse().slice(0, 8);
+  if (recent.length) {
+    h.push('<table class="tbl" style="margin-top:12px"><tr><th>งวด</th>' + (kind === 'lao' ? '<th>4 ตัว</th><th>บน</th><th>ล่าง</th>' : '<th>4 ตัวบน</th><th>ล่าง</th>') + '</tr>' +
+      recent.map(function (d) {
+        var r = res[d];
+        return '<tr><td>' + esc(thDate(d)) + '</td>' + (kind === 'lao'
+          ? '<td><b>' + r.join('') + '</b></td><td class="up">' + r.slice(1).join('') + '</td><td class="lo">' + r.slice(0, 2).join('') + '</td>'
+          : '<td class="up"><b>' + r.slice(0, 4).join('') + '</b></td><td class="lo"><b>' + r.slice(4).join('') + '</b></td>') + '</tr>';
+      }).join('') + '</table>');
+  }
+  h.push('</div>');
+  return h.join('');
+}
+
 function viewLog_() {
-  var kind = S.kind, K = SC_KIND[kind], res = results_(kind), h = [], charts = charts_().slice().reverse();
-  h.push('<div class="card"><h3>บันทึกปฏิทิน 100 ปี<span class="sub">' + charts.length + ' วัน · ผล' + esc(K.name) + '</span></h3>');
-  if (!charts.length) h.push('<div class="muted">ยังไม่มีดวง</div>');
+  var kind = S.kind, K = SC_KIND[kind], res = results_(kind), h = [];
+  var charts = charts_().filter(function (c) { return scFits_(c, kind); }).slice().reverse();
+  h.push(resultCard_(kind, res));
+  h.push('<div class="card"><h3>บันทึกปฏิทิน 100 ปี<span class="sub">ดวง' + esc(K.name) + ' ' + charts.length + ' วัน</span></h3>');
+  if (!charts.length) h.push('<div class="muted">ยังไม่มีดวงของ' + esc(K.name) + ' — ส่งรูปที่แท็บ "ส่งดวง"</div>');
   charts.forEach(function (c) {
-    var r = res[c.date], isDraw = kind === 'lao' ? (scWd_(c.date) >= 1 && scWd_(c.date) <= 5) : (+c.date.slice(8) === 1 || +c.date.slice(8) === 16);
+    var r = res[c.date], key = c.date + '|' + (c.kind || '');
     var sum = c.rasi.map(function (cell, i) { return cell.length ? SC_RASI[i] + ' ' + cell.join('') : ''; }).filter(String).join(' · ');
-    h.push('<div class="ent"><div><div class="dt">' + esc(thDate(c.date)) + '</div><div class="muted">' + esc(c.lunar) + (c.center ? ' · กลาง ' + esc(c.center) : '') + '</div>' +
+    var tag = c.kind ? '<span class="ktag">' + (c.kind === 'lao' ? 'ลาว 20:20' : 'ไทย 15:30') + '</span>' : '';
+    h.push('<div class="ent"><div><div class="dt">' + esc(thDate(c.date)) + ' ' + tag + '</div><div class="muted">' + esc(c.lunar) + (c.center ? ' · กลาง ' + esc(c.center) : '') + '</div>' +
       '<div class="muted" style="margin-top:3px">' + esc(sum) + '</div>' +
-      '<div class="btns" style="margin-top:8px"><button class="btn ghost" data-edit="' + c.date + '">แก้ดวง</button><button class="btn ghost" data-del="' + c.date + '">ลบ</button></div></div>' +
-      '<div style="min-width:110px">' + (r ? '<div class="res">' + r.join('').slice(0, 4) + (kind === 'thai' ? '<br><small>' + r.slice(4).join('') + '</small>' : '') + '</div>'
-        : (isDraw ? '<div class="res none">ยังไม่มีผล</div><div class="inl"><input data-res="' + c.date + '" inputmode="numeric" placeholder="' + (kind === 'thai' ? '402701 70' : '1234') + '"><button data-save="' + c.date + '">ลง</button></div>'
-                  : '<div class="res none">ไม่ใช่วันออก</div>')) + '</div></div>');
+      '<div class="btns" style="margin-top:8px"><button class="btn ghost" data-edit="' + key + '">แก้ดวง</button><button class="btn ghost" data-del="' + key + '">ลบ</button></div></div>' +
+      '<div style="min-width:96px">' + (r ? '<div class="res">' + r.slice(0, 4).join('') + (kind === 'thai' ? '<br><small>' + r.slice(4).join('') + '</small>' : '') + '</div>'
+        : '<div class="res none">' + (scIsDraw_(kind, c.date) ? 'ยังไม่มีผล<br>กรอกด้านบน' : 'ไม่ใช่วันออก') + '</div>') + '</div></div>');
   });
   h.push('</div>');
   return h.join('');
 }
 
 function bindLog_() {
+  Array.prototype.forEach.call(document.querySelectorAll('[data-miss]'), function (b) {
+    b.onclick = function () { $('r_date').value = b.getAttribute('data-miss'); $('r_a').focus(); };
+  });
+  var go = $('r_go');
+  if (go) go.onclick = function () {
+    var iso = $('r_date').value, a = ($('r_a').value || '').replace(/\D/g, ''), body;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) { toast('เลือกวันที่งวดก่อน'); return; }
+    if (S.kind === 'lao') {
+      if (a.length !== 4) { toast('หวยลาวต้อง 4 ตัว'); return; }
+      body = { kind: 'lao', date: iso, a: a };
+    } else {
+      var b2 = ($('r_b').value || '').replace(/\D/g, '');
+      if (a.length !== 6 && a.length !== 4) { toast('รางวัลที่ 1 ต้อง 6 หลัก (หรือ 4 ตัวบน)'); return; }
+      if (b2.length !== 2) { toast('2 ตัวล่างต้อง 2 หลัก'); return; }
+      body = { kind: 'thai', date: iso, a: a, b: b2,
+               f3: ($('r_f3').value || '').trim().split(/\D+/).filter(String).join('/'),
+               b3: ($('r_b3').value || '').trim().split(/\D+/).filter(String).join('/') };
+    }
+    if (!scIsDraw_(S.kind, iso) && !confirm(thDate(iso) + ' ไม่ใช่วันออกปกติของ' + SC_KIND[S.kind].name + ' — ลงต่อไหม?')) return;
+    go.disabled = true; go.textContent = 'กำลังลงผล…';
+    starPost_('starresult', body).then(function (r) {
+      go.disabled = false; go.textContent = 'บันทึกผล';
+      if (r && r.ok) { toast('ลงผลงวด ' + thDate(iso) + ' แล้ว'); refresh_(); }
+      else toast((r && (r['ข้อความ'] || r.error)) || 'ลงผลไม่สำเร็จ — เช็คตัวเลขอีกที');
+    });
+  };
   Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function (b) {
     b.onclick = function () {
-      var c = charts_().filter(function (x) { return x.date === b.getAttribute('data-edit'); })[0];
+      var key = b.getAttribute('data-edit').split('|');
+      var c = charts_().filter(function (x) { return x.date === key[0] && (x.kind || '') === (key[1] || ''); })[0];
       if (!c) return;
-      S.draft = { date: c.date, rasi: c.rasi.map(function (x) { return x.slice(); }), lagna: c.lagna, center: c.center || '', lunar: c.lunar || '',
+      S.draft = { date: c.date, kind: c.kind || S.kind, rasi: c.rasi.map(function (x) { return x.slice(); }), lagna: c.lagna, center: c.center || '', lunar: c.lunar || '',
                   moved: c.moved || '', special: c.special || '', note: c.note || '', read: null };
       S.tab = 'upload'; render_();
     };
   });
   Array.prototype.forEach.call(document.querySelectorAll('[data-del]'), function (b) {
     b.onclick = function () {
-      var iso = b.getAttribute('data-del');
+      var key = b.getAttribute('data-del').split('|'), iso = key[0], dk = key[1] || '';
       if (!confirm('ลบดวงวันที่ ' + thDate(iso) + ' ทิ้ง? (ผลหวยไม่หาย ลบแค่ดวง)')) return;
-      starPost_('stardel', { date: iso }).then(function (r) {
-        if (r && r.ok) { S.data.charts = charts_().filter(function (c) { return c.date !== iso; }); saveCache_(S.data); render_(); toast('ลบดวงวันที่ ' + thDate(iso) + ' แล้ว'); }
+      starPost_('stardel', { date: iso, kind: dk }).then(function (r) {
+        if (r && r.ok) { S.data.charts = charts_().filter(function (c) { return !(c.date === iso && (c.kind || '') === dk); }); saveCache_(S.data); render_(); toast('ลบดวงวันที่ ' + thDate(iso) + ' แล้ว'); }
         else toast((r && r.error) || 'ลบไม่สำเร็จ');
       });
     };

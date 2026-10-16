@@ -277,6 +277,7 @@ function scWeights_(kind, charts, results, untilIso) {
   SC_METHODS.forEach(function (m) { acc[m[0]] = []; for (var p = 0; p < npos; p++) acc[m[0]].push({ hit: 0, exp: 0, top: 0, k: 0 }); });
   (charts || []).forEach(function (c) {
     if (untilIso && c.date >= untilIso) return;
+    if (!scFits_(c, kind)) return;
     var real = results[c.date];
     if (!real) return;
     n++;
@@ -391,6 +392,7 @@ function scDoubleRate_(kind, results, iso) {
 function scBacktest_(kind, charts, results) {
   var npos = SC_KIND[kind].pos.length, rows = [], top1 = 0, top3 = 0, cnt = 0;
   (charts || []).slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (c) {
+    if (!scFits_(c, kind)) return;
     var real = results[c.date];
     if (!real) return;
     var w = scWeights_(kind, charts, results, c.date);
@@ -456,11 +458,52 @@ function scNextDraw_(kind, now) {
   return iso;
 }
 
-/** ดวงที่ใช้ทายงวด iso: ดวงวันนั้นถ้ามี ไม่งั้นดวงล่าสุดก่อนหน้า */
-function scPickChart_(charts, iso) {
-  var best = null;
-  (charts || []).forEach(function (c) { if (c.date <= iso && (!best || c.date > best.date)) best = c; });
-  return best;
+/** วันออกของหวยชนิดนี้ไหม */
+function scIsDraw_(kind, iso) {
+  var wd = scWd_(iso), day = +iso.slice(8);
+  return kind === 'lao' ? (wd >= 1 && wd <= 5) : (day === 1 || day === 16);
+}
+
+/** งวดที่เพิ่งออกล่าสุด (ไว้ตั้งค่าเริ่มต้นช่องกรอกผล) — วันออกแต่ยังไม่ถึงเวลา = ถอยไปงวดก่อน */
+function scLastDraw_(kind, now) {
+  var t = now || new Date(), bkk = new Date(t.getTime() + 7 * 3600000);
+  var iso = bkk.toISOString().slice(0, 10), hm = bkk.getUTCHours() * 60 + bkk.getUTCMinutes();
+  var cut = kind === 'lao' ? 20 * 60 + 30 : 16 * 60;
+  for (var i = 0; i < 40; i++) {
+    var d = scAddDays_(iso, -i);
+    if (!scIsDraw_(kind, d)) continue;
+    if (i === 0 && hm < cut) continue;
+    return d;
+  }
+  return iso;
+}
+
+/** วันออกที่ยังไม่มีผล ย้อนหลัง n วัน (ไม่นับงวดที่ยังไม่ถึงเวลาออก) */
+function scMissingDraws_(kind, results, n, now) {
+  var last = scLastDraw_(kind, now), out = [];
+  for (var i = 0; i < (n || 30); i++) {
+    var d = scAddDays_(last, -i);
+    if (scIsDraw_(kind, d) && !results[d]) out.push(d);
+  }
+  return out;
+}
+
+/** ดวงนี้ใช้กับหวยชนิดนี้ได้ไหม — ดวงที่ไม่ระบุชนิด ('') ใช้ได้ทั้ง 2 */
+function scFits_(c, kind) { return !kind || !c.kind || c.kind === kind; }
+
+/** ดวงที่ใช้ทายงวด iso: วันล่าสุด ≤ iso ก่อน · วันเท่ากันเลือกดวงชนิดเดียวกัน
+    (วันที่ 1/16 มีดวงไทย 15:30 กับดวงลาว 20:20 คนละลัคนา ห้ามหยิบสลับกัน) */
+function scPickChart_(charts, iso, kind) {
+  var best = null, any = null;
+  (charts || []).forEach(function (c) {
+    if (c.date > iso) return;
+    var better = function (b) { return !b || c.date > b.date || (c.date === b.date && c.kind === kind && b.kind !== kind); };
+    if (scFits_(c, kind) && better(best)) best = c;
+    if (better(any)) any = c;
+  });
+  /* วันใหม่กว่าชนะเสมอ (จันทร์ย้ายราศีทุก ~2 วัน) — ชนิดเดียวกันใช้ตัดสินเฉพาะวันเท่ากัน */
+  if (best && any && any.date > best.date) return any;
+  return best || any;
 }
 
 if (typeof module !== 'undefined') {
@@ -468,5 +511,5 @@ if (typeof module !== 'undefined') {
     scWd_: scWd_, scDayBranch_: scDayBranch_, scLunarGuess_: scLunarGuess_, scLunarParse_: scLunarParse_,
     scDayStar_: scDayStar_, scKalakini_: scKalakini_, scResultMap_: scResultMap_, scMethods_: scMethods_,
     scWeights_: scWeights_, scPredict_: scPredict_, scBacktest_: scBacktest_, scStats_: scStats_,
-    scNextDraw_: scNextDraw_, scPickChart_: scPickChart_, scDead_: scDead_, scCtx_: scCtx_, scLunarText_: scLunarText_ };
+    scNextDraw_: scNextDraw_, scPickChart_: scPickChart_, scFits_: scFits_, scIsDraw_: scIsDraw_, scLastDraw_: scLastDraw_, scMissingDraws_: scMissingDraws_, scAddDays_: scAddDays_, scDead_: scDead_, scCtx_: scCtx_, scLunarText_: scLunarText_ };
 }

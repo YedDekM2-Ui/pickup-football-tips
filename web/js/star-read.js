@@ -45,26 +45,55 @@ function srLines_(img, axis) {
   var top = 0; for (k = 0; k < n; k++) if (best[k] > top) top = best[k];
   var groups = [], cur = null;
   for (k = 0; k < n; k++) {
-    if (best[k] >= top * 0.75) {
-      if (cur && k - cur.e <= 2) { cur.e = k; cur.s2 += k * best[k]; cur.w += best[k]; }
-      else { cur = { s: k, e: k, s2: k * best[k], w: best[k] }; groups.push(cur); }
+    /* เกณฑ์ตายตัวตามขนาดรูป ไม่เทียบกับเส้นยาวสุด — ขอบการ์ด/เส้นคั่นยาวกว่าเส้นดวงได้ */
+    if (best[k] >= (aHi - aLo) * 0.15) {
+      if (cur && k - cur.e <= 2) { cur.e = k; cur.s2 += k * best[k]; cur.w += best[k]; cur.len = Math.max(cur.len, best[k]); }
+      else { cur = { s: k, e: k, s2: k * best[k], w: best[k], len: best[k] }; groups.push(cur); }
     }
   }
-  groups.sort(function (a, b) { return b.w - a.w; });
-  var two = groups.slice(0, 2).map(function (g) { return g.s2 / g.w; });
-  two.sort(function (a, b) { return a - b; });
-  return { lines: two, len: top };
+  var cand = groups.map(function (g) { return { pos: g.s2 / g.w, len: g.len }; });
+  var big = cand.filter(function (c) { return c.len >= top * 0.75; }).sort(function (a, b) { return b.len - a.len; });
+  var two = big.slice(0, 2).map(function (c) { return c.pos; }).sort(function (a, b) { return a - b; });
+  return { lines: two, len: top, cand: cand };
+}
+
+/** เลือกคู่เส้นตั้ง+คู่เส้นนอนที่เป็นช่องกลางดวงจริง: ช่องกลางเป็นจัตุรัส (ระยะห่าง 2 คู่เท่ากัน)
+    และเส้นทั้ง 4 ยาวพอๆ กัน (เป็นคอร์ดของวงเดียวกัน) — กันเส้นอื่นบนจอที่ยาวกว่ามาแย่งที่
+    เจอจริง 16 ต.ค. 69: รูปต้นฉบับไอโฟน เส้นคั่นใต้ "ขึ้น ๔ ค่ำ" ยาว 754 สว่างกว่าเส้นดวง (523) */
+function srPickSquare_(vx, hy) {
+  var best = null, i, j, a, b;
+  var pairs = function (c) {
+    var out = [];
+    for (i = 0; i < c.length; i++) for (j = i + 1; j < c.length; j++) {
+      var gap = Math.abs(c[j].pos - c[i].pos);
+      if (gap < 30) continue;
+      var la = c[i].len, lb = c[j].len;
+      if (Math.min(la, lb) < Math.max(la, lb) * 0.85) continue;
+      out.push({ p1: Math.min(c[i].pos, c[j].pos), p2: Math.max(c[i].pos, c[j].pos), gap: gap, len: (la + lb) / 2 });
+    }
+    return out;
+  };
+  var X = pairs(vx.cand || []), Y = pairs(hy.cand || []);
+  for (a = 0; a < X.length; a++) for (b = 0; b < Y.length; b++) {
+    var gx = X[a].gap, gy = Y[b].gap;
+    if (Math.abs(gx - gy) > 0.12 * Math.max(gx, gy)) continue;
+    if (Math.min(X[a].len, Y[b].len) < Math.max(X[a].len, Y[b].len) * 0.85) continue;
+    var sc = X[a].len + Y[b].len;
+    if (!best || sc > best.sc) best = { sc: sc, x: X[a], y: Y[b] };
+  }
+  return best;
 }
 
 /** เรขาคณิตของดวง: เส้นตาราง x1,x2,y1,y2 · ศูนย์กลาง · รัศมี */
 function srGeom_(img) {
   var vx = srLines_(img, 'x'), hy = srLines_(img, 'y');
-  if (vx.lines.length < 2 || hy.lines.length < 2) return null;
-  var x1 = vx.lines[0], x2 = vx.lines[1], y1 = hy.lines[0], y2 = hy.lines[1];
+  var sq = srPickSquare_(vx, hy);
+  if (!sq) return null;
+  var x1 = sq.x.p1, x2 = sq.x.p2, y1 = sq.y.p1, y2 = sq.y.p2;
   var s = ((x2 - x1) + (y2 - y1)) / 2;
   if (s < 30) return null;
   /* เส้นตารางยาวเท่าคอร์ดของวงกลมพอดี → รัศมี = sqrt((len/2)^2 + (s/2)^2) */
-  var half = Math.max(vx.len, hy.len) / 2;
+  var half = Math.max(sq.x.len, sq.y.len) / 2;
   var R = Math.sqrt(half * half + (s / 2) * (s / 2));
   var g = { x1: x1, x2: x2, y1: y1, y2: y2, s: s, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2, R: R - 4 };
   g.diag = srDiags_(img, g);
@@ -344,6 +373,6 @@ function starRead(img, templates) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { starRead: starRead, srGeom_: srGeom_, srBlobs_: srBlobs_, srFeat_: srFeat_,
+  module.exports = { starRead: starRead, srGeom_: srGeom_, srLines_: srLines_, srPickSquare_: srPickSquare_, srBlobs_: srBlobs_, srFeat_: srFeat_,
                      srRasiAt_: srRasiAt_, srClassify_: srClassify_, srClassifyBlob_: srClassifyBlob_, srRot_: srRot_, SR_RASI: SR_RASI };
 }

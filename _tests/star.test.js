@@ -59,9 +59,9 @@ test('งวดถัดไป: ลาว จ-ศ ก่อน 20:30 · ไท�
 });
 
 test('ดวงที่ใช้ทาย = ดวงวันนั้น ไม่งั้นดวงล่าสุดก่อนหน้า', () => {
-  eq(C.scPickChart_(charts, '2026-10-16').date, '2026-10-15');
-  eq(C.scPickChart_(charts, '2026-10-12').date, '2026-10-12');
-  eq(C.scPickChart_(charts, '2026-09-01'), null);
+  eq(C.scPickChart_(charts, '2026-10-16', 'lao').date, '2026-10-15');
+  eq(C.scPickChart_(charts, '2026-10-12', 'lao').date, '2026-10-12');
+  eq(C.scPickChart_(charts, '2026-09-01', 'lao'), null);
 });
 
 test('เลขเสีย: คู่ศัตรู 2-5 ในกรกฎ (5 ต.ค.) ถูกจับ', () => {
@@ -199,4 +199,36 @@ test('stResult_ หวยไทย 6 หลัก → 4 ตัวบน = 4 ต�
   eq(merged[0], ['2026-10-01', 'งวด 1 ตุลาคม 2569', '2701', '70', '402701', '791/912', '058/396']);
   g.stResult_('thai', '2026-10-01', '2701', '70');
   eq(merged.length, 1, 'ส่งมา 4 หลัก = ไม่แตะคอลัมน์รางวัลที่ 1');
+});
+
+/* ---------------- รอบ 3: ดวงแยกชนิด · เส้นหลอก · กรอกผล ---------------- */
+test('วันที่ 1/16 มีดวงไทย 15:30 กับดวงลาว 20:20 — ทายหวยไหนหยิบดวงชนิดนั้น', () => {
+  const th = { date: '2026-10-16', kind: 'thai', rasi: charts[9].rasi, lagna: 10 };
+  const la = { date: '2026-10-16', kind: 'lao', rasi: charts[9].rasi, lagna: 1 };
+  const all = charts.concat([th, la]);
+  eq(C.scPickChart_(all, '2026-10-16', 'thai').lagna, 10);
+  eq(C.scPickChart_(all, '2026-10-16', 'lao').lagna, 1);
+  eq(C.scPickChart_(charts.concat([th]), '2026-10-16', 'lao').date, '2026-10-16', 'ไม่มีดวงลาววันนั้น = ยืมดวงไทยวันเดียวกันได้');
+  ok(C.scFits_({ kind: '' }, 'lao') && !C.scFits_({ kind: 'thai' }, 'lao'));
+});
+
+test('วัดย้อนหลังลาวไม่เอาดวงไทยมานับ', () => {
+  const th = TH.map((c) => Object.assign({ kind: 'thai' }, c));
+  eq(C.scBacktest_('lao', charts.concat(th), lao).rows.length, 10);
+});
+
+test('งวดล่าสุด/งวดที่ยังไม่กรอก (ลาวก่อน 20:30 = ยังไม่ออก)', () => {
+  eq(C.scLastDraw_('lao', new Date('2026-10-16T05:00:00Z')), '2026-10-15');   /* ศ. 12:00 */
+  eq(C.scLastDraw_('lao', new Date('2026-10-16T14:00:00Z')), '2026-10-16');   /* ศ. 21:00 */
+  eq(C.scLastDraw_('thai', new Date('2026-10-16T05:00:00Z')), '2026-10-01');
+  eq(C.scLastDraw_('thai', new Date('2026-10-16T10:00:00Z')), '2026-10-16');
+  eq(C.scMissingDraws_('lao', lao, 10, new Date('2026-10-16T14:00:00Z')), ['2026-10-16']);
+});
+
+test('ตัวอ่านเลือกคู่เส้นที่เป็นจัตุรัส ไม่หลงเส้นคั่นที่ยาวกว่า (รูปต้นฉบับไอโฟน 16 ต.ค. 69)', () => {
+  const vx = { cand: [{ pos: 377, len: 523 }, { pos: 494, len: 522 }, { pos: 31, len: 1250 }, { pos: 839, len: 1250 }] };
+  const hy = { cand: [{ pos: 516, len: 754 }, { pos: 968, len: 522 }, { pos: 1087, len: 522 }] };
+  const sq = R.srPickSquare_(vx, hy);
+  eq([sq.x.p1, sq.x.p2, sq.y.p1, sq.y.p2], [377, 494, 968, 1087]);
+  eq(R.srPickSquare_({ cand: [{ pos: 31, len: 900 }] }, hy), null);
 });
