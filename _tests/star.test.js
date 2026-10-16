@@ -88,8 +88,8 @@ test('ทำนายคืนครบทุกหลัก + เลขชุ�
   pr.sets.forEach((s) => ok(s.list.length === 6 && s.list.every((n) => /^\d+$/.test(n))));
   const pt = C.scPredict_('thai', charts[9], '2026-10-16', thai, null);
   eq(pt.pos.map((p) => p.name), ['พัน', 'ร้อย', 'สิบ', 'หน่วย', 'ล่างสิบ', 'ล่างหน่วย']);
-  eq(pt.sets.map((s) => s.name), ['4 ตัวบน', '2 ตัวล่าง'], 'ไทยคิดแค่ 4 ตัวบน + 2 ตัวล่าง');
-  ok(pt.sets[0].list.every((n) => n.length === 4) && pt.sets[1].list.every((n) => n.length === 2));
+  eq(pt.sets.map((s) => s.name), ['4 ตัวบน', '3 ตัวบน', '2 ตัวล่าง'], 'ไทยคิดจาก 4 ตัวบน + 2 ตัวล่าง · โชว์ 3 ตัวบนด้วย');
+  ok(pt.sets[0].list.every((n) => n.length === 4) && pt.sets[1].list.every((n) => n.length === 3) && pt.sets[2].list.every((n) => n.length === 2));
 });
 
 test('น้ำหนักไม่โกงอนาคต: วัดก่อนดวงแรก = ไม่มีข้อมูล ทุกวิธีเท่าสุ่ม', () => {

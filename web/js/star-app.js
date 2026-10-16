@@ -175,7 +175,7 @@ function viewPredict_() {
   var chipRow = function (st, cls) {
     var lbl = st.name;
     if (kind === 'lao' && st.name === '2 ตัวล่าง') lbl += ' · หลักพัน-ร้อย';
-    if (kind === 'lao' && st.name === '3 ตัวบน') lbl += ' · หลักร้อย-สิบ-หน่วย';
+    if (st.name === '3 ตัวบน') lbl += ' · หลักร้อย-สิบ-หน่วย';
     if (kind === 'lao' && st.name === '2 ตัวบน') lbl += ' · หลักสิบ-หน่วย';
     return '<div class="set"><div class="lbl">' + esc(lbl) + '</div><div class="chips">' +
       st.list.map(function (n, k) { return '<span class="chip ' + cls + (k === 0 ? ' first' : '') + '">' + n + '</span>'; }).join('') + '</div></div>';
