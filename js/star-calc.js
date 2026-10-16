@@ -233,9 +233,21 @@ function scPosMethods_(kind, iso, results) {
 }
 
 /* ---------------- บริบทของงวด ---------------- */
+/** จันทรคติของวันออก: ดวงวันเดียวกัน = ใช้ตามรูป · ดวงคนละวัน = เลื่อนตามจำนวนวัน
+    (ของเดิมใช้ค่ำของวันดวง ทายวันถัดไปเลยผิดไป 1 ค่ำ) — เทียบค่าเดาของ 2 วัน แล้วแก้ส่วนต่างด้วยค่าจริงในรูป */
+function scLunarFor_(chart, iso) {
+  var p = scLunarParse_(chart.lunar);
+  if (!p) return scLunarGuess_(iso);
+  if (!chart.date || chart.date === iso) return p;
+  var gc = scLunarGuess_(chart.date), gi = scLunarGuess_(iso);
+  var corr = gc.side === p.side ? p.day - gc.day : 0;
+  var month = p.month ? ((p.month - 1 + ((gi.month - gc.month) % 12 + 12) % 12) % 12) + 1 : gi.month;
+  return { side: gi.side, day: Math.max(1, Math.min(15, gi.day + (gi.side === gc.side ? corr : 0))), month: month };
+}
+
 function scCtx_(kind, chart, iso, results) {
   var wd = scWd_(iso), night = SC_KIND[kind].night;
-  var lunar = scLunarParse_(chart.lunar) || scLunarGuess_(chart.date || iso);
+  var lunar = scLunarFor_(chart, iso);
   return { kind: kind, chart: chart, iso: iso, wd: wd, night: night, lunar: lunar,
            dayStar: scDayStar_(wd, night), results: results || {} };
 }
@@ -263,7 +275,8 @@ function scDead_(ctx) {
     }
   });
   var br = scDayBranch_(ctx.iso), cl = (br + 6) % 12;
-  dead.push({ d: String((cl + 1) % 10), w: 0.5, why: 'วัน' + SC_ZOD[br] + ' ชง' + SC_ZOD[cl] + ' (เลข' + SC_ZOD[cl] + ' = ' + (cl + 1) + ')' });
+  var zn = cl + 1, zd = String(zn % 10);   /* ชวด 1 … ระกา 10 จอ 11 กุน 12 → ใช้หลักหน่วย (0/1/2) */
+  dead.push({ d: zd, w: 0.5, why: 'วัน' + SC_ZOD[br] + ' ชง' + SC_ZOD[cl] + ' (' + SC_ZOD[cl] + ' = ลำดับ ' + zn + (zn >= 10 ? ' → เลข ' + zd : '') + ')' });
   return dead;
 }
 
@@ -272,35 +285,64 @@ function scDead_(ctx) {
  * วัดว่าแต่ละวิธีเข้าแต่ละหลักแค่ไหน จากดวงที่มีผลออกวันเดียวกัน (ก่อน untilIso)
  * w = (คะแนนที่ตกตรงเลขจริง + 1) / (คะแนนที่คาดว่าจะตกถ้าสุ่ม + 1) · 1 = เท่าสุ่ม
  */
-function scWeights_(kind, charts, results, untilIso) {
-  var npos = SC_KIND[kind].pos.length, acc = {}, n = 0;
-  SC_METHODS.forEach(function (m) { acc[m[0]] = []; for (var p = 0; p < npos; p++) acc[m[0]].push({ hit: 0, exp: 0, top: 0, k: 0 }); });
-  (charts || []).forEach(function (c) {
-    if (untilIso && c.date >= untilIso) return;
-    if (!scFits_(c, kind)) return;
-    var real = results[c.date];
-    if (!real) return;
-    n++;
-    var all = scAllMethods_(scCtx_(kind, c, c.date, results));
-    SC_METHODS.forEach(function (m) {
-      for (var p = 0; p < npos; p++) {
-        var bag = all[m[0]][p] || {}, tot = 0, best = null;
-        Object.keys(bag).forEach(function (d) { tot += bag[d].s; if (!best || bag[d].s > bag[best].s) best = d; });
-        var a = acc[m[0]][p];
-        a.hit += bag[real[p]] ? bag[real[p]].s : 0;
-        a.exp += tot / 10;
-        if (best !== null) { a.k++; if (best === real[p]) a.top++; }
-      }
-    });
+function scAccNew_(kind) {
+  var npos = SC_KIND[kind].pos.length, acc = { n: 0, m: {} };
+  SC_METHODS.forEach(function (m) { acc.m[m[0]] = []; for (var p = 0; p < npos; p++) acc.m[m[0]].push({ hit: 0, exp: 0, top: 0, k: 0 }); });
+  return acc;
+}
+/** เติมผลของดวง 1 ใบเข้าตัวสะสม */
+function scAccAdd_(acc, kind, c, results) {
+  var real = results[c.date], npos = SC_KIND[kind].pos.length;
+  acc.n++;
+  var all = scAllMethods_(scCtx_(kind, c, c.date, results));
+  SC_METHODS.forEach(function (m) {
+    for (var p = 0; p < npos; p++) {
+      var bag = all[m[0]][p] || {}, tot = 0, best = null;
+      Object.keys(bag).forEach(function (d) { tot += bag[d].s; if (!best || bag[d].s > bag[best].s) best = d; });
+      var a = acc.m[m[0]][p];
+      a.hit += bag[real[p]] ? bag[real[p]].s : 0;
+      a.exp += tot / 10;
+      if (best !== null) { a.k++; if (best === real[p]) a.top++; }
+    }
   });
+}
+function scAccOut_(acc) {
   var w = {};
   SC_METHODS.forEach(function (m) {
-    w[m[0]] = acc[m[0]].map(function (a) {
+    w[m[0]] = acc.m[m[0]].map(function (a) {
       var v = (a.hit + 1) / (a.exp + 1);
       return { w: Math.max(0.3, Math.min(3, v)), hit: a.hit, exp: a.exp, top: a.top, k: a.k };
     });
   });
-  return { n: n, w: w };
+  return { n: acc.n, w: w };
+}
+/** ดวงที่ใช้วัดได้ (ชนิดตรง + มีผลวันนั้น) เรียงเก่า→ใหม่ */
+function scGraded_(kind, charts, results) {
+  return (charts || []).filter(function (c) { return scFits_(c, kind) && results[c.date]; })
+    .sort(function (a, b) { return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
+}
+
+function scWeights_(kind, charts, results, untilIso) {
+  var acc = scAccNew_(kind);
+  scGraded_(kind, charts, results).forEach(function (c) {
+    if (untilIso && c.date >= untilIso) return;
+    scAccAdd_(acc, kind, c, results);
+  });
+  return scAccOut_(acc);
+}
+
+/** น้ำหนัก "ณ ก่อนวันนั้น" ของทุกดวง ในรอบเดียว — ของเดิมคิดใหม่จากศูนย์ทุกดวง (ช้าแบบกำลังสอง ร้อยดวงมือถือค้าง)
+    คืน { date: weights } โดยดวงวันเดียวกันใช้น้ำหนักชุดเดียวกัน (ไม่เห็นผลของกันและกัน) */
+function scWeightsSeq_(kind, charts, results) {
+  var acc = scAccNew_(kind), out = {}, list = scGraded_(kind, charts, results), i = 0;
+  while (i < list.length) {
+    var d = list[i].date;
+    out[d] = scAccOut_(acc);
+    var j = i;
+    while (j < list.length && list[j].date === d) { scAccAdd_(acc, kind, list[j], results); j++; }
+    i = j;
+  }
+  return out;
 }
 
 /* ---------------- ทำนาย ---------------- */
@@ -391,11 +433,10 @@ function scDoubleRate_(kind, results, iso) {
 /** วัดย้อนหลังแบบไม่โกง: ทายดวงวันไหน ใช้น้ำหนักจากดวงก่อนวันนั้นเท่านั้น */
 function scBacktest_(kind, charts, results) {
   var npos = SC_KIND[kind].pos.length, rows = [], top1 = 0, top3 = 0, cnt = 0;
-  (charts || []).slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (c) {
-    if (!scFits_(c, kind)) return;
+  var seq = scWeightsSeq_(kind, charts, results);
+  scGraded_(kind, charts, results).forEach(function (c) {
     var real = results[c.date];
-    if (!real) return;
-    var w = scWeights_(kind, charts, results, c.date);
+    var w = seq[c.date];
     var pr = scPredict_(kind, c, c.date, results, w);
     var marks = [];
     for (var p = 0; p < npos; p++) {
@@ -410,7 +451,7 @@ function scBacktest_(kind, charts, results) {
       var want = SC_KIND[kind].sets.filter(function (x) { return x[0] === s.name; })[0][1].map(function (i) { return real[i]; }).join('');
       return { name: s.name, want: want, hit: s.list.indexOf(want) >= 0 };
     });
-    rows.push({ date: c.date, real: real.join(''), marks: marks, sets: setHits, run: pr.run,
+    rows.push({ date: c.date, chart: c, pr: pr, w: w, real: real.join(''), marks: marks, sets: setHits, run: pr.run,
                 runHit: pr.run.some(function (x) { return real.indexOf(x) >= 0; }) });
   });
   return { rows: rows, top1: top1, top3: top3, n: cnt };
@@ -516,6 +557,6 @@ if (typeof module !== 'undefined') {
   module.exports = { SC_KIND: SC_KIND, SC_PL: SC_PL, SC_RASI: SC_RASI, SC_METHODS: SC_METHODS,
     scWd_: scWd_, scDayBranch_: scDayBranch_, scLunarGuess_: scLunarGuess_, scLunarParse_: scLunarParse_,
     scDayStar_: scDayStar_, scKalakini_: scKalakini_, scResultMap_: scResultMap_, scMethods_: scMethods_,
-    scWeights_: scWeights_, scPredict_: scPredict_, scBacktest_: scBacktest_, scStats_: scStats_,
+    scWeights_: scWeights_, scWeightsSeq_: scWeightsSeq_, scLunarFor_: scLunarFor_, scPredict_: scPredict_, scBacktest_: scBacktest_, scStats_: scStats_,
     scNextDraw_: scNextDraw_, scPickChart_: scPickChart_, scFits_: scFits_, scIsDraw_: scIsDraw_, scLastDraw_: scLastDraw_, scMissingDraws_: scMissingDraws_, scAddDays_: scAddDays_, scDead_: scDead_, scCtx_: scCtx_, scLunarText_: scLunarText_ };
 }
