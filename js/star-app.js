@@ -370,12 +370,13 @@ function viewUpload_() {
     '<label class="fld">ดวงนี้ใช้กับ<select id="f_kind"><option value="lao"' + (d.kind === 'lao' ? ' selected' : '') + '>หวยลาว (แคปเวลา 20:25)</option>' +
       '<option value="thai"' + (d.kind === 'thai' ? ' selected' : '') + '>หวยไทย (แคปเวลา 15:45)</option></select></label>' +
     '<label class="fld">เวลาในรูปปฏิทิน<input type="time" id="f_time" value="' + esc(d.time || '') + '"></label>' +
-    '<label class="fld">เลขกลางดวง (เช่น 27/24)<input id="f_center" inputmode="numeric" value="' + esc(d.center) + '"></label>' +
+    '<label class="fld">เลขกลางดวง (พิมพ์ 2724 ได้ 27/24)<input id="f_center" inputmode="numeric" maxlength="5" value="' + esc(d.center) + '"></label>' +
     '<label class="fld">จันทรคติ<input id="f_lunar" value="' + esc(d.lunar) + '"></label>' +
     '<label class="fld">ดาวย้ายวันนี้<select id="f_moved"><option value="">ไม่มีดาวย้าย</option>' +
       PL_ORDER.map(function (x) { var v = SC_PL[x] + ' ย้าย'; return '<option' + (d.moved.indexOf(SC_PL[x]) === 0 ? ' selected' : '') + ' value="' + esc(v) + '">' + esc(SC_PL[x]) + ' ย้าย</option>'; }).join('') + '</select></label>' +
     '</div>' +
-    '<label class="fld" style="margin-top:8px">สถานะในแอป (เช่น ดาวเกษตร มี)<input id="f_special" value="' + esc(d.special) + '"></label>' +
+    statPicker_(d.special) +
+    '<label class="fld" style="margin-top:8px">สถานะดาว (กดเลขด้านบน หรือพิมพ์เองก็ได้)<input id="f_special" value="' + esc(d.special) + '"></label>' +
     '<label class="fld" style="margin-top:8px">หมายเหตุ<input id="f_note" value="' + esc(d.note) + '"></label>' +
     '<button class="btn" id="save"' + (missing.length || open ? ' disabled' : '') + '>' + (open ? 'ตอบตัวเลขด้านบนให้ครบก่อน' : 'เก็บดาวนี้') + '</button>' +
     '<button class="btn ghost" id="cancel">ยกเลิก</button></div>');
@@ -486,6 +487,40 @@ function gotRead_(r, diag) {
   $('manual2').onclick = function (e) { e.preventDefault(); S.draft = blankDraft_(iso); render_(); };
 }
 
+/* สถานะดาวในแอปต้นทาง (เช่น "ดาวเกษตร 2,6,8 นิจ 1,3") — เจ้าของสั่งให้กดเลือกเลขได้ ไม่ต้องพิมพ์
+   ชื่อยาวต้องจับก่อนชื่อสั้น ไม่งั้น "อุจ" กิน "อุจจาภิมุข" */
+var ST_STAT = ['เกษตร', 'อุจ', 'นิจ', 'ประ', 'อุจจาภิมุข', 'นิจจาภิมุข', 'ประกิณโชค', 'จตุสดัย'];
+function statParse_(s) {
+  var m = {}, rest = String(s || '');
+  ST_STAT.slice().sort(function (a, b) { return b.length - a.length; }).forEach(function (n) {
+    var re = new RegExp('(?:ดาว)?' + n + '[ :]*([0-9][0-9 ,]*)');
+    var hit = rest.match(re);
+    if (!hit) return;
+    m[n] = PL_ORDER.filter(function (x) { return hit[1].indexOf(x) >= 0; });
+    rest = rest.replace(hit[0], ' ');
+  });
+  return m;
+}
+function statText_(m) {
+  return ST_STAT.filter(function (n) { return m[n] && m[n].length; })
+    .map(function (n) { return (n === 'เกษตร' ? 'ดาวเกษตร' : n) + ' ' + m[n].join(','); }).join(' ');
+}
+function statPicker_(s) {
+  var m = statParse_(s), h = ['<div class="stat" style="margin-top:10px"><div class="muted">สถานะดาว — กดเลขดาวที่แอปบอก (กดซ้ำ = เอาออก)</div>'];
+  ST_STAT.forEach(function (n) {
+    h.push('<div class="srow"><b>' + esc(n) + '</b><div class="chips">' + PL_ORDER.map(function (x) {
+      return '<button type="button" class="chip pick' + ((m[n] || []).indexOf(x) >= 0 ? ' on' : '') + '" data-st="' + esc(n) + '" data-x="' + x + '">' + x + '</button>';
+    }).join('') + '</div></div>');
+  });
+  h.push('</div>');
+  return h.join('');
+}
+/* เลขกลางดวง: ปุ่มตัวเลขไอโฟนไม่มี "/" → พิมพ์รวด 4 ตัว ใส่ "/" ให้เองหลัง 2 ตัวแรก */
+function centerFmt_(v) {
+  var t = String(v || '').replace(/\D/g, '').slice(0, 4);
+  return t.length > 2 ? t.slice(0, 2) + '/' + t.slice(2) : t;
+}
+
 function defaultChartDate_() {
   var t = todayIso(), have = {};
   charts_().forEach(function (c) { have[c.date] = 1; });
@@ -498,6 +533,20 @@ function bindUpload_() {
   var man = $('manual');
   if (man) man.onclick = function (e) { e.preventDefault(); S.draft = blankDraft_(defaultChartDate_()); render_(); };
   if (!S.draft) return;
+  var cen = $('f_center');
+  if (cen) cen.oninput = function () { cen.value = centerFmt_(cen.value); };
+  Array.prototype.forEach.call(document.querySelectorAll('button[data-st]'), function (el) {
+    el.onclick = function () {
+      el.classList.toggle('on');
+      var m = {};
+      Array.prototype.forEach.call(document.querySelectorAll('button[data-st].on'), function (x) {
+        var n = x.getAttribute('data-st'); (m[n] = m[n] || []).push(x.getAttribute('data-x'));
+      });
+      $('f_special').value = statText_(m);
+    };
+  });
+  var sp = $('f_special');
+  if (sp) sp.onchange = function () { S.draft.special = sp.value.trim(); syncFields_(); render_(); };
   Array.prototype.forEach.call(document.querySelectorAll('select[data-pl]'), function (el) {
     el.onchange = function () {
       syncFields_();
