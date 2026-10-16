@@ -1,4 +1,4 @@
-/* star-app.js — หน้าแกะดาว: ทำนาย / ส่งดวง / สถิติ / บันทึก
+/* star-app.js — หน้าแกะดาว: ทำนาย / ส่งดาว / สถิติ / บันทึก
    ข้อมูล: ?p=star (ดวงทั้งหมด + ผลลาว/ไทยจากชีตบอท) · เขียน: POST starsave/stardel/starresult
    คำนวณทั้งหมดในเครื่อง (star-calc.js) — เปิดแอปเห็นของจากแคชทันที ไม่ต้องรอเน็ต */
 'use strict';
@@ -111,10 +111,11 @@ function drawDateList_(kind) {
   }
   return out;
 }
-/** วันของดวง: ล่วงหน้า 7 วัน ถึงย้อนหลัง 60 วัน */
+/** วันของดวง: ล่วงหน้า 45 วัน ถึงย้อนหลัง 60 วัน — เจ้าของแคปดวงงวดหน้าไว้ก่อนได้ (เช่น ส่งของ 1 พ.ย. ตั้งแต่ 16 ต.ค.)
+    เดิมล่วงหน้าแค่ 7 วัน เลือกวันจริงไม่ได้ ดวงเลยไปทับดวงวันนี้ */
 function chartDateList_(sel) {
   var out = [], t = todayIso();
-  for (var i = -7; i <= 60; i++) out.push(scAddDays_(t, -i));
+  for (var i = -45; i <= 60; i++) out.push(scAddDays_(t, -i));
   return out;
 }
 
@@ -207,7 +208,7 @@ function helpCard_(kind) {
 
     '<b>6. แยกวิธีค้น</b>' +
     '<div>• 10 วิธีจากสูตรแกะดาว แต่ละวิธีให้เลขอะไร เพราะอะไร</div>' +
-    '<div>• <b>×น้ำหนัก</b> = วิธีนี้แม่นแค่ไหนในหลักนั้น วัดจากดวงที่ผ่านมาเทียบผลจริง (×1 = เท่าสุ่ม · มากกว่า 1 = แม่นกว่าสุ่ม) · ยิ่งส่งดวงมาก ตัวเลขยิ่งเชื่อได้</div>' +
+    '<div>• <b>×น้ำหนัก</b> = วิธีนี้แม่นแค่ไหนในหลักนั้น วัดจากดวงที่ผ่านมาเทียบผลจริง (×1 = เท่าสุ่ม · มากกว่า 1 = แม่นกว่าสุ่ม) · ยิ่งส่งดาวมาก ตัวเลขยิ่งเชื่อได้</div>' +
 
     '<b>7. ดาวที่ใช้</b>' +
     '<div>• วงดวงเหมือนแอปปฏิทินโหร: เลขไทย ๑-๙ ๐ = ดาว · <span class="up">ล</span> = ลัคนา · กลางวง = เลขกลางดวง · วงฟ้า = ดาวประจำวัน · เวลา = เวลาที่แคปรูป</div>' +
@@ -227,14 +228,14 @@ function helpCard_(kind) {
 function viewPredict_() {
   var kind = S.kind, K = SC_KIND[kind], iso = scNextDraw_(kind), charts = charts_();
   var chart = scPickChart_(charts, iso, kind);
-  if (!chart) return '<div class="card hero"><div class="d">ยังไม่มีดวงให้คำนวณ</div><div class="muted">แคปหน้าปฏิทินโหรของวันนี้ แล้วส่งที่แท็บ "ส่งดวง"</div></div>';
+  if (!chart) return '<div class="card hero"><div class="d">ยังไม่มีดวงให้คำนวณ</div><div class="muted">แคปหน้าปฏิทินโหรของวันนี้ แล้วส่งที่แท็บ "ส่งดาว"</div></div>';
   var res = results_(kind), w = scWeights_(kind, charts, res, iso);
   var pr = scPredict_(kind, chart, iso, res, w);
   var h = [helpCard_(kind)];
   h.push('<div class="card hero"><div class="k">' + esc(K.name) + ' · งวดถัดไป</div><div class="d">' + esc(thDate(iso)) + '</div>' +
          '<div class="meta">ดาวประจำวัน ' + esc(SC_PL[pr.dayStar]) + ' (' + pr.dayStar + ') · ' + esc(scLunarText_(pr.lunar)) + '</div>' +
-         (chart.date !== iso ? '<div class="warn" style="margin-top:6px">ใช้ดวงวันที่ ' + esc(thDate(chart.date)) + ' — ยังไม่ได้ส่งดวงวันออก</div>' :
-          (chart.kind && chart.kind !== kind ? '<div class="warn" style="margin-top:6px">ใช้ดวงของหวย' + (chart.kind === 'lao' ? 'ลาว' : 'ไทย') + 'วันนี้ไปก่อน — ยังไม่ได้ส่งดวงเวลาออกของ' + esc(K.name) + '</div>' : '')) +
+         (chart.date !== iso ? '<div class="warn" style="margin-top:6px">ใช้ดวงวันที่ ' + esc(thDate(chart.date)) + ' — ยังไม่ได้ส่งดาววันออก</div>' :
+          (chart.kind && chart.kind !== kind ? '<div class="warn" style="margin-top:6px">ใช้ดวงของหวย' + (chart.kind === 'lao' ? 'ลาว' : 'ไทย') + 'วันนี้ไปก่อน — ยังไม่ได้ส่งดาวเวลาออกของ' + esc(K.name) + '</div>' : '')) +
          '</div>');
 
   /* ช่องเลขแยกหลัก */
@@ -319,7 +320,7 @@ function whyBox_(p) {
   return h.join('');
 }
 
-/* ---------------- แท็บ: ส่งดวง ---------------- */
+/* ---------------- แท็บ: ส่งดาว ---------------- */
 function blankDraft_(iso) {
   var r = []; for (var i = 0; i < 12; i++) r.push([]);
   var lu = scLunarGuess_(iso);
@@ -542,6 +543,13 @@ function syncFields_() {
 function saveDraft_() {
   syncFields_();
   var d = S.draft, b = $('save');
+  /* กันดวงทับกันเงียบ ๆ: วัน+ชนิดนี้มีดวงอยู่แล้ว และไม่ได้กดแก้ดวงนั้นมา = ถามก่อนเสมอ */
+  var old = charts_().filter(function (c) { return c.date === d.date && (c.kind || '') === d.kind; })[0];
+  if (old && d.editOf !== d.date + '|' + d.kind &&
+      !confirm(thDate(d.date) + ' มีดวง' + SC_KIND[d.kind].name + 'อยู่แล้ว (เวลา ' + chartTime_(old) + ')
+เก็บอันนี้ทับของเดิมไหม?
+
+ถ้าเป็นดวงของวันอื่น กด "ยกเลิก" แล้วเปลี่ยน "วันที่ของดวง" ก่อน')) return;
   b.disabled = true; b.textContent = 'กำลังเก็บ…';
   var chart = { date: d.date, kind: d.kind, time: d.time, rasi: d.rasi, lagna: d.lagna, center: d.center, lunar: d.lunar, moved: d.moved, special: d.special, note: d.note };
   starPost_('starsave', { chart: chart }).then(function (r) {
@@ -720,7 +728,7 @@ function viewLog_() {
   h.push(resultsFold_(kind, res));
   h.push(historyFold_(kind, res));
   h.push('<details class="card fold"><summary><h3>บันทึกปฏิทิน 100 ปี<span class="sub">ดวง' + esc(K.name) + ' ' + charts.length + ' วัน · แตะเพื่อเปิด</span></h3></summary><div class="scrollbox">');
-  if (!charts.length) h.push('<div class="muted">ยังไม่มีดวงของ' + esc(K.name) + ' — ส่งรูปที่แท็บ "ส่งดวง"</div>');
+  if (!charts.length) h.push('<div class="muted">ยังไม่มีดวงของ' + esc(K.name) + ' — ส่งรูปที่แท็บ "ส่งดาว"</div>');
   charts.forEach(function (c) {
     var r = res[c.date], key = c.date + '|' + (c.kind || '');
     var sum = c.rasi.map(function (cell, i) { return cell.length ? SC_RASI[i] + ' ' + cell.join('') : ''; }).filter(String).join(' · ');
@@ -778,7 +786,7 @@ function bindLog_() {
       var c = charts_().filter(function (x) { return x.date === key[0] && (x.kind || '') === (key[1] || ''); })[0];
       if (!c) return;
       S.draft = { date: c.date, kind: c.kind || S.kind, time: chartTime_(c), rasi: c.rasi.map(function (x) { return x.slice(); }), lagna: c.lagna, center: c.center || '', lunar: c.lunar || '',
-                  moved: c.moved || '', special: c.special || '', note: c.note || '', read: null };
+                  moved: c.moved || '', special: c.special || '', note: c.note || '', read: null, editOf: c.date + '|' + (c.kind || '') };
       S.tab = 'upload'; render_();
     };
   });
@@ -826,10 +834,10 @@ function restoreInputs_(keep) {
 }
 
 function render_() {
-  /* แท็บส่งดวงเก็บสถานะใน S.draft อยู่แล้ว (restore ทับจะกลบค่าที่ฟอร์มคำนวณใหม่ เช่น จันทรคติตอนเปลี่ยนวัน) */
+  /* แท็บส่งดาวเก็บสถานะใน S.draft อยู่แล้ว (restore ทับจะกลบค่าที่ฟอร์มคำนวณใหม่ เช่น จันทรคติตอนเปลี่ยนวัน) */
   var keep = (render_.tab === S.tab && render_.kind === S.kind && S.tab !== 'upload') ? keepInputs_() : {};
   render_.tab = S.tab; render_.kind = S.kind;
-  /* ดูอย่างเดียว: ไม่มีแท็บส่งดวง · แท็บกรอกผลกลายเป็น "ผล" */
+  /* ดูอย่างเดียว: ไม่มีแท็บส่งดาว · แท็บกรอกผลกลายเป็น "ผล" */
   var navUp = document.querySelector('#nav a[data-t="upload"]'), navLog = document.querySelector('#nav a[data-t="log"]');
   if (navUp) navUp.style.display = ro_() ? 'none' : '';
   if (navLog) navLog.innerHTML = '<b>☰</b>' + (ro_() ? 'ผลย้อนหลัง' : 'กรอกผล');
