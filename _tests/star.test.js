@@ -263,3 +263,14 @@ test('สถิติ 10 งวด: ดับ = เลขที่ออกน�
     p.hot.forEach((d) => ok(p.cnt[d] > 1, p.name + ' เด่นต้องออกเกิน 1 ครั้งใน 10 งวด'));
   });
 });
+
+test('เวลาของรูปปฏิทินเก็บ/อ่านกลับได้ (ลาว 20:20 · ไทย 15:30) ชีตแปลงเป็นเวลาก็ยังอ่านถูก', () => {
+  const g = loadGas(['gas/LotStar.gs'], { lotIso_: (v) => String(v).slice(0, 10), nowIso_: () => 'x',
+    Utilities: { formatDate: (d) => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') } });
+  const c = g.stClean_({ date: '2026-10-16', kind: 'lao', time: '20:20', rasi: charts[9].rasi });
+  eq(c.time, '20:20');
+  eq(g.stParse_(g.stRowOf_(c)).time, '20:20');
+  eq(g.stClean_({ date: '2026-10-16', time: 'บ่าย', rasi: charts[9].rasi }).time, '');
+  eq(g.stHm_(new Date(1899, 11, 30, 15, 30)), '15:30');
+  eq(g.stHm_('9:05'), '09:05');
+});

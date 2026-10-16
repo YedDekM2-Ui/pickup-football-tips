@@ -17,7 +17,7 @@ var STAR = {
   SHEET: 'Star_Chart',
   /* ชนิด = lao / thai / '' — วันที่ 1, 16 มีทั้งไทย (ดวง 15:30) และลาว (ดวง 20:20) ลัคนาต่างกัน ต้องเก็บแยก
      แถวเก่าไม่มีคอลัมน์นี้ = '' (ใช้ได้ทั้ง 2 ชนิด) */
-  HEADERS: ['dateISO', 'ราศี', 'ลัคนา', 'กลางดวง', 'จันทรคติ', 'ดาวย้าย', 'สถานะ', 'หมายเหตุ', 'บันทึกเมื่อ', 'ชนิด']
+  HEADERS: ['dateISO', 'ราศี', 'ลัคนา', 'กลางดวง', 'จันทรคติ', 'ดาวย้าย', 'สถานะ', 'หมายเหตุ', 'บันทึกเมื่อ', 'ชนิด', 'เวลา']
 };
 
 /** ตรวจ + ทำความสะอาดดวงที่หน้าเว็บส่งมา — ผิดรูป = โยน error ข้อความไทย */
@@ -46,12 +46,14 @@ function stClean_(c) {
     moved: String(c.moved || '').trim().slice(0, 60),
     special: String(c.special || '').trim().slice(0, 60),
     note: String(c.note || '').trim().slice(0, 300),
-    kind: (c.kind === 'lao' || c.kind === 'thai') ? c.kind : ''
+    kind: (c.kind === 'lao' || c.kind === 'thai') ? c.kind : '',
+    /* เวลาตามรูปปฏิทิน (ลาว 20:20 · ไทย 15:30) — ลัคนา/กลางดวงขึ้นกับเวลานี้ */
+    time: /^\d{1,2}:\d{2}$/.test(String(c.time || '').trim()) ? String(c.time).trim() : ''
   };
 }
 
 function stRowOf_(c) {
-  return [c.date, JSON.stringify(c.rasi), String(c.lagna), c.center, c.lunar, c.moved, c.special, c.note, nowIso_(), c.kind];
+  return [c.date, JSON.stringify(c.rasi), String(c.lagna), c.center, c.lunar, c.moved, c.special, c.note, nowIso_(), c.kind, c.time];
 }
 
 /** แถวชีต → ดวง (อ่านกลับให้ทนทุกแบบ วันที่อาจกลับมาเป็น Date) */
@@ -62,8 +64,15 @@ function stParse_(r) {
   return {
     date: lotIso_(r[0]), rasi: rasi, lagna: Number(r[2]), center: String(r[3] || ''),
     lunar: String(r[4] || ''), moved: String(r[5] || ''), special: String(r[6] || ''),
-    note: String(r[7] || ''), saved: String(r[8] || ''), kind: String(r[9] || '')
+    note: String(r[7] || ''), saved: String(r[8] || ''), kind: String(r[9] || ''), time: stHm_(r[10])
   };
+}
+
+/** ช่องเวลาอาจถูกชีตแปลงเป็น Date (เวลาล้วน = วันที่ 30 ธ.ค. 1899) → คืน 'HH:mm' เสมอ */
+function stHm_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') return Utilities.formatDate(v, 'Asia/Bangkok', 'HH:mm');
+  var m = /^(\d{1,2}):(\d{2})/.exec(String(v == null ? '' : v).trim());
+  return m ? (m[1].length < 2 ? '0' : '') + m[1] + ':' + m[2] : '';
 }
 
 function stCharts_() {

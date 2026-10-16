@@ -87,6 +87,12 @@ function keySheet_() {
 /** ลิงก์ดูอย่างเดียว (ของแม่) — หลังบ้านบอกมาเองใน payload ห้ามเดาจากหน้าเว็บ */
 function ro_() { return !!(S.data && S.data.readOnly); }
 
+/* เวลาหวยออกจริง (เจ้าของบอก 16 ต.ค. 69): ลาว 20:25 · ไทย 2 ตัวล่าง 15:30 · รางวัลที่ 1 15:45
+   ไทยใช้ 15:45 เพราะ 4 ใน 6 หลักที่คำนวณ (4 ตัวบน) มาจากรางวัลที่ 1 */
+var ST_TIME = { lao: '20:25', thai: '15:45' };
+/** เวลาของรูปปฏิทิน — ดวงที่ไม่มีเวลา ใช้เวลามาตรฐานตามชนิด */
+function chartTime_(c) { return (c && c.time) || (c && c.kind === 'thai' ? ST_TIME.thai : ST_TIME.lao); }
+
 function charts_() { return (S.data && S.data.charts) || []; }
 function results_(kind) { return scResultMap_(kind, (S.data && S.data[kind]) || []); }
 
@@ -215,7 +221,7 @@ function viewPredict_() {
   });
   h.push('</div>');
 
-  h.push('<div class="card"><h3>ดวงที่ใช้<span class="sub">' + esc(thDate(chart.date)) + ' · วงฟ้า = ดาวประจำวัน</span></h3><div class="chartbox">' + chartSvg_(chart, { day: pr.dayStar }) + '</div>' +
+  h.push('<div class="card"><h3>ดาวที่ใช้<span class="sub">' + esc(thDate(chart.date)) + ' · ' + esc(chartTime_(chart)) + ' น. · วงฟ้า = ดาวประจำวัน</span></h3><div class="chartbox">' + chartSvg_(chart, { day: pr.dayStar }) + '</div>' +
          (chart.moved || chart.special ? '<div class="muted" style="text-align:center">' + esc([chart.moved, chart.special].filter(String).join(' · ')) + '</div>' : '') + '</div>');
   h.push('<div class="foot">คำนวณตามสูตรแกะดาว + สถิติจริง · ใช้ประกอบการตัดสินใจ ไม่ใช่การันตี</div>');
   return h.join('');
@@ -238,7 +244,7 @@ function whyBox_(p) {
 function blankDraft_(iso) {
   var r = []; for (var i = 0; i < 12; i++) r.push([]);
   var lu = scLunarGuess_(iso);
-  return { date: iso, kind: S.kind, rasi: r, lagna: -1, center: '', lunar: scLunarText_(lu), moved: '', special: '', note: '', read: null, ask: [] };
+  return { date: iso, kind: S.kind, time: ST_TIME[S.kind], rasi: r, lagna: -1, center: '', lunar: scLunarText_(lu), moved: '', special: '', note: '', read: null, ask: [] };
 }
 
 function viewUpload_() {
@@ -281,8 +287,9 @@ function viewUpload_() {
   h.push('</div>');
   h.push('<div class="grid2" style="margin-top:10px">' +
     '<label class="fld">วันที่ของดวง<input type="date" id="f_date" value="' + esc(d.date) + '"></label>' +
-    '<label class="fld">ดวงนี้ใช้กับ<select id="f_kind"><option value="lao"' + (d.kind === 'lao' ? ' selected' : '') + '>หวยลาว (ดวง 20:20)</option>' +
-      '<option value="thai"' + (d.kind === 'thai' ? ' selected' : '') + '>หวยไทย (ดวง 15:30)</option></select></label>' +
+    '<label class="fld">ดวงนี้ใช้กับ<select id="f_kind"><option value="lao"' + (d.kind === 'lao' ? ' selected' : '') + '>หวยลาว (แคปเวลา 20:25)</option>' +
+      '<option value="thai"' + (d.kind === 'thai' ? ' selected' : '') + '>หวยไทย (แคปเวลา 15:45)</option></select></label>' +
+    '<label class="fld">เวลาในรูปปฏิทิน<input type="time" id="f_time" value="' + esc(d.time || '') + '"></label>' +
     '<label class="fld">เลขกลางดวง (เช่น 27/24)<input id="f_center" inputmode="numeric" value="' + esc(d.center) + '"></label>' +
     '<label class="fld">จันทรคติ<input id="f_lunar" value="' + esc(d.lunar) + '"></label>' +
     '<label class="fld">ดาวย้ายวันนี้<select id="f_moved"><option value="">ไม่มีดาวย้าย</option>' +
@@ -431,6 +438,11 @@ function bindUpload_() {
       render_();
     };
   });
+  $('f_kind').onchange = function () {
+    var old = S.draft.kind; syncFields_();
+    if (!S.draft.time || S.draft.time === ST_TIME[old]) S.draft.time = ST_TIME[S.draft.kind];
+    render_();
+  };
   $('f_date').onchange = function () {
     syncFields_();
     var g = scLunarGuess_(S.draft.date); S.draft.lunar = scLunarText_(g); render_();
@@ -443,14 +455,14 @@ function syncFields_() {
   var d = S.draft; if (!d || !$('f_date')) return;
   d.date = $('f_date').value || d.date; d.center = $('f_center').value.trim();
   d.lunar = $('f_lunar').value.trim(); d.moved = $('f_moved').value;
-  d.special = $('f_special').value.trim(); d.note = $('f_note').value.trim(); d.kind = $('f_kind').value;
+  d.special = $('f_special').value.trim(); d.note = $('f_note').value.trim(); d.kind = $('f_kind').value; d.time = $('f_time').value || ST_TIME[d.kind];
 }
 
 function saveDraft_() {
   syncFields_();
   var d = S.draft, b = $('save');
   b.disabled = true; b.textContent = 'กำลังเก็บ…';
-  var chart = { date: d.date, kind: d.kind, rasi: d.rasi, lagna: d.lagna, center: d.center, lunar: d.lunar, moved: d.moved, special: d.special, note: d.note };
+  var chart = { date: d.date, kind: d.kind, time: d.time, rasi: d.rasi, lagna: d.lagna, center: d.center, lunar: d.lunar, moved: d.moved, special: d.special, note: d.note };
   starPost_('starsave', { chart: chart }).then(function (r) {
     if (r && r.ok) {
       toast(r['ทับของเดิม'] ? 'แก้ดวงวันที่ ' + thDate(chart.date) + ' แล้ว' : 'เก็บดวงวันที่ ' + thDate(chart.date) + ' แล้ว');
@@ -590,7 +602,7 @@ function historyFold_(kind, res) {
       var t = p.top.map(function (x) { return x.d; }), m = t[0] === real[i] ? 1 : (t.indexOf(real[i]) >= 0 ? 3 : 0);
       return '<span class="mk' + m + '">' + real[i] + '</span>';
     }).join('');
-    h.push('<details class="hist"><summary><span class="rd">' + esc(thDate(c.date)) + '</span><span class="hm">ออก ' + marks + '</span></summary><div class="hb">');
+    h.push('<details class="hist"><summary><span class="rd">' + esc(thDate(c.date)) + ' · ' + esc(chartTime_(c)) + '</span><span class="hm">ออก ' + marks + '</span></summary><div class="hb">');
     pr.pos.forEach(function (p, i) {
       var t = p.top.map(function (x) { return x.d; }), m = t[0] === real[i] ? 'mk1' : (t.indexOf(real[i]) >= 0 ? 'mk3' : 'mk0');
       h.push('<div class="hp"><b>' + esc(p.name) + '</b> ทาย ' + t.join(' ') + ' · ดับ ' + p.closed.join(' ') + ' · ออก <span class="' + m + '">' + real[i] + '</span>' +
@@ -620,7 +632,7 @@ function viewLog_() {
   charts.forEach(function (c) {
     var r = res[c.date], key = c.date + '|' + (c.kind || '');
     var sum = c.rasi.map(function (cell, i) { return cell.length ? SC_RASI[i] + ' ' + cell.join('') : ''; }).filter(String).join(' · ');
-    var tag = c.kind ? '<span class="ktag">' + (c.kind === 'lao' ? 'ลาว 20:20' : 'ไทย 15:30') + '</span>' : '';
+    var tag = '<span class="ktag">' + (c.kind === 'thai' ? 'ไทย ' : (c.kind === 'lao' ? 'ลาว ' : '')) + esc(chartTime_(c)) + '</span>';
     h.push('<div class="ent"><div><div class="dt">' + esc(thDate(c.date)) + ' ' + tag + '</div><div class="muted">' + esc(c.lunar) + (c.center ? ' · กลาง ' + esc(c.center) : '') + '</div>' +
       '<div class="muted" style="margin-top:3px">' + esc(sum) + '</div>' +
       (ro_() ? '' : '<div class="btns" style="margin-top:8px"><button class="btn ghost" data-edit="' + key + '">แก้ดวง</button><button class="btn ghost" data-del="' + key + '">ลบ</button></div>') + '</div>' +
@@ -663,7 +675,7 @@ function bindLog_() {
       var key = b.getAttribute('data-edit').split('|');
       var c = charts_().filter(function (x) { return x.date === key[0] && (x.kind || '') === (key[1] || ''); })[0];
       if (!c) return;
-      S.draft = { date: c.date, kind: c.kind || S.kind, rasi: c.rasi.map(function (x) { return x.slice(); }), lagna: c.lagna, center: c.center || '', lunar: c.lunar || '',
+      S.draft = { date: c.date, kind: c.kind || S.kind, time: chartTime_(c), rasi: c.rasi.map(function (x) { return x.slice(); }), lagna: c.lagna, center: c.center || '', lunar: c.lunar || '',
                   moved: c.moved || '', special: c.special || '', note: c.note || '', read: null };
       S.tab = 'upload'; render_();
     };
