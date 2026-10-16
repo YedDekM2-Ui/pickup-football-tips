@@ -69,9 +69,9 @@ function refresh_() {
 }
 
 function note_() {
-  var t = S.src === 'สด' ? '<span class="pill live">LIVE</span> อัปเดต ' + esc((S.data.at || '').slice(11, 16)) + ' น.' + (ro_() ? ' · <span class="pill off">ดูอย่างเดียว</span>' : '') :
-          S.src === 'กุญแจ' ? '<span class="pill off">LOCKED</span> ใส่กุญแจก่อน แล้วข้อมูลจะมาเอง' :
-          S.src === 'แคช' ? '<span class="pill off">OFFLINE</span> โชว์ของที่จำไว้ ต่อเน็ตแล้วจะอัปเดตเอง' :
+  var t = S.src === 'สด' ? '<span class="pill live">สด</span> อัปเดต ' + esc((S.data.at || '').slice(11, 16)) + ' น.' + (ro_() ? ' · <span class="pill off">ดูอย่างเดียว</span>' : '') :
+          S.src === 'กุญแจ' ? '<span class="pill off">ล็อกอยู่</span> ใส่กุญแจก่อน แล้วข้อมูลจะมาเอง' :
+          S.src === 'แคช' ? '<span class="pill off">ไม่มีเน็ต</span> โชว์ของที่จำไว้ ต่อเน็ตแล้วจะอัปเดตเอง' :
           '<span class="pill off">…</span> กำลังดูดวงดาว';
   $('note').innerHTML = t;
 }
@@ -92,6 +92,29 @@ function ro_() { return !!(S.data && S.data.readOnly); }
 var ST_TIME = { lao: '20:25', thai: '15:45' };
 /** เวลาของรูปปฏิทิน — ดวงที่ไม่มีเวลา ใช้เวลามาตรฐานตามชนิด */
 function chartTime_(c) { return (c && c.time) || (c && c.kind === 'thai' ? ST_TIME.thai : ST_TIME.lao); }
+
+/* ช่องวันที่แบบไทย (พ.ศ.) — ปฏิทินของไอโฟนโชว์ ค.ศ. และล้นกรอบ เจ้าของสั่งเอาภาษาไทยล้วน */
+function dateSelect_(id, list, sel) {
+  if (list.indexOf(sel) < 0) list = [sel].concat(list);
+  return '<select id="' + id + '">' + list.map(function (d) {
+    return '<option value="' + d + '"' + (d === sel ? ' selected' : '') + '>' + esc(thDate(d)) + '</option>';
+  }).join('') + '</select>';
+}
+/** งวดย้อนหลังของหวยชนิดนี้ (ล่าสุดก่อน) */
+function drawDateList_(kind) {
+  var out = [], d = scLastDraw_(kind);
+  for (var i = 0; i < 400 && out.length < (kind === 'lao' ? 60 : 36); i++) {
+    var x = scAddDays_(d, -i);
+    if (scIsDraw_(kind, x)) out.push(x);
+  }
+  return out;
+}
+/** วันของดวง: ล่วงหน้า 7 วัน ถึงย้อนหลัง 60 วัน */
+function chartDateList_(sel) {
+  var out = [], t = todayIso();
+  for (var i = -7; i <= 60; i++) out.push(scAddDays_(t, -i));
+  return out;
+}
 
 function charts_() { return (S.data && S.data.charts) || []; }
 function results_(kind) { return scResultMap_(kind, (S.data && S.data[kind]) || []); }
@@ -147,6 +170,57 @@ function chartSvg_(c, opt) {
   return o.join('');
 }
 
+/** วิธีดูทุกส่วน — การ์ดพับได้บนสุดของหน้าทำนาย (เจ้าของขอ 16 ต.ค. 69 ให้แม่อ่านเองได้) */
+function helpCard_(kind) {
+  var lao = kind === 'lao';
+  var pos = lao
+    ? '<div>• <b>พัน ร้อย สิบ หน่วย</b> = 4 ตัวของหวยลาว เรียงซ้ายไปขวา เช่น ผล 6261 → พัน 6 · ร้อย 2 · สิบ 6 · หน่วย 1</div>' +
+      '<div>• <span class="up">บน</span> = 3 ตัวบน (ร้อย-สิบ-หน่วย) และ 2 ตัวบน (สิบ-หน่วย) · <span class="lo">ล่าง</span> = 3 ตัวล่าง (พัน-ร้อย-สิบ) และ 2 ตัวล่าง (พัน-ร้อย)</div>' +
+      '<div>• ป้าย <b>บน·ล่าง</b> = หลักนั้นใช้ทั้งชุดบนและชุดล่าง (ร้อย กับ สิบ)</div>'
+    : '<div>• <b>พัน ร้อย สิบ หน่วย</b> = 4 ตัวท้ายของรางวัลที่ 1 (4 ตัวบน) เช่น 402701 → 2 7 0 1</div>' +
+      '<div>• <b>ล่างสิบ ล่างหน่วย</b> = 2 ตัวล่าง (ช่องกรอบประ)</div>' +
+      '<div>• 3 ตัวบน = ร้อย-สิบ-หน่วย · ไม่คำนวณหน้า 3 / ท้าย 3 (โชว์ไว้ดูในแท็บผลย้อนหลังเท่านั้น)</div>';
+  return '<details class="card fold help"><summary><h3>วิธีดูทุกส่วน<span class="sub">แตะเพื่อเปิด</span></h3></summary><div class="howto">' +
+    '<b>1. หัวงวด</b>' +
+    '<div>• วันที่ = งวดถัดไปที่จะออก · ดาวประจำวัน = ดาวของวันที่หวยออก (ลาววันพุธใช้ราหู 8 เพราะออกกลางคืน)</div>' +
+    '<div>• ถ้ามีแถบส้ม "ใช้ดวงวันที่…" = ยังไม่ได้ส่งรูปดวงของวันออก แอปใช้ดวงล่าสุดแทน</div>' +
+
+    '<b>2. เลขแยกหลัก (ช่องสี่เหลี่ยม)</b>' + pos +
+    '<div>• <b>ตัวใหญ่สีทอง</b> = เลขที่คะแนนสูงสุดของหลักนั้น (อันดับ 1)</div>' +
+    '<div>• <b>2 ตัวเล็กใต้</b> = อันดับ 2 และ 3</div>' +
+    '<div>• <span class="bad"><b>ดับ</b></span> = 2 เลขที่คะแนนต่ำสุดของหลักนั้น ตัดทิ้งได้</div>' +
+    '<div>• <b>แตะช่อง</b> = ดูเหตุผล: เลขนี้ได้คะแนนบวกจากวิธีไหน (+) และโดนหักเพราะอะไร (−)</div>' +
+
+    '<b>3. เลขชุด</b>' +
+    '<div>• เอาอันดับต้นๆ ของแต่ละหลักมาประกอบกัน เรียงจากคะแนนรวมมากไปน้อย · กรอบทอง/ฟ้าตัวแรก = ชุดที่คะแนนสูงสุด</div>' +
+    '<div>• กล่อง<span class="up">ทอง = บน</span> · กล่อง<span class="lo">ฟ้า = ล่าง</span> · เลขซ้ำ (เบิ้ล) ถูกลดคะแนน เว้นแต่วันที่ดวงชี้ว่าเบิ้ลแรง</div>' +
+    '<div>• <b>เลขวิ่ง</b> = 2 เลขที่รวมคะแนนทุกหลักแล้วสูงสุด (มีโอกาสโผล่ตำแหน่งไหนก็ได้)</div>' +
+
+    '<b>4. เลขเสีย / เลขดับ</b>' +
+    '<div>• <b>กาลกิณีวัน</b> = เลขดาวที่ให้โทษวันนั้น ดับแรงที่หลักสิบ-หน่วย หลักร้อย-พันยังโผล่ได้</div>' +
+    '<div>• <b>คู่ศัตรู</b> 1-5 · 2-5 · 3-6 · 4-8 อยู่ราศีเดียวกัน = หักทั้งคู่ · <b>ชง</b> = นักษัตรที่ชนกับวันนั้น</div>' +
+
+    '<b>5. แนวโน้มงวดนี้</b>' +
+    '<div>• คู่/คี่ ตามวัน · โอกาสเบิ้ล (ต่ำ/กลาง/สูง) พร้อมเหตุผล · เลขหาม = ดาวที่เล็งกันอยู่หัว-ท้าย ดาวประจำวันอยู่กลาง</div>' +
+
+    '<b>6. แยกวิธีค้น</b>' +
+    '<div>• 10 วิธีจากสูตรแกะดาว แต่ละวิธีให้เลขอะไร เพราะอะไร</div>' +
+    '<div>• <b>×น้ำหนัก</b> = วิธีนี้แม่นแค่ไหนในหลักนั้น วัดจากดวงที่ผ่านมาเทียบผลจริง (×1 = เท่าสุ่ม · มากกว่า 1 = แม่นกว่าสุ่ม) · ยิ่งส่งดวงมาก ตัวเลขยิ่งเชื่อได้</div>' +
+
+    '<b>7. ดาวที่ใช้</b>' +
+    '<div>• วงดวงเหมือนแอปปฏิทินโหร: เลขไทย ๑-๙ ๐ = ดาว · <span class="up">ล</span> = ลัคนา · กลางวง = เลขกลางดวง · วงฟ้า = ดาวประจำวัน · เวลา = เวลาที่แคปรูป</div>' +
+
+    '<b>8. แท็บสถิติ</b>' +
+    '<div>• ตัวเลขใหญ่ = ออกกี่ครั้งในหลักนั้น · ค้าง = ไม่ออกมากี่งวด · <span class="good">กรอบทอง = เด่น</span> · <span class="bad">กรอบแดง = ดับ</span></div>' +
+    '<div>• วัดสูตรกับของจริง: <span class="mk1">เขียว</span> = อันดับ 1 ตรง · <span class="mk3">ส้ม</span> = ติด 3 อันดับ · <span class="mk0">แดง</span> = หลุด · เทียบกับสุ่ม 10% / 30%</div>' +
+
+    '<b>9. แท็บผล</b>' +
+    '<div>• ผลย้อนหลังทุกงวด (พับ/เลื่อนได้) · <b>ทายย้อนหลังพร้อมเหตุผล</b> = แตะงวดไหนก็ได้ ดูว่าตอนนั้นทายอะไร เพราะอะไร ออกจริงอะไร</div>' +
+
+    '<div class="muted" style="margin-top:6px">ทุกอย่างคำนวณจากดวง + ผลจริงในชีตเดียวกัน · ใช้ประกอบการตัดสินใจ ไม่ใช่การันตี</div>' +
+    '</div></details>';
+}
+
 /* ---------------- แท็บ: ทำนาย ---------------- */
 function viewPredict_() {
   var kind = S.kind, K = SC_KIND[kind], iso = scNextDraw_(kind), charts = charts_();
@@ -154,7 +228,7 @@ function viewPredict_() {
   if (!chart) return '<div class="card hero"><div class="d">ยังไม่มีดวงให้คำนวณ</div><div class="muted">แคปหน้าปฏิทินโหรของวันนี้ แล้วส่งที่แท็บ "ส่งดวง"</div></div>';
   var res = results_(kind), w = scWeights_(kind, charts, res, iso);
   var pr = scPredict_(kind, chart, iso, res, w);
-  var h = [];
+  var h = [helpCard_(kind)];
   h.push('<div class="card hero"><div class="k">' + esc(K.name) + ' · งวดถัดไป</div><div class="d">' + esc(thDate(iso)) + '</div>' +
          '<div class="meta">ดาวประจำวัน ' + esc(SC_PL[pr.dayStar]) + ' (' + pr.dayStar + ') · ' + esc(scLunarText_(pr.lunar)) + '</div>' +
          (chart.date !== iso ? '<div class="warn" style="margin-top:6px">ใช้ดวงวันที่ ' + esc(thDate(chart.date)) + ' — ยังไม่ได้ส่งดวงวันออก</div>' :
@@ -286,7 +360,7 @@ function viewUpload_() {
   h.push('<label><b>ล ลัคนา</b><select data-pl="L">' + opts(d.lagna) + '</select></label>');
   h.push('</div>');
   h.push('<div class="grid2" style="margin-top:10px">' +
-    '<label class="fld">วันที่ของดวง<input type="date" id="f_date" value="' + esc(d.date) + '"></label>' +
+    '<label class="fld">วันที่ของดวง' + dateSelect_('f_date', chartDateList_(d.date), d.date) + '</label>' +
     '<label class="fld">ดวงนี้ใช้กับ<select id="f_kind"><option value="lao"' + (d.kind === 'lao' ? ' selected' : '') + '>หวยลาว (แคปเวลา 20:25)</option>' +
       '<option value="thai"' + (d.kind === 'thai' ? ' selected' : '') + '>หวยไทย (แคปเวลา 15:45)</option></select></label>' +
     '<label class="fld">เวลาในรูปปฏิทิน<input type="time" id="f_time" value="' + esc(d.time || '') + '"></label>' +
@@ -537,15 +611,17 @@ function viewStats_() {
 function resultCard_(kind, res) {
   var K = SC_KIND[kind], last = scLastDraw_(kind), miss = scMissingDraws_(kind, res, kind === 'lao' ? 21 : 62);
   var h = ['<div class="card resin"><h3>กรอกผล' + esc(K.name) + '<span class="sub">ลงแล้วเข้าสถิติทันที</span></h3>'];
-  h.push('<div class="grid2"><label class="fld">งวดวันที่<input type="date" id="r_date" value="' + last + '"></label>');
+  /* เรียงตามที่เจ้าของจัดมา: วันที่ / รางวัลที่ 1 / หน้า 3 · 2 ตัวล่าง (ช่องเล็กกลาง) · ท้าย 3 */
+  h.push('<label class="fld">งวดวันที่' + dateSelect_('r_date', drawDateList_(kind), last) + '</label>');
   if (kind === 'lao') {
-    h.push('<label class="fld">ผล 4 ตัว<input id="r_a" inputmode="numeric" maxlength="4" placeholder="เช่น 6261"></label></div>' +
+    h.push('<label class="fld" style="margin-top:8px">ผล 4 ตัว<input id="r_a" inputmode="numeric" maxlength="4" placeholder="เช่น 6261"></label>' +
            '<div class="muted" style="margin-top:6px">ระบบแยกให้เอง: 3 ตัวบน = 3 ตัวท้าย · 2 ตัวบน = 2 ตัวท้าย · 3 ตัวล่าง = 3 ตัวหน้า · 2 ตัวล่าง = 2 ตัวหน้า</div>');
   } else {
-    h.push('<label class="fld">รางวัลที่ 1 (6 หลัก)<input id="r_a" inputmode="numeric" maxlength="6" placeholder="เช่น 402701"></label></div>' +
-           '<div class="grid2" style="margin-top:8px"><label class="fld">2 ตัวล่าง<input id="r_b" inputmode="numeric" maxlength="2" placeholder="70"></label>' +
-           '<label class="fld">หน้า 3 ตัว (ไม่ใส่ก็ได้)<input id="r_f3" inputmode="numeric" placeholder="791 912"></label></div>' +
-           '<label class="fld" style="margin-top:8px">ท้าย 3 ตัว (ไม่ใส่ก็ได้)<input id="r_b3" inputmode="numeric" placeholder="058 396"></label>' +
+    h.push('<label class="fld" style="margin-top:8px">รางวัลที่ 1 (6 หลัก)<input id="r_a" inputmode="numeric" maxlength="6" placeholder="เช่น 402701"></label>' +
+           '<div class="grid3" style="margin-top:8px">' +
+           '<label class="fld">หน้า 3 ตัว<input id="r_f3" inputmode="numeric" placeholder="791 912"></label>' +
+           '<label class="fld mid">2 ตัวล่าง<input id="r_b" inputmode="numeric" maxlength="2" placeholder="70"></label>' +
+           '<label class="fld">ท้าย 3 ตัว<input id="r_b3" inputmode="numeric" placeholder="058 396"></label></div>' +
            '<div class="muted" style="margin-top:6px">คำนวณใช้แค่ 4 ตัวบน (4 ตัวท้ายของรางวัลที่ 1) กับ 2 ตัวล่าง</div>');
   }
   h.push('<button class="btn" id="r_go">บันทึกผล</button>');
