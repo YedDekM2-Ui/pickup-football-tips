@@ -254,3 +254,12 @@ test('กุญแจดูอย่างเดียว (ลิงก์ขอ
   ok(g.stRoute_('star', { k: 'own1' }, {}).readOnly === undefined, 'กุญแจเจ้าของไม่ติดป้ายดูอย่างเดียว');
   ok(g.stRoute_('star', { k: 'xx' }, {}).needKey);
 });
+
+test('สถิติ 10 งวด: ดับ = เลขที่ออกน้อยสุดทุกตัว (เสมอกันโชว์หมด) · เด่น ต้องบ่อยกว่าค่าเฉลี่ย', () => {
+  const st = C.scStats_('lao', lao, 10);
+  st.pos.forEach((p) => {
+    const zeros = p.cnt.map((c, d) => (c === 0 ? d : -1)).filter((d) => d >= 0);
+    if (zeros.length) eq(p.cold, zeros, p.name);
+    p.hot.forEach((d) => ok(p.cnt[d] > 1, p.name + ' เด่นต้องออกเกิน 1 ครั้งใน 10 งวด'));
+  });
+});

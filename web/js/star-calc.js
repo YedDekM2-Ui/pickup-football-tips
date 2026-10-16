@@ -431,7 +431,13 @@ function scStats_(kind, results, lastN) {
     }
     var order = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].sort(function (a, b) { return cnt[b] - cnt[a] || a - b; });
     var even = 0; use.forEach(function (d) { if (+results[d][p] % 2 === 0) even++; });
-    out.push({ name: name, cnt: cnt, gap: gap, hot: order.slice(0, 3), cold: order.slice(-3).reverse(), even: even, n: use.length });
+    /* เด่น = ออกบ่อยสุด 3 อันดับ (นับเสมอกันด้วย) และต้องมากกว่าค่าเฉลี่ย
+       ดับ = ออกน้อยสุด (เสมอกันได้หมดทุกตัว) และต้องน้อยกว่าค่าเฉลี่ย
+       ของเดิมตัดที่ 3 ตัวพอดี — ช่วง 10 งวดมีเลข 0 ครั้งหลายตัว แต่โชว์ดับแค่ 3 ตัวแบบสุ่ม (เจ้าของทักจากจอจริง) */
+    var avg = use.length / 10, third = cnt[order[Math.min(2, 9)]], mn = cnt[order[9]];
+    var hot = order.filter(function (x) { return cnt[x] >= third && cnt[x] > avg; });
+    var cold = order.filter(function (x) { return cnt[x] === mn && cnt[x] < avg; }).sort(function (a, b) { return a - b; });
+    out.push({ name: name, cnt: cnt, gap: gap, hot: hot, cold: cold, even: even, n: use.length });
   });
   var sets = K.sets.map(function (st) {
     var dbl = 0, idx = st[1];

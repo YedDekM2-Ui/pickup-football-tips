@@ -26,12 +26,21 @@ function saveUi_() { try { localStorage.setItem(ST_UI, JSON.stringify({ kind: S.
 /* กุญแจแกะดาวเก็บถังของตัวเอง 'star.key.v1' — ห้ามเขียนทับ 'pickup.key.v1' (กุญแจหน้า Pickup คนละใบ)
    ไม่มีของตัวเอง = ยืมของ Pickup ได้ (กุญแจหลักเปิดแกะดาวได้ด้วย) */
 var STAR_KEY_STORE = 'star.key.v1';
-function starKey_() {
+/* กุญแจจากลิงก์อ่าน "ครั้งเดียวตอนเปิดแอป" แล้วเก็บ — ห้ามอ่านซ้ำทุกครั้ง
+   บั๊กจริง 16 ต.ค. 69: ลิงก์ที่มีกุญแจผิดค้างอยู่ ทับกุญแจที่เจ้าของพิมพ์ใหม่ทุกรอบ → ปลดล็อกไม่ได้ตลอด */
+var ST_MEM_KEY = '';
+function starKeyBoot_() {
   var u = keyFromUrl_();
-  if (u) { try { localStorage.setItem(STAR_KEY_STORE, u); } catch (e) { /* จำไม่ได้ก็ใช้รอบนี้ไป */ } return u; }
+  if (u) setStarKey_(u);
+}
+function starKey_() {
+  if (ST_MEM_KEY) return ST_MEM_KEY;
   try { return localStorage.getItem(STAR_KEY_STORE) || loadKey_() || ''; } catch (e) { return ''; }
 }
-function setStarKey_(k) { try { localStorage.setItem(STAR_KEY_STORE, k); } catch (e) { /* เหมือนกัน */ } }
+function setStarKey_(k) {
+  ST_MEM_KEY = k;   /* เครื่องที่ไม่ให้เขียน localStorage ก็ยังใช้ได้ในรอบนี้ */
+  try { localStorage.setItem(STAR_KEY_STORE, k); } catch (e) { /* เหมือนกัน */ }
+}
 
 function fetchStar_() {
   var k = starKey_();
@@ -71,7 +80,7 @@ function note_() {
 function keySheet_() {
   return '<div class="card keycard"><h3>ใส่กุญแจแกะดาว</h3>' +
     '<div class="muted" style="margin-bottom:10px">ใส่ครั้งเดียว เครื่องนี้จะจำไว้เอง</div>' +
-    '<input id="keyin" class="keyin" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="วางกุญแจตรงนี้">' +
+    '<input id="keyin" class="keyin" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="วางกุญแจตรงนี้">' +
     '<button class="btn" id="keygo">ปลดล็อก</button></div>';
 }
 
@@ -116,8 +125,10 @@ function chartSvg_(c, opt) {
         x = p[0] + ((k % 2) - (inRow - 1) / 2) * 14;
         y = p[1] + (row - (rows - 1) / 2) * 16 + 6;
       } else {
-        var off = (k - (n - 1) / 2) * (vert ? 17 : 15);
-        x = p[0] + (vert ? 0 : off); y = p[1] + (vert ? off : 0) + 6;
+        /* เมษ/ตุลย์ เรียงตั้ง: 3 ดวงขึ้นไปดันเข้าหาจุดกลาง ไม่งั้นตัวท้ายล้นขอบวง (เจอจริง ตุลย์ ๙๖๔) */
+        var gapV = n >= 3 ? 15 : 17, cy0 = vert ? p[1] - Math.sign(p[1]) * (n - 1) * 7 : p[1];
+        var off = (k - (n - 1) / 2) * (vert ? gapV : 15);
+        x = p[0] + (vert ? 0 : off); y = cy0 + (vert ? off : 0) + 6;
       }
       var col = d === 'ล' ? '#e6c063' : (d === opt.day ? '#6fb7ff' : '#eef0f6');
       if (d === opt.day) o.push('<circle cx="' + x + '" cy="' + (y - 6) + '" r="9" fill="none" stroke="#6fb7ff" stroke-width="1"/>');
@@ -151,9 +162,10 @@ function viewPredict_() {
     if (i === 4) h.push('<div class="lowtag">2 ตัวล่าง →</div>');
     h.push('<div class="slot' + (S.sel === i ? ' sel' : '') + (i >= 4 ? ' low' : '') + '" data-pos="' + i + '"><div class="nm">' + esc(p.name) + '</div><div class="tg tg-' + (K.tag[i] === 'ล่าง' ? 'lo' : (K.tag[i] === 'บน' ? 'up' : 'both')) + '">' + esc(K.tag[i]) + '</div>' +
            '<div class="big">' + p.top[0].d + '</div><div class="alt">' + p.top[1].d + p.top[2].d + '</div>' +
-           '<div class="cl">ปิด <s>' + p.closed.join(' ') + '</s></div></div>');
+           '<div class="cl">ดับ ' + p.closed.join(' ') + '</div></div>');
   });
   h.push('</div>');
+  h.push('<div class="muted" style="margin-top:8px">ตัวใหญ่ = เลขเด่นอันดับ 1 ของหลักนั้น · 2 ตัวรอง = อันดับ 2-3 · <span class="bad">ดับ</span> = 2 ตัวที่สูตรให้คะแนนต่ำสุดในหลักนั้น (ตัดทิ้งได้)</div>');
   if (S.sel >= 0 && pr.pos[S.sel]) h.push(whyBox_(pr.pos[S.sel]));
   h.push('</div>');
 
@@ -468,7 +480,12 @@ function viewStats_() {
     });
     h.push('</tr>');
   }
-  h.push('</table></div><div class="muted" style="margin-top:6px">ตัวเลข = ออกกี่ครั้ง · ค้าง = ไม่ออกมากี่งวดแล้ว · <span class="good">กรอบทอง = เลขเด่น</span> (ออกบ่อยสุด 3 ตัว) · <span class="bad">กรอบแดง = เลขดับ</span> (ออกน้อยสุด 3 ตัว)</div></div>');
+  h.push('</table></div><div class="howto"><b>อ่านตารางนี้ยังไง</b>' +
+    '<div>• <b>ตัวเลขใหญ่</b> = หลักนี้ออกเลขนั้นกี่ครั้ง ในช่วงที่เลือก</div>' +
+    '<div>• <b>ค้าง</b> = เลขนั้นไม่ได้ออกในหลักนี้มากี่งวดแล้ว (ค้าง 0 = เพิ่งออกงวดล่าสุด)</div>' +
+    '<div>• <span class="good"><b>กรอบทอง = เด่น</b></span> ออกบ่อยสุดและบ่อยกว่าค่าเฉลี่ย — ใช้เลือกเลขตามกระแส</div>' +
+    '<div>• <span class="bad"><b>กรอบแดง = ดับ</b></span> ออกน้อยสุดในช่วงนี้ — ใช้ตัดเลขทิ้ง หรือถ้าเล่นแนว "เลขค้างจะมา" ก็ดูคู่กับค้าง</div>' +
+    '<div class="muted">ช่วงสั้น (10 งวด) ตามกระแสไว · ช่วงยาว (100 งวด/ทั้งหมด) นิ่งกว่า · ผลแต่ละงวดไม่ได้ขึ้นกับงวดก่อน ใช้เป็นตัวช่วยคัด ไม่ใช่การันตี</div></div></div>');
 
   h.push('<div class="card"><h3>คู่/คี่ · เลขเด่น · เลขดับ</h3><table class="tbl"><tr><th>หลัก</th><th>คู่</th><th>คี่</th><th>เด่น</th><th>ดับ</th></tr>' +
     st.pos.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td>' + Math.round(p.even / p.n * 100) + '%</td><td>' + Math.round((p.n - p.even) / p.n * 100) + '%</td><td class="mk1">' + p.hot.join(' ') + '</td><td class="bad">' + p.cold.join(' ') + '</td></tr>'; }).join('') +
@@ -649,7 +666,7 @@ function render_() {
   $('app').innerHTML = v;
   var kg = $('keygo');
   if (kg) kg.onclick = function () {
-    var k = ($('keyin').value || '').trim();
+    var k = ($('keyin').value || '').replace(/\s+/g, '');
     if (!k) { toast('ยังไม่ได้วางกุญแจ'); return; }
     setStarKey_(k); kg.disabled = true; kg.textContent = 'กำลังเช็ค…';
     refresh_().then(function () { toast(S.src === 'สด' ? 'ปลดล็อกแล้ว' : 'กุญแจไม่ถูก ลองวางใหม่'); });
@@ -668,6 +685,7 @@ function render_() {
 }
 
 function boot_() {
+  starKeyBoot_();
   loadUi_();
   S.data = loadCache_();
   S.src = S.data ? 'แคช' : '';
