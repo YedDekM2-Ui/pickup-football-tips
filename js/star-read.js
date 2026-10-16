@@ -182,6 +182,44 @@ function srBlobs_(img, g) {
   return out;
 }
 
+/** หมุนก้อนรอบจุดกลาง (องศา) — แอปต้นทางเขียนตัวเลขเอียงตามเส้นทแยงเวลาช่องมุมมีดาวเยอะ */
+function srRot_(b, deg) {
+  if (!deg) return b;
+  var r = deg * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+  var mx = (b.x0 + b.x1) / 2, my = (b.y0 + b.y1) / 2, x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  var px = b.px.map(function (p) {
+    var dx = p[0] - mx, dy = p[1] - my, X = Math.round(mx + dx * c - dy * s), Y = Math.round(my + dx * s + dy * c);
+    if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y;
+    return [X, Y];
+  });
+  return { x0: x0, y0: y0, x1: x1, y1: y1, px: px };
+}
+
+/** ระยะที่ใกล้สุดของแต่ละตัวอักษร {ch: dist} — ใช้ตอนแก้เลขซ้ำ */
+function srScores_(b, templates) {
+  var out = {};
+  [0, -15, 15, -30, 30, -45, 45].forEach(function (a) {
+    var f = srFeat_(srRot_(b, a));
+    (templates || []).forEach(function (t) {
+      var d = srDist_(f, t.f) + Math.abs(a) / 60;
+      if (out[t.ch] === undefined || d < out[t.ch]) out[t.ch] = d;
+    });
+  });
+  return out;
+}
+
+/** เทียบแม่แบบแบบหมุนได้: ตรงๆ ก่อน ถ้ายังไม่สนิทค่อยลองหมุน ±15..±60° (หักคะแนนมุมนิดหน่อย กันหมุนมั่ว) */
+function srClassifyBlob_(b, templates) {
+  var best = srClassify_(srFeat_(b), templates);
+  if (best.dist <= 2.2) return best;
+  [-15, 15, -30, 30, -45, 45, -60, 60].forEach(function (a) {
+    var c = srClassify_(srFeat_(srRot_(b, a)), templates);
+    c.dist += Math.abs(a) / 60;
+    if (c.dist < best.dist) best = c;
+  });
+  return best;
+}
+
 /** ก้อน → เวกเตอร์ลักษณะ (ตาราง 12x16 ความหนาแน่น + สัดส่วนกว้าง/สูง) */
 function srFeat_(b) {
   var w = b.x1 - b.x0 + 1, h = b.y1 - b.y0 + 1, f = [], i;
@@ -227,7 +265,7 @@ function starRead(img, templates) {
   blobs.forEach(function (b) {
     var bx = (b.x0 + b.x1) / 2, by = (b.y0 + b.y1) / 2;
     var r = srRasiAt_(g, bx, by);
-    var c = srClassify_(srFeat_(b), templates);
+    var c = srClassifyBlob_(b, templates);
     b.ch = c.ch; b.dist = c.dist; b.cx = bx; b.cy = by; b.r = r;
     if (c.dist > 3.2) unsure++;
     if (r < 0) { mid.push(b); return; }
@@ -237,12 +275,35 @@ function starRead(img, templates) {
     if (b.col === 'ฟ้า') blue.push(c.ch);
     if (b.col === 'เหลือง') yellow.push(c.ch);
   });
+  /* ดาวแต่ละดวงอยู่ได้ที่เดียว: อ่านได้เลขซ้ำแต่มีเลขที่ขาด = ตัวหนึ่งอ่านผิดแน่
+     ย้ายตัวที่ "เสียน้อยสุด" ถ้าเปลี่ยนเป็นเลขที่ขาด (เจอจริง: ๔ เอียงแรง อ่านเป็น ๕) */
+  var guard = 0;
+  while (guard++ < 10) {
+    var all = [], have = {};
+    rasi.forEach(function (l) { l.forEach(function (b) { all.push(b); have[b.ch] = (have[b.ch] || 0) + 1; }); });
+    var dupCh = Object.keys(have).filter(function (k) { return have[k] > 1; });
+    var miss = '0123456789'.split('').filter(function (k) { return !have[k]; });
+    if (!dupCh.length || !miss.length) break;
+    var pick = null;
+    all.forEach(function (b) {
+      if (dupCh.indexOf(b.ch) < 0) return;
+      if (!b.sc) b.sc = srScores_(b, templates);
+      miss.forEach(function (m) {
+        var cost = (b.sc[m] === undefined ? 99 : b.sc[m]) - b.dist;
+        if (!pick || cost < pick.cost) pick = { b: b, m: m, cost: cost };
+      });
+    });
+    if (!pick || pick.cost > 4) break;
+    pick.b.ch = pick.m; pick.b.fixed = true; unsure++;
+  }
+
   /* เรียงในช่อง: ช่องที่เรียงแนวตั้งอ่านบน→ล่าง ไม่งั้นซ้าย→ขวา */
   var cells = rasi.map(function (list) {
-    if (list.length < 2) return list.map(function (b) { return b.ch; });
+    if (list.length < 2) return list.map(function (b) { b.k = 0; return b.ch; });
     var xs = list.map(function (b) { return b.cx; }), ys = list.map(function (b) { return b.cy; });
     var vert = (Math.max.apply(null, ys) - Math.min.apply(null, ys)) > (Math.max.apply(null, xs) - Math.min.apply(null, xs));
     list.sort(function (a, b) { return vert ? a.cy - b.cy : a.cx - b.cx; });
+    list.forEach(function (b, k) { b.k = k; });
     return list.map(function (b) { return b.ch; });
   });
   /* เลขกลางดวง "14/32": แบ่งด้วยเครื่องหมาย / — ซ้ายบน = a · ขวาล่าง = b */
@@ -254,12 +315,27 @@ function starRead(img, templates) {
     var top = slash ? (b.cx + (b.cy - slash.cy) * 0 < slash.cx && b.cy < slash.cy + 2) : b.cy < g.cy;
     if (top) center.a += b.ch; else center.b += b.ch;
   });
-  return { ok: true, rasi: cells, lagna: lagna, center: center,
+  /* ตัวที่ไม่ชัวร์ = ต้องถามเจ้าของ (เจ้าของสั่ง 16 ต.ค. 69: "เจอแบบนี้บังคับให้ถามฉันได้เลย")
+     ไม่ชัวร์ = ถูกแก้เพราะเลขซ้ำ · ห่างแม่แบบมาก · หรือเลขอันดับ 2 ใกล้กันเกินไป (เช่น ๔ กับ ๕) */
+  var ask = [];
+  rasi.forEach(function (list, r) {
+    list.forEach(function (b) {
+      if (!b.sc) b.sc = srScores_(b, templates);
+      var order = Object.keys(b.sc).filter(function (k) { return /^[0-9]$/.test(k); })
+        .sort(function (p, q) { return b.sc[p] - b.sc[q]; });
+      var margin = order.length > 1 ? b.sc[order[1]] - b.sc[order[0]] : 9;
+      if (b.fixed || b.dist > 3 || margin < 0.6) {
+        ask.push({ r: r, k: b.k, ch: b.ch, alt: order.slice(0, 3), why: b.fixed ? 'อ่านได้เลขซ้ำ แอปเดาแก้ให้' : (b.dist > 3 ? 'ไม่เหมือนแม่แบบตัวไหนเลย' : 'ก้ำกึ่ง ' + order[0] + ' กับ ' + order[1]),
+                   x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 });
+      }
+    });
+  });
+  return { ok: true, rasi: cells, lagna: lagna, center: center, ask: ask,
            special: { 'ฟ้า': blue, 'เหลือง': yellow }, unsure: unsure, geom: g,
-           blobs: blobs.map(function (b) { return { ch: b.ch, r: b.r, x: Math.round(b.cx), y: Math.round(b.cy), d: Math.round(b.dist * 100) / 100, col: b.col }; }) };
+           blobs: blobs.map(function (b) { return { ch: b.ch, r: b.r, x: Math.round(b.cx), y: Math.round(b.cy), d: Math.round(b.dist * 100) / 100, col: b.col, fixed: !!b.fixed }; }) };
 }
 
 if (typeof module !== 'undefined') {
   module.exports = { starRead: starRead, srGeom_: srGeom_, srBlobs_: srBlobs_, srFeat_: srFeat_,
-                     srRasiAt_: srRasiAt_, srClassify_: srClassify_, SR_RASI: SR_RASI };
+                     srRasiAt_: srRasiAt_, srClassify_: srClassify_, srClassifyBlob_: srClassifyBlob_, srRot_: srRot_, SR_RASI: SR_RASI };
 }

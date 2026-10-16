@@ -23,11 +23,31 @@ function saveCache_(d) { try { localStorage.setItem(ST_CACHE, JSON.stringify(d))
 function loadUi_() { try { var o = JSON.parse(localStorage.getItem(ST_UI) || '{}'); if (o.kind) S.kind = o.kind; if (o.statN) S.statN = o.statN; } catch (e) { /* ค่าเริ่มต้น */ } }
 function saveUi_() { try { localStorage.setItem(ST_UI, JSON.stringify({ kind: S.kind, statN: S.statN })); } catch (e) { /* เหมือนกัน */ } }
 
+/* กุญแจแกะดาวเก็บถังของตัวเอง 'star.key.v1' — ห้ามเขียนทับ 'pickup.key.v1' (กุญแจหน้า Pickup คนละใบ)
+   ไม่มีของตัวเอง = ยืมของ Pickup ได้ (กุญแจหลักเปิดแกะดาวได้ด้วย) */
+var STAR_KEY_STORE = 'star.key.v1';
+function starKey_() {
+  var u = keyFromUrl_();
+  if (u) { try { localStorage.setItem(STAR_KEY_STORE, u); } catch (e) { /* จำไม่ได้ก็ใช้รอบนี้ไป */ } return u; }
+  try { return localStorage.getItem(STAR_KEY_STORE) || loadKey_() || ''; } catch (e) { return ''; }
+}
+function setStarKey_(k) { try { localStorage.setItem(STAR_KEY_STORE, k); } catch (e) { /* เหมือนกัน */ } }
+
 function fetchStar_() {
-  var k = bootKey_();
+  var k = starKey_();
   if (!k) return Promise.resolve({ ok: false, needKey: true });
   return fetch(API_URL + '?p=star&k=' + encodeURIComponent(k)).then(function (r) { return r.json(); })
     .catch(function () { return null; });
+}
+
+function starPost_(p, body) {
+  var k = starKey_();
+  if (!k) return Promise.resolve({ ok: false, needKey: true, error: 'ยังไม่มีกุญแจในเครื่องนี้' });
+  var payload = { p: p, k: k };
+  for (var f in body) if (Object.prototype.hasOwnProperty.call(body, f)) payload[f] = body[f];
+  return fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) })
+    .then(function (r) { return r.json(); })
+    .catch(function () { return { ok: false, error: 'ส่งไม่ถึง — เน็ตหลุดหรือเปล่า ลองอีกครั้ง' }; });
 }
 
 function refresh_() {
@@ -40,11 +60,19 @@ function refresh_() {
 }
 
 function note_() {
-  var t = S.src === 'สด' ? '<span class="pill live">LIVE</span> ล่าสุด ' + esc((S.data.at || '').slice(11, 16)) :
-          S.src === 'กุญแจ' ? '<span class="pill off">NO KEY</span> เปิดลิงก์ที่ลงท้าย ?k=... ครั้งแรกครั้งเดียว' :
-          S.src === 'แคช' ? '<span class="pill off">OFFLINE</span> ของที่จำไว้ล่าสุด' :
-          '<span class="pill off">…</span> กำลังโหลด';
+  var t = S.src === 'สด' ? '<span class="pill live">LIVE</span> อัปเดต ' + esc((S.data.at || '').slice(11, 16)) + ' น.' :
+          S.src === 'กุญแจ' ? '<span class="pill off">LOCKED</span> ใส่กุญแจก่อน แล้วข้อมูลจะมาเอง' :
+          S.src === 'แคช' ? '<span class="pill off">OFFLINE</span> โชว์ของที่จำไว้ ต่อเน็ตแล้วจะอัปเดตเอง' :
+          '<span class="pill off">…</span> กำลังเปิดสมุดดวง';
   $('note').innerHTML = t;
+}
+
+/** แผ่นใส่กุญแจในหน้า — แอปหน้าโฮมของไอโฟนเก็บของคนละถังกับ Safari ต้องมีทางใส่กุญแจในตัว */
+function keySheet_() {
+  return '<div class="card keycard"><h3>ใส่กุญแจแกะดาว</h3>' +
+    '<div class="muted" style="margin-bottom:10px">ใส่ครั้งเดียว เครื่องนี้จะจำไว้เอง</div>' +
+    '<input id="keyin" class="keyin" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="วางกุญแจตรงนี้">' +
+    '<button class="btn" id="keygo">ปลดล็อก</button></div>';
 }
 
 function charts_() { return (S.data && S.data.charts) || []; }
@@ -74,13 +102,23 @@ function chartSvg_(c, opt) {
   (c.rasi || []).forEach(function (cell, i) {
     var list = cell.slice();
     if (c.lagna === i) list.unshift('ล');
+    /* เรียงตามแนวโค้งของวง (ตั้งฉากกับรัศมี) — ช่องมุมมีดาว 4 ดวงจะไม่ล้นไปทับช่องข้าง
+       เมษ/ตุลย์ แคบซ้ายขวา จึงเรียงแนวตั้งแทน */
     var vert = (i === 0 || i === 6), n = list.length, p = CH_POS[i];
+    var grid = !vert && n >= 3, fs = n >= 4 ? 14 : 16;
     list.forEach(function (d, k) {
-      var off = (k - (n - 1) / 2) * (vert ? 17 : 15);
-      var x = p[0] + (vert ? 0 : off), y = p[1] + (vert ? off : 0) + 6;
+      var x, y;
+      if (grid) {                                   /* 3-4 ดวงในช่องเดียว = ตาราง 2 คอลัมน์ ไม่ล้นช่อง */
+        var rows = Math.ceil(n / 2), row = Math.floor(k / 2), inRow = Math.min(2, n - row * 2);
+        x = p[0] + ((k % 2) - (inRow - 1) / 2) * 14;
+        y = p[1] + (row - (rows - 1) / 2) * 16 + 6;
+      } else {
+        var off = (k - (n - 1) / 2) * (vert ? 17 : 15);
+        x = p[0] + (vert ? 0 : off); y = p[1] + (vert ? off : 0) + 6;
+      }
       var col = d === 'ล' ? '#e6c063' : (d === opt.day ? '#6fb7ff' : '#eef0f6');
       if (d === opt.day) o.push('<circle cx="' + x + '" cy="' + (y - 6) + '" r="9" fill="none" stroke="#6fb7ff" stroke-width="1"/>');
-      o.push('<text x="' + x + '" y="' + y + '" fill="' + col + '" font-size="16" font-weight="700" text-anchor="middle">' + (d === 'ล' ? 'ล' : thNum(d)) + '</text>');
+      o.push('<text x="' + x + '" y="' + y + '" fill="' + col + '" font-size="' + fs + '" font-weight="700" text-anchor="middle">' + (d === 'ล' ? 'ล' : thNum(d)) + '</text>');
     });
   });
   var cm = /^(\d+)\/(\d+)$/.exec(String(c.center || ''));
@@ -93,7 +131,7 @@ function chartSvg_(c, opt) {
 function viewPredict_() {
   var kind = S.kind, K = SC_KIND[kind], iso = scNextDraw_(kind), charts = charts_();
   var chart = scPickChart_(charts, iso);
-  if (!chart) return '<div class="card hero"><div class="d">ยังไม่มีดวง</div><div class="muted">ไปแท็บ "ส่งดวง" แล้วเลือกรูปจากอัลบั้ม</div></div>';
+  if (!chart) return '<div class="card hero"><div class="d">ยังไม่มีดวงให้คำนวณ</div><div class="muted">แคปหน้าปฏิทินโหรของวันนี้ แล้วส่งที่แท็บ "ส่งดวง"</div></div>';
   var res = results_(kind), w = scWeights_(kind, charts, res, iso);
   var pr = scPredict_(kind, chart, iso, res, w);
   var h = [];
@@ -107,7 +145,7 @@ function viewPredict_() {
   h.push('<div class="slots ' + (pr.pos.length > 4 ? 'n6' : 'n4') + '">');
   pr.pos.forEach(function (p, i) {
     if (i === 4) h.push('<div class="lowtag">2 ตัวล่าง →</div>');
-    h.push('<div class="slot' + (S.sel === i ? ' sel' : '') + (i >= 4 ? ' low' : '') + '" data-pos="' + i + '"><div class="nm">' + esc(p.name) + '</div>' +
+    h.push('<div class="slot' + (S.sel === i ? ' sel' : '') + (i >= 4 ? ' low' : '') + '" data-pos="' + i + '"><div class="nm">' + esc(p.name) + '</div><div class="tg tg-' + (K.tag[i] === 'ล่าง' ? 'lo' : (K.tag[i] === 'บน' ? 'up' : 'both')) + '">' + esc(K.tag[i]) + '</div>' +
            '<div class="big">' + p.top[0].d + '</div><div class="alt">' + p.top[1].d + p.top[2].d + '</div>' +
            '<div class="cl">ปิด <s>' + p.closed.join(' ') + '</s></div></div>');
   });
@@ -117,13 +155,19 @@ function viewPredict_() {
 
   /* เลขชุด */
   var deadSet = {}; pr.dead.forEach(function (x) { if (x.kal) deadSet[x.d] = 1; });
-  h.push('<div class="card"><h3>เลขชุด</h3>');
-  pr.sets.forEach(function (st) {
+  h.push('<div class="card"><h3>เลขชุด<span class="sub">คิดจาก 4 ตัว' + (kind === 'thai' ? ' + 2 ตัวล่าง' : '') + '</span></h3>');
+  var chipRow = function (st, cls) {
     var lbl = st.name;
-    if (kind === 'lao' && st.name === '2 ตัวล่าง') lbl += ' · เลขเด่นหลักพัน-ร้อย';
-    h.push('<div class="set"><div class="lbl">' + esc(lbl) + '</div><div class="chips">' +
-      st.list.map(function (n, k) { return '<span class="chip' + (k === 0 ? ' first' : '') + '">' + n + '</span>'; }).join('') + '</div></div>');
-  });
+    if (kind === 'lao' && st.name === '2 ตัวล่าง') lbl += ' · หลักพัน-ร้อย';
+    if (kind === 'lao' && st.name === '3 ตัวบน') lbl += ' · หลักร้อย-สิบ-หน่วย';
+    if (kind === 'lao' && st.name === '2 ตัวบน') lbl += ' · หลักสิบ-หน่วย';
+    return '<div class="set"><div class="lbl">' + esc(lbl) + '</div><div class="chips">' +
+      st.list.map(function (n, k) { return '<span class="chip ' + cls + (k === 0 ? ' first' : '') + '">' + n + '</span>'; }).join('') + '</div></div>';
+  };
+  var up = pr.sets.filter(function (st) { return st.name.indexOf('ล่าง') < 0; });
+  var lo = pr.sets.filter(function (st) { return st.name.indexOf('ล่าง') >= 0; });
+  h.push('<div class="grp up"><div class="gt">บน</div>' + up.map(function (st) { return chipRow(st, ''); }).join('') + '</div>');
+  h.push('<div class="grp lo"><div class="gt">ล่าง</div>' + lo.map(function (st) { return chipRow(st, ''); }).join('') + '</div>');
   h.push('<div class="set"><div class="lbl">เลขวิ่ง</div><div class="chips">' + pr.run.map(function (d, k) { return '<span class="chip' + (k === 0 ? ' first' : '') + '">' + d + '</span>'; }).join('') + '</div></div>');
   h.push('</div>');
 
@@ -177,7 +221,7 @@ function whyBox_(p) {
 function blankDraft_(iso) {
   var r = []; for (var i = 0; i < 12; i++) r.push([]);
   var lu = scLunarGuess_(iso);
-  return { date: iso, rasi: r, lagna: -1, center: '', lunar: scLunarText_(lu), moved: '', special: '', note: '', read: null };
+  return { date: iso, rasi: r, lagna: -1, center: '', lunar: scLunarText_(lu), moved: '', special: '', note: '', read: null, ask: [] };
 }
 
 function viewUpload_() {
@@ -189,9 +233,22 @@ function viewUpload_() {
   if (!d) return h.join('') + '<div class="foot">หรือ <a href="#" id="manual" style="color:var(--gold)">กรอกเองไม่ใช้รูป</a></div>';
   var loc = scLocOf_(d);
   var missing = PL_ORDER.filter(function (x) { return loc[x] === undefined; });
+  var asks = (d.ask || []), open = asks.filter(function (q) { return !q.done; }).length;
+  if (asks.length) {
+    h.push('<div class="card ask"><h3>ช่วยยืนยันตัวเลข<span class="sub">' + (open ? 'เหลือ ' + open + ' ตัว — ตอบครบถึงบันทึกได้' : 'ตอบครบแล้ว') + '</span></h3>');
+    asks.forEach(function (q, i) {
+      h.push('<div class="q' + (q.done ? ' done' : '') + '"><img src="' + q.img + '" alt=""><div class="qt"><b>ราศี' + esc(SC_RASI[q.r]) + '</b> · แอปเดา ' +
+        esc(q.guess) + ' <span class="muted">(' + esc(q.why) + ')</span></div><div class="keys">' +
+        '0123456789'.split('').map(function (x) {
+          var cls = (q.done && q.cur === x) ? 'on' : (q.alt.indexOf(x) >= 0 ? 'hint' : '');
+          return '<button data-ask="' + i + '" data-v="' + x + '" class="' + cls + '">' + thNum(x) + '<small>' + x + '</small></button>';
+        }).join('') + '</div></div>');
+    });
+    h.push('</div>');
+  }
   h.push('<div class="card"><h3>ตรวจดวงก่อนบันทึก<span class="sub">แก้ราศีของดาวได้ทุกดวง</span></h3>' +
     '<div class="chartbox">' + chartSvg_(d, {}) + '</div>');
-  if (d.read && d.read.unsure) h.push('<div class="warn">มี ' + d.read.unsure + ' ตัวที่อ่านไม่ชัด — เทียบกับรูปจริงอีกที</div>');
+  if (d.read && d.read.unsure && !asks.length) h.push('<div class="warn">มี ' + d.read.unsure + ' ตัวที่อ่านไม่ชัด — เทียบกับรูปจริงอีกที</div>');
   if (missing.length) h.push('<div class="warn">ยังขาดดาว: ' + missing.map(function (x) { return SC_PL[x] + '(' + x + ')'; }).join(' ') + '</div>');
   var opts = function (sel) {
     var s = '<option value="-1"' + (sel < 0 ? ' selected' : '') + '>—</option>';
@@ -214,7 +271,7 @@ function viewUpload_() {
     '</div>' +
     '<label class="fld" style="margin-top:8px">สถานะในแอป (เช่น ดาวเกษตร มี)<input id="f_special" value="' + esc(d.special) + '"></label>' +
     '<label class="fld" style="margin-top:8px">หมายเหตุ<input id="f_note" value="' + esc(d.note) + '"></label>' +
-    '<button class="btn" id="save"' + (missing.length ? ' disabled' : '') + '>บันทึกดวง</button>' +
+    '<button class="btn" id="save"' + (missing.length || open ? ' disabled' : '') + '>' + (open ? 'ตอบตัวเลขด้านบนให้ครบก่อน' : 'เก็บดวงนี้') + '</button>' +
     '<button class="btn ghost" id="cancel">ยกเลิก</button></div>');
   return h.join('');
 }
@@ -227,7 +284,7 @@ function scLocOf_(d) {
 
 function readPic_(file) {
   var msg = $('readmsg');
-  msg.textContent = 'กำลังอ่านรูป…';
+  msg.textContent = 'กำลังแกะดาวจากรูป…';
   var url = URL.createObjectURL(file), im = new Image();
   im.onload = function () {
     /* ปรับให้กว้าง 870 เท่ารูปที่ใช้ฝึกแม่แบบเสมอ (ทั้งย่อและขยาย)
@@ -246,13 +303,21 @@ function readPic_(file) {
       d.rasi = r.rasi; d.lagna = r.lagna;
       if (r.center.a && r.center.b) d.center = r.center.a + '/' + r.center.b;
       d.read = { unsure: r.unsure };
+      /* ตัวที่ตัวอ่านไม่ชัวร์ → ตัดรูปตัวนั้นมาถามเจ้าของ ต้องตอบครบก่อนบันทึก */
+      d.ask = (r.ask || []).map(function (q) {
+        var pad = 8, w = q.x1 - q.x0 + 1 + pad * 2, h = q.y1 - q.y0 + 1 + pad * 2, z = 3;
+        var c2 = document.createElement('canvas'); c2.width = w * z; c2.height = h * z;
+        var x2 = c2.getContext('2d'); x2.imageSmoothingEnabled = false;
+        x2.drawImage(cv, q.x0 - pad, q.y0 - pad, w, h, 0, 0, w * z, h * z);
+        return { r: q.r, cur: q.ch, guess: q.ch, alt: q.alt, why: q.why, img: c2.toDataURL('image/png'), done: false };
+      });
       var n = 0; r.rasi.forEach(function (c) { n += c.length; });
-      toast('อ่านได้ ' + n + '/10 ดวง' + (r.lagna >= 0 ? ' + ลัคนา' : ''));
+      toast(d.ask.length ? 'แกะได้ ' + n + '/10 ดวง มี ' + d.ask.length + ' ตัวต้องให้ช่วยดู' : 'แกะครบ ' + n + '/10 ดวง' + (r.lagna >= 0 ? ' + ลัคนา' : '') + ' ตรวจแล้วกดเก็บได้เลย');
     } else toast(r.error);
     S.draft = d; render_();
     if (!r.ok) $('readmsg').textContent = r.error;
   };
-  im.onerror = function () { msg.textContent = 'เปิดรูปไม่ได้'; };
+  im.onerror = function () { msg.textContent = 'เปิดรูปนี้ไม่ได้ ลองแคปใหม่อีกที'; };
   im.src = url;
 }
 
@@ -280,6 +345,16 @@ function bindUpload_() {
       render_();
     };
   });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-ask]'), function (el) {
+    el.onclick = function () {
+      syncFields_();
+      var q = S.draft.ask[+el.getAttribute('data-ask')], v = el.getAttribute('data-v'), cell = S.draft.rasi[q.r];
+      var at = cell.indexOf(q.cur);
+      if (at >= 0) cell[at] = v; else cell.push(v);
+      q.cur = v; q.done = true;
+      render_();
+    };
+  });
   $('f_date').onchange = function () {
     syncFields_();
     var g = scLunarGuess_(S.draft.date); S.draft.lunar = scLunarText_(g); render_();
@@ -298,15 +373,15 @@ function syncFields_() {
 function saveDraft_() {
   syncFields_();
   var d = S.draft, b = $('save');
-  b.disabled = true; b.textContent = 'กำลังบันทึก…';
+  b.disabled = true; b.textContent = 'กำลังเก็บ…';
   var chart = { date: d.date, rasi: d.rasi, lagna: d.lagna, center: d.center, lunar: d.lunar, moved: d.moved, special: d.special, note: d.note };
-  apiPost_('starsave', { chart: chart }).then(function (r) {
+  starPost_('starsave', { chart: chart }).then(function (r) {
     if (r && r.ok) {
-      toast(r['ทับของเดิม'] ? 'แก้ดวงวันนี้แล้ว' : 'บันทึกดวงแล้ว');
+      toast(r['ทับของเดิม'] ? 'แก้ดวงวันที่ ' + thDate(chart.date) + ' แล้ว' : 'เก็บดวงวันที่ ' + thDate(chart.date) + ' แล้ว');
       /* ใส่ในแคชทันที เปิดแท็บทำนายไม่ต้องรอโหลดใหม่ */
       if (S.data) { S.data.charts = charts_().filter(function (c) { return c.date !== chart.date; }).concat([chart]).sort(function (a, c) { return a.date < c.date ? -1 : 1; }); saveCache_(S.data); }
       S.draft = null; S.tab = 'predict'; render_(); refresh_();
-    } else { b.disabled = false; b.textContent = 'บันทึกดวง'; toast((r && r.error) || 'บันทึกไม่สำเร็จ'); }
+    } else { b.disabled = false; b.textContent = 'เก็บดวงนี้'; toast((r && r.error) || 'เก็บดวงไม่สำเร็จ — ลองอีกครั้ง'); }
   });
 }
 
@@ -376,7 +451,7 @@ function viewLog_() {
       '<div class="muted" style="margin-top:3px">' + esc(sum) + '</div>' +
       '<div class="btns" style="margin-top:8px"><button class="btn ghost" data-edit="' + c.date + '">แก้ดวง</button><button class="btn ghost" data-del="' + c.date + '">ลบ</button></div></div>' +
       '<div style="min-width:110px">' + (r ? '<div class="res">' + r.join('').slice(0, 4) + (kind === 'thai' ? '<br><small>' + r.slice(4).join('') + '</small>' : '') + '</div>'
-        : (isDraw ? '<div class="res none">ยังไม่มีผล</div><div class="inl"><input data-res="' + c.date + '" inputmode="numeric" placeholder="' + (kind === 'thai' ? '1234 56' : '1234') + '"><button data-save="' + c.date + '">ลง</button></div>'
+        : (isDraw ? '<div class="res none">ยังไม่มีผล</div><div class="inl"><input data-res="' + c.date + '" inputmode="numeric" placeholder="' + (kind === 'thai' ? '402701 70' : '1234') + '"><button data-save="' + c.date + '">ลง</button></div>'
                   : '<div class="res none">ไม่ใช่วันออก</div>')) + '</div></div>');
   });
   h.push('</div>');
@@ -396,9 +471,9 @@ function bindLog_() {
   Array.prototype.forEach.call(document.querySelectorAll('[data-del]'), function (b) {
     b.onclick = function () {
       var iso = b.getAttribute('data-del');
-      if (!confirm('ลบดวงวันที่ ' + thDate(iso) + ' ?')) return;
-      apiPost_('stardel', { date: iso }).then(function (r) {
-        if (r && r.ok) { S.data.charts = charts_().filter(function (c) { return c.date !== iso; }); saveCache_(S.data); render_(); toast('ลบแล้ว'); }
+      if (!confirm('ลบดวงวันที่ ' + thDate(iso) + ' ทิ้ง? (ผลหวยไม่หาย ลบแค่ดวง)')) return;
+      starPost_('stardel', { date: iso }).then(function (r) {
+        if (r && r.ok) { S.data.charts = charts_().filter(function (c) { return c.date !== iso; }); saveCache_(S.data); render_(); toast('ลบดวงวันที่ ' + thDate(iso) + ' แล้ว'); }
         else toast((r && r.error) || 'ลบไม่สำเร็จ');
       });
     };
@@ -407,11 +482,14 @@ function bindLog_() {
     b.onclick = function () {
       var iso = b.getAttribute('data-save'), inp = document.querySelector('input[data-res="' + iso + '"]');
       var t = (inp.value || '').replace(/[^0-9 ]/g, ' ').trim().split(/\s+/);
-      var body = S.kind === 'thai' ? { kind: 'thai', date: iso, a: t[0] || '', b: t[1] || '' } : { kind: 'lao', date: iso, a: t.join('') };
+      /* ไทย: "402701 70" หรือ "2701 70" · ต่อท้ายด้วยหน้า 3 ท้าย 3 ได้ "402701 70 791 912 058 396" */
+      var body = S.kind === 'thai' ? { kind: 'thai', date: iso, a: t[0] || '', b: t[1] || '',
+                                       f3: t.slice(2, 4).join('/'), b3: t.slice(4, 6).join('/') }
+                                   : { kind: 'lao', date: iso, a: t.join('') };
       b.disabled = true;
-      apiPost_('starresult', body).then(function (r) {
+      starPost_('starresult', body).then(function (r) {
         b.disabled = false;
-        if (r && r.ok) { toast('ลงผลแล้ว'); refresh_(); } else toast((r && (r['ข้อความ'] || r.error)) || 'ลงผลไม่สำเร็จ');
+        if (r && r.ok) { toast('ลงผลวันที่ ' + thDate(iso) + ' แล้ว'); refresh_(); } else toast((r && (r['ข้อความ'] || r.error)) || 'ลงผลไม่สำเร็จ — เช็คตัวเลขอีกที');
       });
     };
   });
@@ -420,8 +498,16 @@ function bindLog_() {
 /* ---------------- โครงหลัก ---------------- */
 function render_() {
   var v = S.tab === 'upload' ? viewUpload_() : S.tab === 'stats' ? viewStats_() : S.tab === 'log' ? viewLog_() : viewPredict_();
-  if (!S.data && S.tab !== 'upload') v = '<div class="card hero"><div class="d">กำลังโหลด…</div><div class="muted">ครั้งแรกต้องต่อเน็ต</div></div>';
+  if (S.src === 'กุญแจ') v = keySheet_() + (S.data ? v : '');
+  else if (!S.data && S.tab !== 'upload') v = '<div class="card hero"><div class="d">กำลังเปิดสมุดดวง…</div><div class="muted">ครั้งแรกต้องต่อเน็ต ครั้งต่อไปเปิดได้ทันที</div></div>';
   $('app').innerHTML = v;
+  var kg = $('keygo');
+  if (kg) kg.onclick = function () {
+    var k = ($('keyin').value || '').trim();
+    if (!k) { toast('ยังไม่ได้วางกุญแจ'); return; }
+    setStarKey_(k); kg.disabled = true; kg.textContent = 'กำลังเช็ค…';
+    refresh_().then(function () { toast(S.src === 'สด' ? 'ปลดล็อกแล้ว' : 'กุญแจไม่ถูก ลองวางใหม่'); });
+  };
   Array.prototype.forEach.call(document.querySelectorAll('#nav a'), function (a) { a.className = a.getAttribute('data-t') === S.tab ? 'on' : ''; });
   Array.prototype.forEach.call(document.querySelectorAll('#kind button'), function (b) { b.className = b.getAttribute('data-k') === S.kind ? 'on' : ''; });
   Array.prototype.forEach.call(document.querySelectorAll('[data-pos]'), function (el) {

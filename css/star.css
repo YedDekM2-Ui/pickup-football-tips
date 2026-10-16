@@ -18,7 +18,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
        max-width: 720px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 14px) 16px 6px; }
 .brand { font-weight: 800; font-size: 20px; letter-spacing: .02em; }
 .brand small { display: block; font-size: 11px; font-weight: 500; color: var(--dim); letter-spacing: .08em; }
-.logo { color: var(--gold); text-shadow: 0 0 12px rgba(230,192,99,.6); }
+.logo { width: 30px; height: 30px; vertical-align: -7px; margin-right: 4px; border-radius: 8px; box-shadow: 0 0 14px rgba(230,192,99,.35); }
 .kind { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
 .kind button { border: 0; background: none; padding: 7px 16px; border-radius: 999px; font-weight: 700; color: var(--dim); min-height: 36px; }
 .kind button.on { background: linear-gradient(180deg, var(--gold), var(--gold2)); color: #1a1406; }
@@ -160,3 +160,32 @@ details.acc .body { padding-bottom: 10px; font-size: 13px; }
          opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; z-index: 30; }
 #toast.show { opacity: 1; }
 .foot { text-align: center; color: var(--dim); font-size: 11px; padding: 6px 0 14px; }
+
+/* ถามเจ้าของเมื่อตัวอ่านไม่ชัวร์ */
+.card.ask { border-color: var(--amber); box-shadow: 0 0 0 1px rgba(255,181,71,.35) inset; }
+.q { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.q:last-child { border-bottom: 0; }
+.q img { display: block; height: 72px; image-rendering: pixelated; border-radius: 8px; background: #000; margin-bottom: 6px; }
+.q .qt { font-size: 13px; margin-bottom: 8px; }
+.q.done { opacity: .75; }
+.keys { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.keys button { min-height: 46px; border-radius: 10px; border: 1px solid var(--line); background: #0a0d17; font-size: 20px; font-weight: 800; color: var(--ink); line-height: 1; }
+.keys button small { display: block; font-size: 10px; color: var(--dim); font-weight: 600; margin-top: 2px; }
+.keys button.hint { border-color: var(--gold2); }
+.keys button.on { background: linear-gradient(180deg, var(--gold), var(--gold2)); color: #1a1406; border-color: var(--gold); }
+.keys button.on small { color: #3a2c08; }
+
+/* แผ่นใส่กุญแจ */
+.keycard { border-color: var(--gold2); }
+.keyin { width: 100%; background: #0a0d17; border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-height: 48px; font-size: 16px; color: var(--ink); }
+
+/* แยกบน/ล่างให้ชัด */
+.slot .tg { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .08em; border-radius: 6px; padding: 1px 6px; margin-top: 2px; }
+.tg-up { color: var(--gold); background: rgba(230,192,99,.12); }
+.tg-lo { color: var(--sky); background: rgba(111,183,255,.12); }
+.tg-both { color: var(--ink); background: rgba(255,255,255,.08); }
+.grp { border-radius: 12px; padding: 10px 10px 2px; margin-bottom: 10px; border: 1px solid var(--line); position: relative; }
+.grp .gt { font-size: 12px; font-weight: 800; letter-spacing: .14em; margin-bottom: 6px; }
+.grp.up { background: rgba(230,192,99,.05); } .grp.up .gt { color: var(--gold); }
+.grp.lo { background: rgba(111,183,255,.06); border-color: rgba(111,183,255,.3); } .grp.lo .gt { color: var(--sky); }
+.grp.lo .chip.first { border-color: var(--sky); color: var(--sky); }
