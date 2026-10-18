@@ -875,7 +875,7 @@ function fbSnapRun_() {
   var out = { ok: false, code: got.code, url: got.url, len: (got.body || '').length,
               trail: got.trail || '', why: got.why || '',
               added: [], skipped: [], fixed: [], missed: [] };
-  out.via = got.via ? 'ผ่าน ' + got.via : 'ยิงตรง';
+  out.via = got.via ? 'ผ่าน ' + fbSafeVia_(got.via) : 'ยิงตรง';
   /* ตรงนี้ตัดสินด้วย HTTP อย่างเดียวพอ — "หน้าใช่ไหม" เป็นเรื่องของ fbFetchAny_ ตอนเลือกทาง
      ถ้าเอามาตัดสินซ้ำตรงนี้ วันที่เขาแก้หน้าเว็บจะรายงานว่า "ดึงไม่ได้" ทั้งที่ดึงได้แต่แกะไม่ออก */
   if (got.code !== 200 || out.len < 1000) {
@@ -1007,6 +1007,27 @@ function fbMarkWait_(min) {
   catch (err) { /* ปล่อย */ }
 }
 
+/** ที่อยู่ทางอ้อมที่จะโชว์ออกไป — ตัดค่ากุญแจทิ้ง (เดิม ?p=ping ที่ไม่ต้องใช้กุญแจคายคีย์ ScrapingAnt ทั้งดุ้น) */
+function fbSafeVia_(v) {
+  return String(v || '').replace(/([?&][\w-]*(?:key|token)=)[^&]*/gi, '$1***');
+}
+
+/* ดึงตามเวลา — เดิมดึงเฉพาะตอนมีคนเปิดหน้า เจ้าของไม่เปิด 31 ชม. (17 ต.ค. 09:45 → 18 ต.ค. 21:02)
+   คู่ตุรกีเตะ 20:00 เลยถูกจับได้หลังเตะ แล้วหน้าหลักซ่อนคู่ที่เตะแล้ว = "มาๆหายๆ"
+   เกาะรอบ ?p=poll ที่ GitHub Actions ยิงอยู่แล้ว · สำเร็จ = 3 ชม./ครั้ง · พลาด = ลองใหม่ใน 30 นาที
+   งบ ScrapingAnt ฟรี 10,000 เครดิต/เดือน หน้าละ 10 → ~8 รอบ/วัน กินแค่ ~100 เครดิต/วัน */
+var FB_TIMED_MIN = 180;
+var FB_TIMED_FAIL_MIN = 30;
+
+function fbTimedSnap_(nowMs) {
+  try {
+    var now = nowMs || Date.now(), last = fbLastTry_(), rep = fbLastReport_();
+    var gap = (rep && rep.ok) ? FB_TIMED_MIN : FB_TIMED_FAIL_MIN;
+    if (last && now - last < gap * 60000) return false;
+    return fbAutoSnap_([], now);
+  } catch (err) { return false; }
+}
+
 /** เรียกจากทางอ่านข้อมูล (?p=all)
     คืน true ถ้ามีของใหม่เข้าชีต — คนเรียกต้องอ่านชีตซ้ำ
     ห้าม throw เด็ดขาด หน้าเว็บต้องขึ้นได้เสมอ ถึง forebet จะล่มก็ตาม */
@@ -1032,7 +1053,7 @@ function fbAutoSnap_(pickRows, nowMs) {
     คายเฉพาะของสาธารณะจาก forebet ไม่มีข้อมูลของเจ้าของ แต่ยังกันด้วยกุญแจตามกฎข้อ 3 */
 function fbProbe_() {
   var got = fbFetchAny_();
-  var out = { code: got.code, url: got.url, via: got.via ? 'ผ่าน ' + got.via : 'ยิงตรง',
+  var out = { code: got.code, url: got.url, via: got.via ? 'ผ่าน ' + fbSafeVia_(got.via) : 'ยิงตรง',
               len: (got.body || '').length, blocks: {} };
   var kinds = [FB_KIND.FEATURED, FB_KIND.POTD];
   for (var i = 0; i < kinds.length; i++) {

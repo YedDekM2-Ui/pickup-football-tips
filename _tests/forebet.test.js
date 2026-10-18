@@ -1211,3 +1211,35 @@ test('SportScore: forebet เจอครบแล้ว = ไม่ไปถา
   eq(g.__ss.length, 0, 'ห้ามยิงเปล่า');
   ok(msg.indexOf('SportScore') < 0);
 });
+
+/* 18 ต.ค. 69: เดิมดึงเฉพาะตอนเปิดหน้า เจ้าของไม่เปิด 31 ชม. คู่ตุรกีเลยถูกจับหลังเตะ
+   ดึงตามเวลาเกาะ ?p=poll — สำเร็จพัก 3 ชม. · พลาดลองใหม่ใน 30 นาที */
+test('ดึงตามเวลา: สำเร็จแล้วพัก 3 ชม. ไม่ยิงทุกรอบ poll', () => {
+  const g = fbEnvP(bookOf([]), pageHtml(PAGE_A));
+  const t0 = T('2026-10-18T06:00:00+07:00');
+  g.fbTimedSnap_(t0);
+  const n1 = g.__box.n;
+  ok(n1 > 0, 'รอบแรกต้องออกไปดึง');
+  g.fbTimedSnap_(t0 + 60 * 60000);
+  eq(g.__box.n, n1, 'ผ่านไป 1 ชม. ห้ามยิง');
+  g.fbTimedSnap_(t0 + 181 * 60000);
+  ok(g.__box.n > n1, 'ครบ 3 ชม. ต้องดึงใหม่');
+});
+
+test('ดึงตามเวลา: พลาดแล้วลองใหม่ใน 30 นาที', () => {
+  const g = fbEnvP(bookOf([]), 'blocked', 403);
+  const t0 = T('2026-10-18T06:00:00+07:00');
+  g.fbTimedSnap_(t0);
+  const n1 = g.__box.n;
+  g.fbTimedSnap_(t0 + 10 * 60000);
+  eq(g.__box.n, n1, '10 นาทียังไม่ถึงคิว');
+  g.fbTimedSnap_(t0 + 31 * 60000);
+  ok(g.__box.n > n1, '31 นาทีต้องลองใหม่');
+});
+
+test('ที่อยู่ทางอ้อมที่โชว์ออกไป ต้องไม่มีค่ากุญแจ (ping เปิดโล่ง)', () => {
+  const g = fbEnv(bookOf([]), '');
+  const v = g.fbSafeVia_('https://api.scrapingant.com/v2/general?x-api-key=abc123def&browser=true&url=');
+  ok(v.indexOf('abc123def') < 0, 'กุญแจหลุด: ' + v);
+  ok(v.indexOf('browser=true') > 0, 'ส่วนอื่นต้องอยู่ครบ');
+});

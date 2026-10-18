@@ -331,6 +331,8 @@ function doGet(e) {
     if (p === 'poll') {
       var pollRes = tgPoll_();
       try { lotAutoAsk_(); } catch (err) { /* หวยพังห้ามลามไปทำให้ดึงข้อความพัง */ }
+      /* ดึงคู่ปักหมุดตามเวลา (อยู่นอก tgPoll_ ไม่ถือล็อกข้อความ — รอบดึงใช้เวลานาน) */
+      try { fbTimedSnap_(); } catch (err2) { /* ห้ามลาม */ }
       return jsonOut_(pollRes);
     }
     if (p === 'pollon') return jsonOut_(tgPollOn_());
