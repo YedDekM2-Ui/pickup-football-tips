@@ -113,9 +113,15 @@ function drawDateList_(kind) {
 }
 /** วันของดวง: ล่วงหน้า 45 วัน ถึงย้อนหลัง 60 วัน — เจ้าของแคปดวงงวดหน้าไว้ก่อนได้ (เช่น ส่งของ 1 พ.ย. ตั้งแต่ 16 ต.ค.)
     เดิมล่วงหน้าแค่ 7 วัน เลือกวันจริงไม่ได้ ดวงเลยไปทับดวงวันนี้ */
-function chartDateList_(sel) {
+/* เจ้าของสั่ง 18 ต.ค. 69: ส่งดาวงวดไหน ต้องลงงวดนั้นเสมอ → รายการมีแต่วันออกของหวยชนิดนี้
+   (ดาวลาว 19 ต.ค. เคยไปลงวันอาทิตย์ 18) · วันที่เลือกอยู่แล้วต้องอยู่ในรายการเสมอ (แก้ดวงเก่าที่ลงวันอื่นไว้) */
+function chartDateList_(sel, kind) {
   var out = [], t = todayIso();
-  for (var i = -45; i <= 60; i++) out.push(scAddDays_(t, -i));
+  for (var i = -45; i <= 60; i++) {
+    var d = scAddDays_(t, -i);
+    if (d === sel || !kind || scIsDraw_(kind, d)) out.push(d);
+  }
+  if (sel && out.indexOf(sel) < 0) { out.push(sel); out.sort().reverse(); }
   return out;
 }
 
@@ -366,7 +372,7 @@ function viewUpload_() {
   h.push('<label><b>ล ลัคนา</b><select data-pl="L">' + opts(d.lagna) + '</select></label>');
   h.push('</div>');
   h.push('<div class="grid2" style="margin-top:10px">' +
-    '<label class="fld">วันที่ของดวง' + dateSelect_('f_date', chartDateList_(d.date), d.date) + '</label>' +
+    '<label class="fld">วันที่ของดวง' + dateSelect_('f_date', chartDateList_(d.date, d.kind), d.date) + '</label>' +
     '<label class="fld">ดวงนี้ใช้กับ<select id="f_kind"><option value="lao"' + (d.kind === 'lao' ? ' selected' : '') + '>หวยลาว (แคปเวลา 20:25)</option>' +
       '<option value="thai"' + (d.kind === 'thai' ? ' selected' : '') + '>หวยไทย (แคปเวลา 15:45)</option></select></label>' +
     '<label class="fld">เวลาในรูปปฏิทิน<input type="time" id="f_time" value="' + esc(d.time || '') + '"></label>' +
@@ -524,10 +530,9 @@ function centerFmt_(v) {
   return t.length > 2 ? t.slice(0, 2) + '/' + t.slice(2) : t;
 }
 
+/** ค่าเริ่มต้นช่องวันที่ของดาว = งวดถัดไปของหวยชนิดนี้ (เดิม = วันนี้ → ดาวลาว 19 ต.ค. ที่ส่งตอนเช้า 18 ไปลงวันอาทิตย์) */
 function defaultChartDate_() {
-  var t = todayIso(), have = {};
-  charts_().forEach(function (c) { have[c.date] = 1; });
-  return t;
+  return scNextDraw_(S.kind);
 }
 
 function bindUpload_() {
@@ -576,6 +581,11 @@ function bindUpload_() {
   $('f_kind').onchange = function () {
     var old = S.draft.kind; syncFields_();
     if (!S.draft.time || S.draft.time === ST_TIME[old]) S.draft.time = ST_TIME[S.draft.kind];
+    /* เปลี่ยนชนิดแล้ววันเดิมไม่ใช่วันออกของชนิดใหม่ → ไปงวดถัดไปของชนิดนั้น (ไม่ทำกับดวงที่กดแก้มา) */
+    if (!S.draft.editOf && !scIsDraw_(S.draft.kind, S.draft.date)) {
+      S.draft.date = scNextDraw_(S.draft.kind);
+      S.draft.lunar = scLunarText_(scLunarGuess_(S.draft.date));
+    }
     render_();
   };
   $('f_date').onchange = function () {
