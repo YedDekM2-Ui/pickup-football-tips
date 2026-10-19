@@ -44,7 +44,7 @@ function stClean_(c) {
     center: String(c.center || '').replace(/[^0-9\/]/g, '').slice(0, 7),
     lunar: String(c.lunar || '').trim().slice(0, 40),
     moved: String(c.moved || '').trim().slice(0, 60),
-    special: String(c.special || '').trim().slice(0, 300),   /* เดิม 60 ตัดสถานะดาวยาวขาดท้าย (16 ต.ค. 69) */
+    special: String(c.special || '').trim().slice(0, 600),   /* เดิม 60→300 · 19 ต.ค. 69 ตำแหน่งดาว 13 แบบ ขยายเป็น 600 */
     note: String(c.note || '').trim().slice(0, 300),
     kind: (c.kind === 'lao' || c.kind === 'thai') ? c.kind : '',
     /* เวลาตามรูปปฏิทิน (ลาว 20:20 · ไทย 15:30) — ลัคนา/กลางดวงขึ้นกับเวลานี้ */
