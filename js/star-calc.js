@@ -35,8 +35,77 @@ var SC_KAL_POSW = { 'พัน': 0.4, 'ร้อย': 0.5, 'สิบ': 1, 'ห�
 var SC_METHODS = [
   ['day', 'ดาวประจำวัน'], ['conj', 'ดาวกุมกัน'], ['lagna', 'ลัคนา'], ['moon', 'จันทร์จร'],
   ['power', 'ดาวมีกำลัง/ดาวย้าย'], ['center', 'เลขกลางดวง'], ['lunar', 'ข้างขึ้น-แรม'],
-  ['date', 'เลขวันที่'], ['stat', 'สถิติหลักนี้'], ['prev', 'งวดก่อน']
+  ['date', 'เลขวันที่'], ['stat', 'สถิติหลักนี้'], ['prev', 'งวดก่อน'], ['rel', 'ตำแหน่งดาว']
 ];
+
+/* ---------------- ตำแหน่งดาวตามแอปต้นทาง (ช่อง "สถานะดาว") ----------------
+   เจ้าของสั่ง 19 ต.ค. 69: ใช้ทั้งลาวและไทย · ตำแหน่งให้แอปปฏิทินโหรเป็นคนบอก (เรากดเลขตาม) ไม่คิดตำแหน่งเอง
+   ค่า = แรงตั้งต้นของตำแหน่งนั้น (+ = ดาวมีกำลัง · − = ดาวอ่อน) ส่วนว่าทั้งวิธีแม่นแค่ไหน ให้ระบบวัดจากผลจริงเอง (น้ำหนัก 'rel')
+   ชื่อยาวต้องจับก่อนชื่อสั้น (นิจ อยู่ในคำ นิจจาภิมุข · ประ อยู่ในคำ ประกิณโชค) */
+var SC_STAT = [
+  ['เกษตร', 0.8], ['มหาจักร', 0.8], ['มหาอุจจ์', 1], ['นิจ', -0.4], ['ประ', -0.4], ['ราชาโชค', 0.8],
+  ['อุจจาวิลาส', 0.9], ['เทวีโชค', 0.7], ['จุลจักร', 0.6], ['อุจจาภิมุข', 0.7], ['ประกิณโชค', 0.6],
+  ['จตุสดัย', 0.6], ['นิจจาภิมุข', -0.3]
+];
+var SC_STAT_NAMES = SC_STAT.map(function (x) { return x[0]; });
+
+/** "ดาวเกษตร 2,6 นิจ 1" → { 'เกษตร': ['2','6'], 'นิจ': ['1'], _rest: '' } (ข้อความที่ไม่รู้จักเก็บใน _rest) */
+function scStatParse_(s) {
+  var m = {}, rest = String(s || '');
+  SC_STAT_NAMES.slice().sort(function (a, b) { return b.length - a.length; }).forEach(function (n) {
+    var re = new RegExp('(?:ดาว)?' + n + '[ :]*([0-9][0-9 ,]*)');
+    var hit = rest.match(re);
+    if (!hit) return;
+    m[n] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'].filter(function (x) { return hit[1].indexOf(x) >= 0; });
+    rest = rest.replace(hit[0], ' ');
+  });
+  m._rest = rest.replace(/\s+/g, ' ').trim();
+  return m;
+}
+
+/** ความสัมพันธ์ของดาวที่มีตำแหน่ง
+ *  good/weak = [{d, names[], w}] · links = ดาวมีกำลังสองดวงที่ กุม/เล็ง/ตรีโกณ กัน หรือจับดาววัน/ลัคนา */
+function scStatRel_(chart, dayStar) {
+  var m = scStatParse_(chart.special), per = {}, loc = scLoc_(chart);
+  SC_STAT.forEach(function (st) {
+    (m[st[0]] || []).forEach(function (d) {
+      if (!per[d]) per[d] = { d: d, names: [], w: 0 };
+      per[d].names.push(st[0]); per[d].w += st[1];
+    });
+  });
+  var all = Object.keys(per).map(function (d) { return per[d]; });
+  var good = all.filter(function (x) { return x.w > 0; }), weak = all.filter(function (x) { return x.w < 0; });
+  var links = [], i, j;
+  var REL = { 0: ['กุม', 0.5], 6: ['เล็ง', 0.4], 4: ['ตรีโกณ', 0.3], 8: ['ตรีโกณ', 0.3] };
+  for (i = 0; i < good.length; i++) {
+    for (j = i + 1; j < good.length; j++) {
+      var a = good[i].d, b = good[j].d;
+      if (loc[a] === undefined || loc[b] === undefined) continue;
+      var r = REL[(loc[b] - loc[a] + 12) % 12];
+      if (r) links.push({ a: a, b: b, kind: r[0], w: r[1],
+                          why: SC_PL[a] + '(' + good[i].names.join('/') + ') ' + r[0] + ' ' + SC_PL[b] + '(' + good[j].names.join('/') + ')' });
+    }
+  }
+  good.forEach(function (g) {
+    if (dayStar && g.d === dayStar) links.push({ a: g.d, b: g.d, kind: 'ดาววัน', w: 0.5, why: 'ดาววัน ' + SC_PL[g.d] + ' ได้ตำแหน่ง' + g.names.join('/') });
+    else if (dayStar && loc[g.d] !== undefined && loc[g.d] === loc[dayStar]) {
+      links.push({ a: g.d, b: dayStar, kind: 'กุมดาววัน', w: 0.4, why: SC_PL[g.d] + '(' + g.names.join('/') + ') กุมดาววัน ' + SC_PL[dayStar] });
+    }
+    if (chart.lagna >= 0 && loc[g.d] === chart.lagna) links.push({ a: g.d, b: g.d, kind: 'กุมลัคนา', w: 0.5, why: SC_PL[g.d] + '(' + g.names.join('/') + ') อยู่กับลัคนา' });
+  });
+  return { good: good, weak: weak, links: links };
+}
+
+/** คู่เลขจากดาวที่สัมพันธ์กัน (ทั้ง 2 ทาง) เรียงแรงสุดก่อน — โชว์เป็นคู่ให้จับ */
+function scStatPairs_(rel) {
+  var w = {}, why = {};
+  rel.links.forEach(function (l) {
+    if (l.a === l.b) return;
+    [l.a + l.b, l.b + l.a].forEach(function (n) { w[n] = (w[n] || 0) + l.w; (why[n] = why[n] || []).push(l.kind); });
+  });
+  return Object.keys(w).sort(function (a, b) { return w[b] - w[a] || (a < b ? -1 : 1); })
+    .map(function (n) { return { n: n, w: Math.round(w[n] * 100) / 100, why: why[n] }; });
+}
 
 /* ---------------- วันที่ ---------------- */
 function scYmd_(iso) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '')); return m ? [+m[1], +m[2], +m[3]] : null; }
@@ -201,6 +270,22 @@ function scMethods_(ctx) {
   for (i = 0; i < sum.length; i++) t += +sum[i];
   b.add(t % 10, 0.5, 'ผลรวมเลข ' + dd + '/' + mm + '/' + be + ' = ' + t);
 
+  /* 9) ตำแหน่งดาวตามแอป + ความสัมพันธ์ระหว่างกัน (ดาวอ่อน นิจ/ประ ไปอยู่เลขเสีย) */
+  b = M('rel');
+  var rel = scStatRel_(ch, D);
+  rel.good.forEach(function (g) {
+    b.add(g.d, g.w, SC_PL[g.d] + ' ' + g.names.join(' + '));
+    if (g.names.length >= 2) b.add(g.d, 0.3, SC_PL[g.d] + ' ได้ ' + g.names.length + ' ตำแหน่งดีซ้อน');
+  });
+  rel.links.forEach(function (l) {
+    b.add(l.a, l.w, l.why);
+    if (l.b !== l.a) b.add(l.b, l.w, l.why);
+  });
+  if (rel.good.length >= 2) {
+    var gs = 0; rel.good.forEach(function (g) { gs += +g.d; });
+    b.add(gs % 10, 0.5, 'ผลรวมดาวมีกำลัง ' + rel.good.map(function (g) { return g.d; }).join('+') + ' = ' + gs);
+  }
+
   var out = {};
   Object.keys(res).forEach(function (k) { out[k] = res[k].out; });
   return out;
@@ -277,6 +362,9 @@ function scDead_(ctx) {
   var br = scDayBranch_(ctx.iso), cl = (br + 6) % 12;
   var zn = cl + 1, zd = String(zn % 10);   /* ชวด 1 … ระกา 10 จอ 11 กุน 12 → ใช้หลักหน่วย (0/1/2) */
   dead.push({ d: zd, w: 0.5, why: 'วัน' + SC_ZOD[br] + ' ชง' + SC_ZOD[cl] + ' (' + SC_ZOD[cl] + ' = ลำดับ ' + zn + (zn >= 10 ? ' → เลข ' + zd : '') + ')' });
+  scStatRel_(ctx.chart, ctx.dayStar).weak.forEach(function (x) {
+    dead.push({ d: x.d, w: -x.w, why: SC_PL[x.d] + ' ' + x.names.join(' + ') + ' (ดาวอ่อนกำลัง)' });
+  });
   return dead;
 }
 
@@ -418,7 +506,8 @@ function scPredict_(kind, chart, iso, results, weights) {
     pos: pos, sets: sets, run: run, dead: dead, parity: par,
     dbl: { level: dbl >= 3 ? 'สูง' : (dbl === 2 ? 'กลาง' : 'ต่ำ'), why: dblWhy,
            list: run.map(function (x) { return x + x; }), tong: dbl >= 3 ? run[0] + run[0] + run[0] : '' },
-    hams: hams.slice(0, 4), methods: all
+    hams: hams.slice(0, 4), methods: all,
+    relPairs: scStatPairs_(scStatRel_(chart, ctx.dayStar)).slice(0, 6)
   };
 }
 
@@ -554,7 +643,7 @@ function scPickChart_(charts, iso, kind) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { SC_KIND: SC_KIND, SC_PL: SC_PL, SC_RASI: SC_RASI, SC_METHODS: SC_METHODS,
+  module.exports = { SC_STAT: SC_STAT, scStatParse_: scStatParse_, scStatRel_: scStatRel_, scStatPairs_: scStatPairs_, SC_KIND: SC_KIND, SC_PL: SC_PL, SC_RASI: SC_RASI, SC_METHODS: SC_METHODS,
     scWd_: scWd_, scDayBranch_: scDayBranch_, scLunarGuess_: scLunarGuess_, scLunarParse_: scLunarParse_,
     scDayStar_: scDayStar_, scKalakini_: scKalakini_, scResultMap_: scResultMap_, scMethods_: scMethods_,
     scWeights_: scWeights_, scWeightsSeq_: scWeightsSeq_, scLunarFor_: scLunarFor_, scPredict_: scPredict_, scBacktest_: scBacktest_, scStats_: scStats_,

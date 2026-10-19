@@ -213,7 +213,7 @@ function helpCard_(kind) {
     '<div>• คู่/คี่ ตามวัน · โอกาสเบิ้ล (ต่ำ/กลาง/สูง) พร้อมเหตุผล · เลขหาม = ดาวที่เล็งกันอยู่หัว-ท้าย ดาวประจำวันอยู่กลาง</div>' +
 
     '<b>6. แยกวิธีค้น</b>' +
-    '<div>• 10 วิธีจากสูตรแกะดาว แต่ละวิธีให้เลขอะไร เพราะอะไร</div>' +
+    '<div>• 11 วิธีจากสูตรแกะดาว (วิธีที่ 11 = ตำแหน่งดาวที่กดไว้ตอนส่งดาว) แต่ละวิธีให้เลขอะไร เพราะอะไร</div>' +
     '<div>• <b>×น้ำหนัก</b> = วิธีนี้แม่นแค่ไหนในหลักนั้น วัดจากดวงที่ผ่านมาเทียบผลจริง (×1 = เท่าสุ่ม · มากกว่า 1 = แม่นกว่าสุ่ม) · ยิ่งส่งดาวมาก ตัวเลขยิ่งเชื่อได้</div>' +
 
     '<b>7. ดาวที่ใช้</b>' +
@@ -288,6 +288,8 @@ function viewPredict_() {
     '<li><span class="n">' + esc(pr.parity.kind) + '</span><span>' + esc(pr.parity.text) + ' (' + pr.parity.fav.join(' ') + ')</span></li>' +
     '<li><span class="n">' + esc(pr.dbl.level) + '</span><span>โอกาสเบิ้ล' + (pr.dbl.why.length ? ' — ' + esc(pr.dbl.why.join(' · ')) : '') +
       '<br><span class="muted">เบิ้ลที่น่าจับ: ' + pr.dbl.list.join(' ') + (pr.dbl.tong ? ' · ตอง ' + pr.dbl.tong : '') + '</span></span></li>' +
+    (pr.relPairs && pr.relPairs.length ? '<li><span class="n">ดาว</span><span>' + pr.relPairs.map(function (x) { return x.n; }).join(' ') +
+      '<br><span class="muted">คู่จากดาวที่มีตำแหน่งแล้วสัมพันธ์กัน (' + esc(pr.relPairs.map(function (x) { return x.n + ' ' + x.why.join('/'); }).join(' · ')) + ')</span></span></li>' : '') +
     (pr.hams.length ? '<li><span class="n">หาม</span><span>' + pr.hams.join(' ') + '<br><span class="muted">ดาวเล็งกันไว้หัว-ท้าย ดาวประจำวันกดกลาง</span></span></li>' : '') +
     '</ul></div>');
 
@@ -494,21 +496,10 @@ function gotRead_(r, diag) {
 }
 
 /* สถานะดาวในแอปต้นทาง (เช่น "ดาวเกษตร 2,6,8 นิจ 1,3") — เจ้าของสั่งให้กดเลือกเลขได้ ไม่ต้องพิมพ์
-   เจ้าของสั่งใช้แต่คำเต็มตามแอป (ตัดคำย่อ อุจ/นิจ/ประ ทิ้ง) · ชื่อยาวต้องจับก่อนชื่อสั้น
-   ข้อความที่ปุ่มไม่รู้จัก (เช่น "ดาวเกษตร มี" ของเก่า) เก็บไว้ท้าย ไม่หายตอนกดปุ่ม */
-var ST_STAT = ['เกษตร', 'มหาอุจจ์', 'อุจจาภิมุข', 'นิจจาภิมุข', 'ประกิณโชค', 'จตุสดัย', 'ราชาโชค'];
-function statParse_(s) {
-  var m = {}, rest = String(s || '');
-  ST_STAT.slice().sort(function (a, b) { return b.length - a.length; }).forEach(function (n) {
-    var re = new RegExp('(?:ดาว)?' + n + '[ :]*([0-9][0-9 ,]*)');
-    var hit = rest.match(re);
-    if (!hit) return;
-    m[n] = PL_ORDER.filter(function (x) { return hit[1].indexOf(x) >= 0; });
-    rest = rest.replace(hit[0], ' ');
-  });
-  m._rest = rest.replace(/\s+/g, ' ').trim();
-  return m;
-}
+   รายชื่อ + ตัวแกะอยู่ใน star-calc.js (SC_STAT / scStatParse_) เพราะสูตรหาเลขใช้ด้วย
+   เจ้าของสั่ง 19 ต.ค. 69: 13 ตำแหน่ง ใช้ทั้งลาวไทย · ข้อความที่ปุ่มไม่รู้จักเก็บไว้ท้าย ไม่หายตอนกดปุ่ม */
+var ST_STAT = SC_STAT_NAMES;
+var statParse_ = scStatParse_;
 function statText_(m, rest) {
   var t = ST_STAT.filter(function (n) { return m[n] && m[n].length; })
     .map(function (n) { return (n === 'เกษตร' ? 'ดาวเกษตร' : n) + ' ' + m[n].join(','); }).join(' ');
