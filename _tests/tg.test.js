@@ -861,9 +861,9 @@ test('ทางดึงเองห้ามคายโทเคนออก�
   ok(j.indexOf('โทเคนลับ') < 0, 'ห้ามมีโทเคน');
 });
 
-test('เมนูกับปุ่มลัดมีหวยครบ 5 ตัว', () => {
+test('เมนูกับปุ่มลัดมีหวยครบ 3 ตัว (B รวมเข้าหวยไทย/หวยลาวแล้ว)', () => {
   const g = env({});
-  const want = ['หวยไทย', 'หวยลาว', 'หวยไทยB', 'หวยลาวB', 'หวย'];
+  const want = ['หวยไทย', 'หวยลาว', 'หวย'];
   const kb = JSON.stringify(g.tgKeyboard_());
   want.forEach(w => {
     ok(g.TG_MENU_.indexOf(w) >= 0, 'เมนู /help ขาด ' + w);
@@ -878,7 +878,7 @@ test('คำสั่งอังกฤษในเมนู "/" แปลงก
     ok(/^[a-z0-9_]{1,32}$/.test(c.command), 'ชื่อคำสั่งผิดกติกา: ' + c.command);
   });
   eq(g.tgAlias_('/lotthai'), 'หวยไทย');
-  eq(g.tgAlias_('/lotlaob'), 'หวยลาวB');
+  eq(g.tgAlias_('/lotlao'), 'หวยลาว');
   eq(g.tgAlias_('/lotto'), 'หวย');
   eq(g.tgAlias_('/tfstat 7'), '/tfสถิติ 7');
   eq(g.tgAlias_('/fvstat'), '/สถิติค่าคุ้ม');
@@ -974,4 +974,50 @@ test('tgSend_ ก้อนแรกล้ม = หยุดยิงก้อน
   const res = g.tgSend_('9', lines.join(NL));
   eq(res.ok, false);
   eq(hit.length, 1);
+});
+
+/* ---- 28 ต.ค. 69: กด หวยไทย/หวยลาว ทีเดียวได้ 2 ใบ (ใบหลัก + เลขฐาน B) ---- */
+function lotEnv(file) {
+  const { loadGas } = require('./gasEnv');
+  const g = loadGas(['gas/Config.gs', file], {});
+  const sent = [];
+  g.tgSend_ = (c, t) => { sent.push(String(t)); return true; };
+  g.truncate_ = (s) => String(s);
+  g.thaiOverviewText_ = () => 'ใบหลักไทย';
+  g.laoOverviewText_ = () => 'ใบหลักลาว';
+  g.parseLotDateArg_ = () => null;
+  g.stripLotDateArg_ = (s) => s;
+  g.lotbHandle_ = (c, kind, arg) => g.tgSend_(c, 'ใบB ' + kind + ' [' + arg + ']');
+  g.__sent = sent;
+  return g;
+}
+
+test('กด "หวยไทย" เปล่า ๆ → ได้ 2 ใบ ใบหลักก่อน แล้วเลขฐาน B', () => {
+  const g = lotEnv('gas/LotThai.gs');
+  g.handleThaiLottery_(1, 'หวยไทย');
+  eq(JSON.stringify(g.__sent), JSON.stringify(['ใบหลักไทย', 'ใบB thai []']));
+});
+
+test('กด "หวยลาว" เปล่า ๆ → ได้ 2 ใบเหมือนกัน', () => {
+  const g = lotEnv('gas/LotLao.gs');
+  g.handleLaoLottery_(1, 'หวยลาว');
+  eq(JSON.stringify(g.__sent), JSON.stringify(['ใบหลักลาว', 'ใบB lao []']));
+});
+
+test('"หวยไทยB" ยังได้ใบ B ใบเดียวเหมือนเดิม · คำสั่งย่อยไม่พ่วงใบ B', () => {
+  const g = lotEnv('gas/LotThai.gs');
+  g.handleThaiLottery_(1, 'หวยไทยB');
+  eq(g.__sent.length, 1);
+  ok(g.__sent[0].indexOf('ใบB') === 0);
+  const h = lotEnv('gas/LotThai.gs');
+  h.handleThaiLottery_(1, 'หวยไทย อะไรสักอย่าง');
+  eq(h.__sent.length, 1);
+});
+
+test('ใบ B พัง → ใบหลักยังได้ + บอกว่า B พัง', () => {
+  const g = lotEnv('gas/LotLao.gs');
+  g.lotbHandle_ = () => { throw new Error('ชีตหาย'); };
+  g.handleLaoLottery_(1, 'หวยลาว');
+  eq(g.__sent[0], 'ใบหลักลาว');
+  ok(g.__sent[1].indexOf('หวยลาวB พัง') === 0);
 });

@@ -68,7 +68,12 @@ function handleThaiLottery_(chatId, t) {
   if (/\d/.test(body))
     return tgSend_(chatId, '❌ รูปแบบไม่ถูก — ต้องใส่ทั้ง 4 ตัวบน และ 2 ตัวล่าง\nเช่น  ผลหวยไทย 1234 56');
 
-  return tgSend_(chatId, thaiOverviewText_());
+  tgSend_(chatId, thaiOverviewText_());
+  /* เจ้าของสั่ง 28 ต.ค. 69: รวมปุ่ม หวยไทย + หวยไทยB — กดทีเดียวได้ 2 ใบ (เฉพาะกดเปล่า ๆ)
+     ใบ B พังต้องบอกเอง ใบแรกส่งไปแล้ว ห้ามให้ error เด้งไปทับว่า "หวยไทยพัง" ทั้งชุด */
+  if (s) return;
+  try { lotbHandle_(chatId, 'thai', ''); }
+  catch (e) { tgSend_(chatId, 'หวยไทยB พัง: ' + truncate_(String(e && e.message ? e.message : e), 200)); }
 }
 
 /**

@@ -65,7 +65,11 @@ function handleLaoLottery_(chatId, t) {
   if (num) return tgSend_(chatId, recordLaoResult_(num[1], dISO));   // ไม่ระบุวัน = งวดล่าสุด
 
   // ไม่มีอาร์กิวเมนต์ = สรุปย่อ
-  return tgSend_(chatId, laoOverviewText_());
+  tgSend_(chatId, laoOverviewText_());
+  /* เจ้าของสั่ง 28 ต.ค. 69: รวมปุ่ม หวยลาว + หวยลาวB — กดทีเดียวได้ 2 ใบ (เฉพาะกดเปล่า ๆ) */
+  if (s) return;
+  try { lotbHandle_(chatId, 'lao', ''); }
+  catch (e) { tgSend_(chatId, 'หวยลาวB พัง: ' + truncate_(String(e && e.message ? e.message : e), 200)); }
 }
 
 /**
