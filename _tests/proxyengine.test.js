@@ -200,3 +200,121 @@ test('หน้า HTML ธรรมดา (ไม่ใช่ฟีด) ต้�
   });
   eq(g.cpGet_('https://www.forebet.com/x', '', false).body, html);
 });
+
+/* ---- 28 ต.ค. 69: คีย์ ScrapingAnt 3 ใบ สลับตามเวลา + ข้ามใบที่หมดโควต้า ----
+   ของจริง: หมดแล้วตอบ 403 quota limit · FABEL5 เงียบ 2 วันเพราะมีใบเดียว */
+const QUOTA = '{"detail":"Requests quota limit reached. Please visit https://app.scrapingant.com/subscriptions"}';
+const mk = (k) => 'https://api.scrapingant.com/v2/general?x-api-key=' + k + '&browser=true&url=';
+const A1 = mk('AAA'), A2 = mk('BBB'), A3 = mk('CCC');
+const H = 3600 * 1000;
+
+/* empty = คีย์ที่หมดโควต้า · slot = บังคับช่วงเวลา */
+function envKeys(files, props, empty, slot) {
+  const seen = [];
+  const g = loadGas(files, {
+    UrlFetchApp: { fetch: (url, opt) => {
+      seen.push(url);
+      const dead = (empty || []).some((k) => url.indexOf(k) >= 0);
+      return dead ? fakeResponse(403, QUOTA) : fakeResponse(200, '[[{"id":"1"}]]');
+    } }
+  });
+  Object.keys(props || {}).forEach((k) => g.PropertiesService.getScriptProperties().setProperty(k, props[k]));
+  if (slot !== undefined) g.cpSlot_ = () => slot;
+  g.__seen = seen;
+  return g;
+}
+const ALL = ['gas/Config.gs', 'gas/Compat.gs', 'gas/Forebet.gs', 'gas/TalkFootball.gs'];
+const P3 = { FB_PROXY: A1, FB_PROXY2: A2, FB_PROXY3: A3 };
+
+test('สลับตามเวลา: ช่วง 0/1/2 ได้ใบ 1/2/3 แล้ววนกลับใบ 1', () => {
+  eq(envKeys(ALL, P3, [], 0).fbProxy_(), A1);
+  eq(envKeys(ALL, P3, [], 1).fbProxy_(), A2);
+  eq(envKeys(ALL, P3, [], 2).fbProxy_(), A3);
+  eq(envKeys(ALL, P3, [], 3).fbProxy_(), A1);
+});
+
+test('4 ใบ = ช่วงละ 6 ชม. ตามเวลาไทย (05:59 ใบ 1 · 06:00 ใบ 2 · 23:59 ใบ 4)', () => {
+  const g = envKeys(ALL, P3, []);
+  const real = g.Date || Date;
+  const at = (ms) => { g.Date = class extends real { constructor() { super(ms); } }; };
+  try {
+    const th = (h, m) => Date.UTC(2026, 9, 28, h, m) - 7 * H;   /* เวลาไทย h:m */
+    at(th(5, 59)); eq(g.cpSlot_(4), 0);
+    at(th(6, 0)); eq(g.cpSlot_(4), 1);
+    at(th(23, 59)); eq(g.cpSlot_(4), 3);
+    at(th(16, 0)); eq(g.cpSlot_(3), 2);
+  } finally { g.Date = real; }
+});
+
+test('ใบของช่วงนี้หมดโควต้า → cpGet_ ยิงซ้ำใบถัดไปทันที ได้ของจริง', () => {
+  const g = envKeys(ALL, P3, ['AAA'], 0);
+  const r = g.cpGet_('https://www.forebet.com/x', A1, true);
+  eq(r.code, 200);
+  eq(g.__seen.length, 2);
+  ok(g.__seen[1].indexOf('BBB') >= 0, 'ครั้งที่ 2 ต้องใช้ใบที่ 2');
+});
+
+test('หมด 2 ใบ → ไล่ไปถึงใบที่ 3', () => {
+  const g = envKeys(ALL, P3, ['AAA', 'BBB'], 0);
+  eq(g.cpGet_('https://www.forebet.com/x', A1, true).code, 200);
+  ok(g.__seen[g.__seen.length - 1].indexOf('CCC') >= 0);
+  eq(g.fbProxy_(), A3);
+});
+
+test('หมดทุกใบ → หยุด ไม่วนไม่จบ คืน 403 เป็นหลักฐาน', () => {
+  const g = envKeys(ALL, P3, ['AAA', 'BBB', 'CCC'], 0);
+  eq(g.cpGet_('https://www.forebet.com/x', A1, true).code, 403);
+  eq(g.__seen.length, 3);
+});
+
+test('จดว่าหมดแล้ว → รอบต่อไปไม่เปลืองยิงใบตาย และไม่จดตัวคีย์ลง property', () => {
+  const g = envKeys(ALL, P3, ['AAA'], 0);
+  g.cpGet_('https://www.forebet.com/x', A1, true);
+  eq(g.fbProxy_(), A2);
+  ok(String(g.PropertiesService.getScriptProperties().getProperty('FB_PROXY_DEAD')).indexOf('AAA') < 0);
+});
+
+test('ครบ 24 ชม. → ใบที่เคยหมดกลับเข้าวง (เครดิตรีเซ็ตรายเดือน)', () => {
+  const g = envKeys(ALL, P3, [], 0);
+  const m = {}; m[g.cpTag_(A1)] = Date.now() - 25 * H;
+  g.PropertiesService.getScriptProperties().setProperty('FB_PROXY_DEAD', JSON.stringify(m));
+  eq(g.fbProxy_(), A1);
+});
+
+test('มีใบเดียว → หมดแล้วคืน 403 เดิม ไม่ยิงซ้ำ', () => {
+  const g = envKeys(ALL, { FB_PROXY: A1 }, ['AAA'], 0);
+  eq(g.cpGet_('https://www.forebet.com/x', A1, true).code, 403);
+  eq(g.__seen.length, 1);
+});
+
+test('403 ธรรมดา (ไม่ใช่โควต้า) ห้ามจดว่าใบตาย', () => {
+  const g = loadGas(['gas/Config.gs', 'gas/Compat.gs'], {
+    UrlFetchApp: { fetch: () => fakeResponse(403, 'Just a moment...') } });
+  g.PropertiesService.getScriptProperties().setProperty('FB_PROXY2', A2);
+  g.cpGet_('https://www.forebet.com/x', A1, true);
+  eq(g.PropertiesService.getScriptProperties().getProperty('FB_PROXY_DEAD'), null);
+});
+
+test('fbFetch_ กับ tfGet_ ก็ข้ามใบที่หมดด้วย', () => {
+  eq(envKeys(ALL, P3, ['AAA'], 0).fbFetch_('https://www.forebet.com/x', A1).code, 200);
+  eq(envKeys(ALL, P3, ['AAA'], 0).tfGet_('https://www.forebet.com/x', A1).code, 200);
+});
+
+test("สวิตช์ปิด FB_PROXY='-' ยังปิดได้แม้มีใบ 2-3", () => {
+  eq(envKeys(ALL, { FB_PROXY: '-', FB_PROXY2: A2, FB_PROXY3: A3 }, [], 0).fbProxy_(), '');
+});
+
+test('FB_PROXY2-4 ตั้งผ่านลิงก์ได้', () => {
+  const g = loadGas(['gas/Config.gs', 'gas/Compat.gs'], {});
+  ok(g.CFG_ALLOW.indexOf('FB_PROXY2') >= 0);
+  ok(g.CFG_ALLOW.indexOf('FB_PROXY3') >= 0);
+  ok(g.CFG_ALLOW.indexOf('FB_PROXY4') >= 0);
+});
+
+test('4 ใบ: ช่วง 0-3 ได้ใบ 1-4 ครบ · ใบ 4 หมดก็ข้ามได้', () => {
+  const P4 = { FB_PROXY: A1, FB_PROXY2: A2, FB_PROXY3: A3, FB_PROXY4: mk('DDD') };
+  eq(envKeys(ALL, P4, [], 3).fbProxy_(), mk('DDD'));
+  const g = envKeys(ALL, P4, ['DDD'], 3);
+  eq(g.cpGet_('https://www.forebet.com/x', mk('DDD'), true).code, 200);
+  ok(g.__seen[1].indexOf('AAA') >= 0, 'ใบ 4 หมด → วนกลับใบ 1');
+});

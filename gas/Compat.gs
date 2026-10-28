@@ -86,19 +86,101 @@ function cpVia_(head, via, url, md, noEng) {
   return target;
 }
 
+/* ---------- ทางอ้อมหลายคีย์ FB_PROXY / FB_PROXY2 / FB_PROXY3 / FB_PROXY4 ----------
+   ทำไม: คีย์ ScrapingAnt ฟรีได้ 10k เครดิต/เดือน เราใช้ ~930/วัน ใบเดียวหมดใน ~12 วัน
+   (วัดจริง 27 ต.ค. 69 หมดแล้วตอบ 403 {"detail":"Requests quota limit reached..."} FABEL5 เงียบ 2 วัน)
+   เจ้าของสั่ง 28 ต.ค. 69: 3 ใบ "สลับตามเวลา auto"
+   - สลับ: แบ่งวัน (เวลาไทย) เท่า ๆ กันตามจำนวนใบ ช่วงละใบ เครดิตจะลดพร้อม ๆ กัน
+     4 ใบ = 00-06 / 06-12 / 12-18 / 18-24 (เพิ่มใบ 4 ตามที่เจ้าของส่งมา 28 ต.ค. 69)
+   - ใบไหนตอบ quota limit = จดว่าหมด 24 ชม. แล้วยิงซ้ำด้วยใบถัดไปทันที · ครบ 24 ชม. ลองใหม่เอง
+     (ใบเครดิตกลับมาเมื่อไหร่ ก็กลับเข้าวงเอง ไม่ต้องตั้งอะไร)
+   จดด้วยรอยนิ้ว (hash) ไม่ใช่ตัวคีย์ — ค่าใน FB_PROXY_DEAD ไม่ต้องกลัวหลุด */
+var CP_DEAD_MS = 24 * 3600 * 1000;
+var CP_DAY_MS = 24 * 3600 * 1000;
+
+function cpQuotaOut_(code, body) {
+  return code === 403 && String(body || '').indexOf('quota limit') >= 0;
+}
+
+function cpTag_(v) {
+  var s = String(v), h = 5381;
+  for (var i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
+function cpDeadMap_() {
+  try { return JSON.parse(prop_('FB_PROXY_DEAD') || '{}') || {}; } catch (e) { return {}; }
+}
+
+function cpMarkDead_(via) {
+  var m = cpDeadMap_();
+  m[cpTag_(via)] = new Date().getTime();
+  PropertiesService.getScriptProperties().setProperty('FB_PROXY_DEAD', JSON.stringify(m));
+}
+
+/** ใบลำดับที่เท่าไหร่ของช่วงนี้ — แบ่งวันเวลาไทยเป็น n ช่วงเท่ากัน (0 = ช่วงหลังเที่ยงคืน) */
+function cpSlot_(n) {
+  n = n || 1;
+  var ms = (new Date().getTime() + 7 * 3600 * 1000) % CP_DAY_MS;
+  return Math.floor(ms / (CP_DAY_MS / n));
+}
+
+/** ทุกใบที่ตั้งไว้ (ตัดช่องว่าง/'-' ทิ้ง) — first = ใบหลักที่ตัวเรียกเลือกมาแล้ว */
+function cpProxyList_(first) {
+  var raw = [first === undefined ? prop_('FB_PROXY') : first, prop_('FB_PROXY2'), prop_('FB_PROXY3'),
+             prop_('FB_PROXY4')];
+  var out = [];
+  for (var i = 0; i < raw.length; i++) if (raw[i] && raw[i] !== '-') out.push(raw[i]);
+  return out;
+}
+
+/** ใบของช่วงเวลานี้ ถ้าหมดอยู่ก็ใบถัดไปที่ยังไม่หมด · หมดทุกใบ = ใบของช่วงนี้ (ได้ 403 ไปเป็นหลักฐาน) */
+function cpPickLive_(list) {
+  var n = list.length;
+  if (!n) return '';
+  var dead = cpDeadMap_(), now = new Date().getTime(), s = cpSlot_(n) % n;
+  for (var i = 0; i < n; i++) {
+    var v = list[(s + i) % n];
+    var t = dead[cpTag_(v)];
+    if (!t || now - t > CP_DEAD_MS) return v;
+  }
+  return list[s];
+}
+
+/** ยิงผ่านทางอ้อม — ใบนี้หมดโควต้า = จดไว้แล้วไล่ยิงใบถัดไปจนกว่าจะเจอใบที่ยังมีเครดิต
+ *  (ตัวยิงทั้ง 3 ใช้ตัวนี้: cpGet_ / fbFetch_ / tfGet_) */
+function cpFetchVia_(baseHead, via, url, md, noEng) {
+  function once(v) {
+    var head = {};
+    for (var k in baseHead) head[k] = baseHead[k];
+    var r = UrlFetchApp.fetch(cpVia_(head, v, url, md, noEng), { method: 'get',
+      muteHttpExceptions: true, followRedirects: true, headers: head });
+    return { code: r.getResponseCode(), body: r.getContentText() };
+  }
+  var res = once(via), tried = {};
+  tried[via] = 1;
+  while (cpQuotaOut_(res.code, res.body)) {
+    cpMarkDead_(via);
+    via = cpPickLive_(cpProxyList_());
+    if (!via || tried[via]) break;
+    tried[via] = 1;
+    res = once(via);
+  }
+  return res;
+}
+
 /** ยิงเอา "ข้อความดิบ" มา 1 หน้า — ใช้กับฟีด JSON และหน้า markdown
  *  md=true  → ห้ามใส่ X-Return-Format:html เพราะตัวแกะของ FabScan อ่าน markdown
  *  ตรงก่อน แล้วค่อยอ้อม: ฟีด getrs.php ยิงตรงติดบ่อย (ไม่ใช่หน้าเว็บ Cloudflare ไม่ค่อยกั้น) */
 function cpGet_(url, via, md, noEng) {
   var head = { 'User-Agent': CP_UA, 'Accept': '*/*' };
-  var target = url;
   if (via) {
-    target = cpVia_(head, via, url, md, noEng);
-  } else {
-    head['Referer'] = 'https://www.forebet.com/';
+    var v = cpFetchVia_(head, via, url, md, noEng);
+    return { code: v.code, body: cpUnwrap_(v.body) };
   }
-  var r = UrlFetchApp.fetch(target, { method: 'get', muteHttpExceptions: true,
-                                      followRedirects: true, headers: head });
+  head['Referer'] = 'https://www.forebet.com/';
+  var r = UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true,
+                                   followRedirects: true, headers: head });
   return { code: r.getResponseCode(), body: cpUnwrap_(r.getContentText()) };
 }
 
@@ -324,7 +406,7 @@ function notify_(text) {
    ของที่ต้องตั้งจึงต้องมีทางตั้งผ่านลิงก์เสมอ
    ⚠️ คายกลับได้แค่ "ตั้งแล้ว / ยาวกี่ตัว" ห้ามคายค่าจริงออกไป
    ⚠️ APP_KEY ไม่อยู่ในรายชื่อ — ทับกุญแจประตูตัวเองไม่ได้ */
-var CFG_ALLOW = ['GH_TOKEN', 'JINA_KEY', 'FB_PROXY', 'FB_ENGINE', 'FB_TZ_SHIFT', 'FOREBET_URL',
+var CFG_ALLOW = ['GH_TOKEN', 'JINA_KEY', 'FB_PROXY', 'FB_PROXY2', 'FB_PROXY3', 'FB_PROXY4', 'FB_ENGINE', 'FB_TZ_SHIFT', 'FOREBET_URL',
                  'TG_TOKEN', 'TG_HOOK_KEY', 'SCRAPER_KEY', 'API_FOOTBALL_KEY', 'STAR_KEY', 'STAR_VIEW_KEY'];
 
 /* ตั้งกุญแจใบที่ 2 (SCRAPER_KEY) ได้ "ครั้งเดียว" ตอนที่ยังว่างอยู่

@@ -64,11 +64,9 @@ function tfGet_(url, via) {
     'Accept': 'text/html,application/xhtml+xml',
     'Accept-Language': 'en-US,en;q=0.9'
   };
-  var target = url;
-  if (via) {
-    target = cpVia_(head, via, url, false);   /* หัวทางอ้อมรวมไว้ที่เดียว (Compat.gs) — ขาด X-Engine = ได้หน้ากันบอท 200 */
-  }
-  var res = UrlFetchApp.fetch(target, {
+  /* หัวทางอ้อม + สลับใบสำรองตอนโควต้าหมด รวมไว้ที่เดียว (Compat.gs) — ขาด X-Engine = ได้หน้ากันบอท 200 */
+  if (via) return cpFetchVia_(head, via, url, false);
+  var res = UrlFetchApp.fetch(url, {
     method: 'get', muteHttpExceptions: true, followRedirects: true, headers: head
   });
   return { code: res.getResponseCode(), body: res.getContentText() };
