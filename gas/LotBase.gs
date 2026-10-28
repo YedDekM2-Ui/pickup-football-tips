@@ -364,8 +364,6 @@ function lotbReportText_(kind) {
   L.push('═══════════════');
   L.push('🎖️ Confidence : ' + (bt.acc * 100).toFixed(1) + '%  ·  Grade ' + gr.g + ' ' + gr.s);
   L.push('   (วัดจริง walk-forward ' + bt.n + ' งวดหลังสุด · ฐานสุ่มล้วน 60.0%)');
-  L.push('');
-  L.push('พิมพ์ "' + (lao ? 'หวยลาวB ย้อนหลัง' : 'หวยไทยB ย้อนหลัง') + '" = ดูผลตรวจสอบย้อนหลังทีละงวด');
   return L.join('\n');
 }
 
